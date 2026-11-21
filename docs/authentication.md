@@ -148,8 +148,11 @@ a different script, with a number added when taken (`dana.cohen`, then `dana.coh
 `me` and `contacts` answer `displayName`, and `me` the `email`.
 
 **Mail.** Only invites without an email need the server to send mail (an invite with one is emailed by the
-inviter's phone; `inviteEmailCode` answers `CODE_FROM_INVITER` for it). With `smtp` in `config.json` the codes go by email (STARTTLS on 587, or TLS on 465; Gmail with an app
-password works). Without it they are written to the server's log, which is enough to try invites at home.
+inviter's phone; `inviteEmailCode` answers `CODE_FROM_INVITER` for it). With `gmail` in `config.json` the codes are sent from a Gmail account through the Gmail API, with
+a send-only grant `ptt-server mail-login` keeps in `gmail.token` (no password; docs/install.md, "Email"). With `smtp`
+instead they go over SMTP (STARTTLS on 587, or TLS on 465; an app password in its own file). Without either they are
+written to the server's log, which is enough to try invites at home. The server never sends the invite link: it holds
+the inviter's pairing secret, which only phones see.
 
 **Limits.** Wrong invite codes and wrong email codes count against the client address's limit, as enrollment codes
 do (5 a minute). The email codes are in memory: a restart means asking for a new one. `"invites": false` turns
@@ -277,6 +280,11 @@ pinned key) at any address. See the client repo's docs.
     "username": "you@gmail.com",
     "password_file": "smtp.password",           // the (app) password, in its own file
     "from": "Talk <you@gmail.com>"              // optional: the username when empty
+  },
+  "gmail": {                                    // or, instead of smtp: Gmail's API, no password (mail-login)
+    "client_file": "gmail-client.json",         // the Desktop app OAuth client from Google Cloud
+    "token_file": "gmail.token",                // optional (default): written by ptt-server mail-login
+    "from_name": "Talk"                         // optional: the name beside the address
   }
 }
 ```

@@ -51,6 +51,7 @@ go run .                                          # serve https://0.0.0.0:56400 
 go run . user add <name> | user remove <name> | users              # admin commands: the server must be running
 go run . enroll-code <user> | devices [user] | revoke <serial>
 go run . id | discovery                           # this server's id; check the DHT and the router from here
+go run . mail-login                               # sign in once to the Gmail account invite codes are sent from
 ```
 
 After editing `proto/ptt.proto`, regenerate `proto/pttv1/ptt.pb.go` (committed). protoc comes from Maven Central,
@@ -107,7 +108,7 @@ fields); introspection is blocked too. Resolvers get the user with `auth.FromCon
 - `invite`: invites (`invites.json`, hashed codes, 7 days), the email codes (memory), and redeeming one: a new user
   named from the verified email and enrolled (`enrollWithInvite`), or an enrolled one (`acceptInvite`); both get a
   pairing token of the inviter.
-- `mail`: the email codes, over SMTP (`smtp` in config.json) or to the log.
+- `mail`: the email codes, through the Gmail API (`gmail` in config.json, a send-only grant from `ptt-server mail-login`), over SMTP (`smtp`) or to the log.
 - `contacts`: `pairs.json` (pairs, pairings waiting for both confirmations, blocks) and the pairing tokens (memory).
 - `relay`: who may reach whom, the Send checks (`Send`), the active devices, `/ws` (`ServeHTTP`,
   github.com/coder/websocket), `Revoked` (closes sockets, drops keys and queues) and the hourly `Sweep`.

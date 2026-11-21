@@ -1,6 +1,7 @@
 // Package mail sends the server's few emails: the codes that prove a friend owns the address an invite is redeemed
-// with (docs/authentication.md, "Invites"). Over SMTP when config.json has "smtp"; else the code goes to the
-// server's log, which is enough to try invites on a home server before mail is set up.
+// with (docs/authentication.md, "Invites"). Through the Gmail API when config.json has "gmail" (a send-only grant,
+// no password kept), over SMTP when it has "smtp"; else the code goes to the server's log, which is enough to try
+// invites on a home server before mail is set up.
 package mail
 
 import (
@@ -36,8 +37,14 @@ type Config struct {
 	From string `json:"from"`
 }
 
-// New is the sender config asks for: SMTP, or the log when config is nil.
-func New(config *Config) (Sender, error) {
+// New is the sender config.json asks for: Gmail, SMTP, or the log when it has neither.
+func New(config *Config, gmail *GmailConfig) (Sender, error) {
+	if gmail != nil {
+		if config != nil && config.Host != "" {
+			return nil, errors.New("set either gmail or smtp, not both")
+		}
+		return NewGmail(*gmail)
+	}
 	if config == nil || config.Host == "" {
 		return Log{}, nil
 	}

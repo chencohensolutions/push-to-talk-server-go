@@ -132,7 +132,7 @@ func openServer(config auth.AppConfig) (*server, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to open the invites: %w", err)
 		}
-		sender, err := mail.New(config.SMTP)
+		sender, err := mail.New(config.SMTP, config.Gmail)
 		if err != nil {
 			return nil, fmt.Errorf("config.json: %w", err)
 		}

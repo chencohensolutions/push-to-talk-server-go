@@ -46,3 +46,6 @@ ptt.db
 ptt.db-*
 server.log
 server.log.old
+gmail-client.json
+gmail.token
+smtp.password

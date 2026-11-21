@@ -24,12 +24,15 @@ const usage = `usage:
   ptt-server id                       this server's id, fingerprint and DHT key, as phones know it
   ptt-server discovery                check finding the server from this network: the routers that map ports, the
                                       addresses, publishing them in the BitTorrent DHT and finding them again
+  ptt-server mail-login [--no-browser]
+                                      sign in once to the Gmail account invite codes are sent from (config.json
+                                      "gmail"): a send-only grant, no password kept
   ptt-server setup ...                make a server folder: config, certificates (docs/install.md;
                                       ptt-server setup --help)
   ptt-server service install|uninstall|start|stop
                                       the Windows service that starts the server at boot (as administrator)
 
-The commands but setup, service, id and discovery talk to the running server's admin API.
+The commands but setup, service, id, discovery and mail-login talk to the running server's admin API.
 `
 
 func main() {
@@ -70,6 +73,8 @@ func main() {
 	}
 	run := runAdminCommand
 	switch os.Args[1] {
+	case "mail-login":
+		run = func(config auth.AppConfig, _ string, args []string) error { return mailLoginCommand(config, args) }
 	case "id", "discovery":
 		run = func(config auth.AppConfig, command string, args []string) error {
 			if len(args) > 0 {

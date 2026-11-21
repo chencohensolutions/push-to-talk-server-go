@@ -48,6 +48,8 @@ type AppConfig struct {
 	InvitesFile string `json:"invites_file"`
 	// Where invite email codes are sent from. Without it the codes are only written to the server's log.
 	SMTP *mail.Config `json:"smtp"`
+	// Or send them from a Gmail account through its API, with the send-only grant `ptt-server mail-login` keeps.
+	Gmail *mail.GmailConfig `json:"gmail"`
 	// Loopback-only listener for the admin GraphQL API (default 127.0.0.1:8082).
 	AdminAddr string `json:"admin_addr"`
 	// Token for the admin API, rewritten on every server start (default admin.token).
