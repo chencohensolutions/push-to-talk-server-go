@@ -56,6 +56,8 @@ type CreatedInvite struct {
 	Invite *Invite `json:"invite"`
 	// 22 characters, base64url: put it in the invite link. Shown only now.
 	Code string `json:"code"`
+	// For an invite with an email: six digits to email there with the link (not in the link). Shown only now.
+	EmailCode *string `json:"emailCode,omitempty"`
 }
 
 type EnrollDeviceInput struct {
@@ -150,6 +152,8 @@ type InvitePreview struct {
 	// The address the invite is for; null for anyone.
 	Email     *string   `json:"email,omitempty"`
 	ExpiresAt time.Time `json:"expiresAt"`
+	// The inviter emailed the code with the link: type it; inviteEmailCode isn't needed (it answers CODE_FROM_INVITER).
+	CodeFromInviter bool `json:"codeFromInviter"`
 }
 
 func (InvitePreview) IsInvitePreviewResult() {}
@@ -390,6 +394,8 @@ const (
 	InviteRejectedReasonOwnInvite InviteRejectedReason = "OWN_INVITE"
 	// The server couldn't send the email; try again later.
 	InviteRejectedReasonMailFailed InviteRejectedReason = "MAIL_FAILED"
+	// The inviter emailed the code with the link: use that one.
+	InviteRejectedReasonCodeFromInviter InviteRejectedReason = "CODE_FROM_INVITER"
 )
 
 var AllInviteRejectedReason = []InviteRejectedReason{
@@ -402,11 +408,12 @@ var AllInviteRejectedReason = []InviteRejectedReason{
 	InviteRejectedReasonInvalidCsr,
 	InviteRejectedReasonOwnInvite,
 	InviteRejectedReasonMailFailed,
+	InviteRejectedReasonCodeFromInviter,
 }
 
 func (e InviteRejectedReason) IsValid() bool {
 	switch e {
-	case InviteRejectedReasonInvalidCode, InviteRejectedReasonInvalidEmail, InviteRejectedReasonEmailMismatch, InviteRejectedReasonEmailTaken, InviteRejectedReasonWrongEmailCode, InviteRejectedReasonRateLimited, InviteRejectedReasonInvalidCsr, InviteRejectedReasonOwnInvite, InviteRejectedReasonMailFailed:
+	case InviteRejectedReasonInvalidCode, InviteRejectedReasonInvalidEmail, InviteRejectedReasonEmailMismatch, InviteRejectedReasonEmailTaken, InviteRejectedReasonWrongEmailCode, InviteRejectedReasonRateLimited, InviteRejectedReasonInvalidCsr, InviteRejectedReasonOwnInvite, InviteRejectedReasonMailFailed, InviteRejectedReasonCodeFromInviter:
 		return true
 	}
 	return false

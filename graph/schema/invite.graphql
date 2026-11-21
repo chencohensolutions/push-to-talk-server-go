@@ -16,8 +16,9 @@ extend type Query {
 
 extend type Mutation {
   """
-  An invite from the caller's user, working once, for 7 days. With email, only that address can redeem it.
-  RATE_LIMITED with 5 waiting; INVITES_OFF when the server's owner turned invites off.
+  An invite from the caller's user, working once, for 7 days. With email, only that address can redeem it, and the
+  answer has its emailCode: the caller's phone emails it with the link, from the user's own mail app, so the server
+  sends no mail for it. RATE_LIMITED with 5 waiting; INVITES_OFF when the server's owner turned invites off.
   """
   createInvite(email: String): CreatedInvite!
   "Stops the caller's waiting invite id from working. False if there was none."
@@ -50,6 +51,8 @@ type CreatedInvite {
   invite: Invite!
   "22 characters, base64url: put it in the invite link. Shown only now."
   code: String!
+  "For an invite with an email: six digits to email there with the link (not in the link). Shown only now."
+  emailCode: String
 }
 
 input InviteEnrollInput {
@@ -77,6 +80,8 @@ type InvitePreview {
   "The address the invite is for; null for anyone."
   email: String
   expiresAt: Time!
+  "The inviter emailed the code with the link: type it; inviteEmailCode isn't needed (it answers CODE_FROM_INVITER)."
+  codeFromInviter: Boolean!
 }
 
 type InviteEmailSent {
@@ -118,4 +123,6 @@ enum InviteRejectedReason {
   OWN_INVITE
   "The server couldn't send the email; try again later."
   MAIL_FAILED
+  "The inviter emailed the code with the link: use that one."
+  CODE_FROM_INVITER
 }

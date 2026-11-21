@@ -35,7 +35,12 @@ const (
 	RejectOwnInvite Rejection = "OWN_INVITE"
 	// The email couldn't be sent.
 	RejectMailFailed Rejection = "MAIL_FAILED"
+	// The inviter's phone emailed the code with the invite: the server sends none.
+	RejectCodeFromInviter Rejection = "CODE_FROM_INVITER"
 )
+
+// maxInviterCodeTries is how many wrong codes an invite whose code the inviter emailed takes before it stops working.
+const maxInviterCodeTries = 10
 
 // Service is the invites: the store, the email codes, and what redeeming one makes (a user, a device, a pairing token).
 type Service struct {
@@ -51,27 +56,29 @@ type Service struct {
 
 	mu    sync.Mutex
 	codes map[string]*emailCode // by invite id
+	wrong map[string]int        // wrong codes for an invite whose code the inviter emailed, by invite id
 }
 
 func NewService(store *Store, users *auth.Users, enrollment *enroll.Service, book *contacts.Book, sender mail.Sender, now func() time.Time) *Service {
 	return &Service{Store: store, Users: users, Enrollment: enrollment, Book: book, Mail: sender, AppName: "Talk",
-		limiter: enroll.NewLimiter(now), now: now, codes: map[string]*emailCode{}}
+		limiter: enroll.NewLimiter(now), now: now, codes: map[string]*emailCode{}, wrong: map[string]int{}}
 }
 
-// Create makes an invite from by, for email when it isn't empty.
-func (s *Service) Create(by, email string) (Invite, string, error) {
+// Create makes an invite from by, for email when it isn't empty; then it gives the email code too, for the inviter's
+// phone to email with the link.
+func (s *Service) Create(by, email string) (Invite, string, string, error) {
 	if email != "" {
 		normalized, err := NormalizeEmail(email)
 		if err != nil {
-			return Invite{}, "", err
+			return Invite{}, "", "", err
 		}
 		email = normalized
 	}
-	invite, code, err := s.Store.Create(by, email)
+	invite, code, emailCode, err := s.Store.Create(by, email)
 	if err == nil {
 		log.Printf("Invite %s made by %s (for %s), until %s", invite.ID, by, orAnyone(invite.Email), invite.ExpiresAt.Format(time.DateOnly))
 	}
-	return invite, code, err
+	return invite, code, emailCode, err
 }
 
 func orAnyone(email string) string {
@@ -87,6 +94,8 @@ type Preview struct {
 	InviterDisplayName string
 	Email              string
 	ExpiresAt          time.Time
+	// The inviter's phone emailed the code with the link: the friend types it, and asks the server for none.
+	CodeFromInviter bool
 }
 
 // find is the pending invite with code, counting a wrong one against clientIP.
@@ -110,7 +119,7 @@ func (s *Service) Preview(clientIP, code string) (Preview, Rejection) {
 	}
 	inviter := s.Users.Find(invite.InvitedBy)
 	return Preview{Inviter: invite.InvitedBy, InviterDisplayName: inviter.DisplayName, Email: invite.Email,
-		ExpiresAt: invite.ExpiresAt}, ""
+		ExpiresAt: invite.ExpiresAt, CodeFromInviter: invite.EmailCodeHash != ""}, ""
 }
 
 // checkEmail is email normalized, when the invite may be redeemed with it.
@@ -138,6 +147,9 @@ func (s *Service) SendEmailCode(clientIP, code, email string) (time.Time, Reject
 	email, rejection = s.checkEmail(invite, email)
 	if rejection != "" {
 		return time.Time{}, rejection
+	}
+	if invite.EmailCodeHash != "" {
+		return time.Time{}, RejectCodeFromInviter
 	}
 	digits := newEmailCode()
 	now := s.now()
@@ -190,6 +202,21 @@ func (s *Service) checkEmailCode(clientIP string, invite Invite, email, digits s
 		}
 		return -1
 	}, digits)
+	if invite.EmailCodeHash != "" {
+		if subtle.ConstantTimeCompare([]byte(invite.EmailCodeHash), []byte(hashCode(invite.ID+"/"+digits))) == 1 {
+			return ""
+		}
+		s.limiter.Fail(clientIP)
+		s.mu.Lock()
+		s.wrong[invite.ID]++
+		tooMany := s.wrong[invite.ID] >= maxInviterCodeTries
+		s.mu.Unlock()
+		if tooMany {
+			log.Printf("Invite %s: %d wrong codes, it stops working", invite.ID, maxInviterCodeTries)
+			s.Store.Drop(invite.ID)
+		}
+		return RejectWrongEmailCode
+	}
 	now := s.now()
 	s.mu.Lock()
 	defer s.mu.Unlock()

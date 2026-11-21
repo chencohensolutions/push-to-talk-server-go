@@ -53,8 +53,9 @@ type ComplexityRoot struct {
 	}
 
 	CreatedInvite struct {
-		Code   func(childComplexity int) int
-		Invite func(childComplexity int) int
+		Code      func(childComplexity int) int
+		EmailCode func(childComplexity int) int
+		Invite    func(childComplexity int) int
 	}
 
 	EnrolledDevice struct {
@@ -99,6 +100,7 @@ type ComplexityRoot struct {
 	}
 
 	InvitePreview struct {
+		CodeFromInviter    func(childComplexity int) int
 		Email              func(childComplexity int) int
 		ExpiresAt          func(childComplexity int) int
 		Inviter            func(childComplexity int) int
@@ -315,6 +317,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.CreatedInvite.Code(childComplexity), true
+	case "CreatedInvite.emailCode":
+		if e.ComplexityRoot.CreatedInvite.EmailCode == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CreatedInvite.EmailCode(childComplexity), true
 	case "CreatedInvite.invite":
 		if e.ComplexityRoot.CreatedInvite.Invite == nil {
 			break
@@ -449,6 +457,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.InvitePairing.PairingToken(childComplexity), true
 
+	case "InvitePreview.codeFromInviter":
+		if e.ComplexityRoot.InvitePreview.CodeFromInviter == nil {
+			break
+		}
+
+		return e.ComplexityRoot.InvitePreview.CodeFromInviter(childComplexity), true
 	case "InvitePreview.email":
 		if e.ComplexityRoot.InvitePreview.Email == nil {
 			break
@@ -1107,8 +1121,9 @@ extend type Query {
 
 extend type Mutation {
   """
-  An invite from the caller's user, working once, for 7 days. With email, only that address can redeem it.
-  RATE_LIMITED with 5 waiting; INVITES_OFF when the server's owner turned invites off.
+  An invite from the caller's user, working once, for 7 days. With email, only that address can redeem it, and the
+  answer has its emailCode: the caller's phone emails it with the link, from the user's own mail app, so the server
+  sends no mail for it. RATE_LIMITED with 5 waiting; INVITES_OFF when the server's owner turned invites off.
   """
   createInvite(email: String): CreatedInvite!
   "Stops the caller's waiting invite id from working. False if there was none."
@@ -1141,6 +1156,8 @@ type CreatedInvite {
   invite: Invite!
   "22 characters, base64url: put it in the invite link. Shown only now."
   code: String!
+  "For an invite with an email: six digits to email there with the link (not in the link). Shown only now."
+  emailCode: String
 }
 
 input InviteEnrollInput {
@@ -1168,6 +1185,8 @@ type InvitePreview {
   "The address the invite is for; null for anyone."
   email: String
   expiresAt: Time!
+  "The inviter emailed the code with the link: type it; inviteEmailCode isn't needed (it answers CODE_FROM_INVITER)."
+  codeFromInviter: Boolean!
 }
 
 type InviteEmailSent {
@@ -1209,6 +1228,8 @@ enum InviteRejectedReason {
   OWN_INVITE
   "The server couldn't send the email; try again later."
   MAIL_FAILED
+  "The inviter emailed the code with the link: use that one."
+  CODE_FROM_INVITER
 }
 `, BuiltIn: false},
 	{Name: "../schema/messaging.graphql", Input: `# --- Keys, pairing and contacts (phase 2) ------------------------------------------------------------------------
@@ -1556,6 +1577,8 @@ func (ec *executionContext) childFields_CreatedInvite(ctx context.Context, field
 		return ec.fieldContext_CreatedInvite_invite(ctx, field)
 	case "code":
 		return ec.fieldContext_CreatedInvite_code(ctx, field)
+	case "emailCode":
+		return ec.fieldContext_CreatedInvite_emailCode(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type CreatedInvite", field.Name)
 }
@@ -2446,6 +2469,29 @@ func (ec *executionContext) fieldContext_CreatedInvite_code(_ context.Context, f
 	return graphql.NewScalarFieldContext("CreatedInvite", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _CreatedInvite_emailCode(ctx context.Context, field graphql.CollectedField, obj *model.CreatedInvite) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CreatedInvite_emailCode(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.EmailCode, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_CreatedInvite_emailCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CreatedInvite", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
 func (ec *executionContext) _EnrolledDevice_user(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -3023,6 +3069,29 @@ func (ec *executionContext) _InvitePreview_expiresAt(ctx context.Context, field 
 }
 func (ec *executionContext) fieldContext_InvitePreview_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("InvitePreview", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _InvitePreview_codeFromInviter(ctx context.Context, field graphql.CollectedField, obj *model.InvitePreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_InvitePreview_codeFromInviter(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.CodeFromInviter, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_InvitePreview_codeFromInviter(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("InvitePreview", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _InviteRejected_reason(ctx context.Context, field graphql.CollectedField, obj *model.InviteRejected) (ret graphql.Marshaler) {
@@ -6795,6 +6864,8 @@ func (ec *executionContext) _CreatedInvite(ctx context.Context, sel ast.Selectio
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "emailCode":
+			out.Values[i] = ec._CreatedInvite_emailCode(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -7169,6 +7240,11 @@ func (ec *executionContext) _InvitePreview(ctx context.Context, sel ast.Selectio
 			out.Values[i] = ec._InvitePreview_email(ctx, field, obj)
 		case "expiresAt":
 			out.Values[i] = ec._InvitePreview_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "codeFromInviter":
+			out.Values[i] = ec._InvitePreview_codeFromInviter(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

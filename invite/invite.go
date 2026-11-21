@@ -51,12 +51,15 @@ type Invite struct {
 	CodeHash  string `json:"code_hash"`
 	InvitedBy string `json:"invited_by"`
 	// The email the invite is for, lower case; empty when it is for whoever opens it.
-	Email     string     `json:"email,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
-	ExpiresAt time.Time  `json:"expires_at"`
-	UsedBy    string     `json:"used_by,omitempty"`
-	UsedAt    *time.Time `json:"used_at,omitempty"`
-	Canceled  bool       `json:"canceled,omitempty"`
+	Email string `json:"email,omitempty"`
+	// For an invite with an email: the SHA-256 (hex) of "<id>/<six digits>", the code the inviter's phone emails
+	// along with the link, from the inviter's own mail app. The server never sends that email itself.
+	EmailCodeHash string     `json:"email_code_hash,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ExpiresAt     time.Time  `json:"expires_at"`
+	UsedBy        string     `json:"used_by,omitempty"`
+	UsedAt        *time.Time `json:"used_at,omitempty"`
+	Canceled      bool       `json:"canceled,omitempty"`
 }
 
 // Pending says whether the invite still works at now.
@@ -92,8 +95,9 @@ func Open(path string, now func() time.Time) (*Store, error) {
 var ErrTooMany = fmt.Errorf("at most %d invites at once: cancel one, or wait for one to be used or expire", MaxPending)
 
 // Create makes an invite from by, for email when it isn't empty (lower-cased; NormalizeEmail checks it), and returns
-// it with its code: 128 random bits, base64url, 22 characters.
-func (s *Store) Create(by, email string) (Invite, string, error) {
+// it with its code (128 random bits, base64url, 22 characters) and, for an invite with an email, the six-digit email
+// code the inviter's phone sends there.
+func (s *Store) Create(by, email string) (Invite, string, string, error) {
 	raw := make([]byte, 16)
 	rand.Read(raw)
 	code := base64.RawURLEncoding.EncodeToString(raw)
@@ -102,6 +106,11 @@ func (s *Store) Create(by, email string) (Invite, string, error) {
 	now := s.now().UTC()
 	invite := Invite{ID: hex.EncodeToString(id), CodeHash: hashCode(code), InvitedBy: by, Email: email,
 		CreatedAt: now, ExpiresAt: now.Add(TTL)}
+	emailCode := ""
+	if email != "" {
+		emailCode = newEmailCode()
+		invite.EmailCodeHash = hashCode(invite.ID + "/" + emailCode)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	held := 0
@@ -111,12 +120,23 @@ func (s *Store) Create(by, email string) (Invite, string, error) {
 		}
 	}
 	if held >= MaxPending {
-		return Invite{}, "", ErrTooMany
+		return Invite{}, "", "", ErrTooMany
 	}
 	if err := s.change(func(list *[]Invite) { *list = append(*list, invite) }); err != nil {
-		return Invite{}, "", err
+		return Invite{}, "", "", err
 	}
-	return invite, code, nil
+	return invite, code, emailCode, nil
+}
+
+// Drop stops invite id from working, whoever made it: one guessed at too often.
+func (s *Store) Drop(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at := slices.IndexFunc(s.invites, func(i Invite) bool { return i.ID == id })
+	if at < 0 {
+		return nil
+	}
+	return s.change(func(list *[]Invite) { (*list)[at].Canceled = true })
 }
 
 // List is by's pending invites, newest first.

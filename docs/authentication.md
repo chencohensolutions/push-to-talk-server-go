@@ -123,7 +123,11 @@ inviter, so the friend needs no code from the server's owner (package `invite`, 
 2. The phone builds the link: the server part as in an enrollment link (`server`, `fingerprint`, `key`, `address`),
    the invite `code`, and the inviter's pairing part (`u`, `k`, `s`: user, identity key, secret, as in the Add contact
    QR code, without a token). With an email, `e` too.
-3. A friend **not enrolled here** opens it. `invitePreview(code)` says who it is from. They type their email;
+3. A friend **not enrolled here** opens it. `invitePreview(code)` says who it is from, and whether the inviter sent
+   the code (`codeFromInviter`). **An invite with an email** carries its code from the start: `createInvite` answers
+   six random digits (`emailCode`, kept hashed with the invite, working as long as it), and the inviter's phone emails
+   them with the link from the user's own mail app, so the server sends no mail and holds no mail password. 10 wrong
+   codes end the invite. **An invite without one:** the friend types their email, and
    `inviteEmailCode(code, email)` sends six random digits there, valid 15 minutes, a new code each time (the one
    before stops working), at most 5 per invite and 30 seconds apart. `enrollWithInvite` then takes the email, the
    digits, the friend's display name and the certificate request: the server checks the invite, that the email is
@@ -143,7 +147,8 @@ a different script, with a number added when taken (`dana.cohen`, then `dana.coh
 `display_name` (the friend's first and last name, free text, at most 64 characters, not unique) and `invited_by`;
 `me` and `contacts` answer `displayName`, and `me` the `email`.
 
-**Mail.** With `smtp` in `config.json` the codes go by email (STARTTLS on 587, or TLS on 465; Gmail with an app
+**Mail.** Only invites without an email need the server to send mail (an invite with one is emailed by the
+inviter's phone; `inviteEmailCode` answers `CODE_FROM_INVITER` for it). With `smtp` in `config.json` the codes go by email (STARTTLS on 587, or TLS on 465; Gmail with an app
 password works). Without it they are written to the server's log, which is enough to try invites at home.
 
 **Limits.** Wrong invite codes and wrong email codes count against the client address's limit, as enrollment codes

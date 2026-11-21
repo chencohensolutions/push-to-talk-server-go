@@ -53,20 +53,33 @@ func (e *testEnv) mailbox() *sentMail {
 
 func (e *testEnv) createInvite(t *testing.T, p *phone, email string) (string, string) {
 	t.Helper()
+	code, _, problem := e.createInviteWithCode(t, p, email)
+	return code, problem
+}
+
+// createInviteWithCode is createInvite with the email code the inviter's phone emails (empty without an email).
+func (e *testEnv) createInviteWithCode(t *testing.T, p *phone, email string) (string, string, string) {
+	t.Helper()
 	vars := map[string]any{}
 	if email != "" {
 		vars["email"] = email
 	}
-	r := e.graphql(t, p.client, `mutation($email: String) { createInvite(email: $email) { code invite { id email expiresAt } } }`, vars)
+	r := e.graphql(t, p.client, `mutation($email: String) { createInvite(email: $email) { code emailCode invite { id email expiresAt } } }`, vars)
 	if code := errorCode(r); code != "" {
-		return "", code
+		return "", "", code
 	}
-	var got struct{ Code string }
+	var got struct {
+		Code      string
+		EmailCode *string
+	}
 	json.Unmarshal(r.Data["createInvite"], &got)
-	if len(r.Errors) > 0 || len(got.Code) != 22 {
+	if len(r.Errors) > 0 || len(got.Code) != 22 || (email != "") != (got.EmailCode != nil) {
 		t.Fatalf("createInvite: %s %+v", r.Data["createInvite"], r.Errors)
 	}
-	return got.Code, ""
+	if got.EmailCode == nil {
+		return got.Code, "", ""
+	}
+	return got.Code, *got.EmailCode, ""
 }
 
 // anonymous runs a public field without a certificate and gives its answer.
@@ -129,10 +142,13 @@ func TestAFriendJoinsByAnInvite(t *testing.T) {
 	if _, problem := env.createInvite(t, hen, "not an email"); problem != "INVALID_EMAIL" {
 		t.Fatalf("an invite for a bad address: %s", problem)
 	}
-	code, _ := env.createInvite(t, hen, " Dana@Example.com ")
-	preview := env.anonymous(t, `query($c: String!) { invitePreview(code: $c) { __typename ... on InvitePreview { inviter email } } }`,
+	code, digits, _ := env.createInviteWithCode(t, hen, " Dana@Example.com ")
+	if !sixDigits.MatchString(digits) {
+		t.Fatalf("email code = %q", digits)
+	}
+	preview := env.anonymous(t, `query($c: String!) { invitePreview(code: $c) { __typename ... on InvitePreview { inviter email codeFromInviter } } }`,
 		map[string]any{"c": code}, "invitePreview")
-	if preview != `{"__typename":"InvitePreview","inviter":"hen","email":"dana@example.com"}` {
+	if preview != `{"__typename":"InvitePreview","inviter":"hen","email":"dana@example.com","codeFromInviter":true}` {
 		t.Fatalf("preview = %s", preview)
 	}
 	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": code, "email": "eve@example.com"}, "inviteEmailCode"); !strings.Contains(got, "EMAIL_MISMATCH") {
@@ -141,14 +157,17 @@ func TestAFriendJoinsByAnInvite(t *testing.T) {
 	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": "wrong", "email": "dana@example.com"}, "inviteEmailCode"); !strings.Contains(got, "INVALID_CODE") {
 		t.Fatalf("a wrong invite: %s", got)
 	}
-	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": code, "email": "DANA@example.com"}, "inviteEmailCode"); got != `{"__typename":"InviteEmailSent","email":"dana@example.com"}` {
-		t.Fatalf("the email code: %s", got)
+	// The server sends no mail for it: hen's phone did.
+	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": code, "email": "DANA@example.com"}, "inviteEmailCode"); !strings.Contains(got, "CODE_FROM_INVITER") {
+		t.Fatalf("asking the server for a code: %s", got)
 	}
-	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": code, "email": "dana@example.com"}, "inviteEmailCode"); !strings.Contains(got, "RATE_LIMITED") {
-		t.Fatalf("a second code at once: %s", got)
+	if len(box.mail) != 0 {
+		t.Fatalf("the server sent mail: %+v", box.mail)
 	}
-	digits := box.lastCode(t, "dana@example.com")
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if got := env.enrollWithInvite(t, code, "eve@example.com", digits, key); got.Reason != "EMAIL_MISMATCH" {
+		t.Fatalf("enrolling with another email: %+v", got)
+	}
 	wrong := "000000"
 	if digits == wrong {
 		wrong = "111111"
@@ -202,6 +221,31 @@ func TestAFriendJoinsByAnInvite(t *testing.T) {
 	again, _ := env.createInvite(t, hen, "")
 	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": again, "email": "dana@EXAMPLE.com"}, "inviteEmailCode"); !strings.Contains(got, "EMAIL_TAKEN") {
 		t.Fatalf("a code for a taken email: %s", got)
+	}
+}
+
+// An invite without an email: the friend types theirs, and the server sends the code (over SMTP, or to its log).
+func TestAnOpenInviteSendsTheCodeFromTheServer(t *testing.T) {
+	env := newTestEnv(t)
+	box := env.mailbox()
+	env.addUser(t, "hen")
+	hen := env.phone(t, "hen")
+	code, _ := env.createInvite(t, hen, "")
+	preview := env.anonymous(t, `query($c: String!) { invitePreview(code: $c) { ... on InvitePreview { email codeFromInviter } } }`,
+		map[string]any{"c": code}, "invitePreview")
+	if preview != `{"email":null,"codeFromInviter":false}` {
+		t.Fatalf("preview = %s", preview)
+	}
+	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": code, "email": "Eve@Example.com"}, "inviteEmailCode"); got != `{"__typename":"InviteEmailSent","email":"eve@example.com"}` {
+		t.Fatalf("the email code: %s", got)
+	}
+	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": code, "email": "eve@example.com"}, "inviteEmailCode"); !strings.Contains(got, "RATE_LIMITED") {
+		t.Fatalf("a second code at once: %s", got)
+	}
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	got := env.enrollWithInvite(t, code, "eve@example.com", box.lastCode(t, "eve@example.com"), key)
+	if got.Typename != "InviteEnrolled" || got.Device.User != "eve" || got.Pairing.Inviter != "hen" {
+		t.Fatalf("enrollWithInvite = %+v", got)
 	}
 }
 

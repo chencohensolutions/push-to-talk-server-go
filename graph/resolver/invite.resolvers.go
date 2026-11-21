@@ -31,7 +31,7 @@ func (r *mutationResolver) CreateInvite(ctx context.Context, email *string) (*mo
 	if email != nil {
 		address = *email
 	}
-	created, code, err := r.Invites.Create(d.User, address)
+	created, code, emailCode, err := r.Invites.Create(d.User, address)
 	switch {
 	case errors.Is(err, invite.ErrInvalidEmail):
 		return nil, coded(CodeInvalidEmail, "%v", err)
@@ -40,7 +40,7 @@ func (r *mutationResolver) CreateInvite(ctx context.Context, email *string) (*mo
 	case err != nil:
 		return nil, err
 	}
-	return &model.CreatedInvite{Invite: inviteModel(created), Code: code}, nil
+	return &model.CreatedInvite{Invite: inviteModel(created), Code: code, EmailCode: nonEmpty(emailCode)}, nil
 }
 
 // CancelInvite is the resolver for the cancelInvite field.
@@ -149,5 +149,5 @@ func (r *queryResolver) InvitePreview(ctx context.Context, code string) (model.I
 		return model.InviteRejected{Reason: model.InviteRejectedReason(rejection)}, nil
 	}
 	return model.InvitePreview{Inviter: preview.Inviter, InviterDisplayName: nonEmpty(preview.InviterDisplayName),
-		Email: nonEmpty(preview.Email), ExpiresAt: preview.ExpiresAt}, nil
+		Email: nonEmpty(preview.Email), ExpiresAt: preview.ExpiresAt, CodeFromInviter: preview.CodeFromInviter}, nil
 }
