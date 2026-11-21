@@ -1,0 +1,44 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.so.*
+*.dylib
+/ptt-server
+/push-to-talk-server-go
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# IDEs
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+bin/
+dist/
+
+# Environment files
+.env
+.env.local
+
+# A server folder run from the source folder: its own config, certificates and state (setup makes them)
+/config.json
+/certs/*
+!/certs/*.go
+admin.token
+users.json
+devices.json
+devices.revoked.json
+server.log
+server.log.old
