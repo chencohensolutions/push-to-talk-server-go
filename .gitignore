@@ -40,5 +40,8 @@ admin.token
 users.json
 devices.json
 devices.revoked.json
+pairs.json
+ptt.db
+ptt.db-*
 server.log
 server.log.old

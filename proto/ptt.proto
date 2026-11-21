@@ -1,0 +1,134 @@
+// The frames of /ws (docs/messaging.md). One binary WebSocket message is one Frame. The server only reads the routing
+// fields: what an envelope carries is libsignal ciphertext it can't open.
+//
+// Kept in the server repo and copied to the client (push-to-talk-kmp), like the GraphQL schema: change both together.
+// Generate the Go code with the commands in CLAUDE.md ("Commands").
+syntax = "proto3";
+
+package ptt.v1;
+
+option go_package = "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1;pttv1";
+
+message Frame {
+  oneof kind {
+    // Server to device: one envelope from the device's queue, or a live one. The device answers with an Ack once it
+    // has stored what the envelope carried.
+    Envelope envelope = 1;
+    // Device to server: these envelopes are taken; the server deletes them from the device's queue.
+    Ack ack = 2;
+    // Device to server: one message, encrypted once per recipient device.
+    Send send = 3;
+    // Server to device: what became of a Send.
+    SendResult send_result = 4;
+    // Either way: the other side answers a Ping with a Pong carrying the same id.
+    Ping ping = 5;
+    Pong pong = 6;
+    // Server to device: every envelope queued when the device connected has been sent; what follows is live.
+    QueueEmpty queue_empty = 7;
+  }
+}
+
+message Envelope {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    // libsignal's PreKeySignalMessage: the first message of a session.
+    PREKEY_MESSAGE = 1;
+    // libsignal's SignalMessage: a message in an open session.
+    MESSAGE = 2;
+    // libsignal's SenderKeyMessage (groups, phase 4).
+    SENDER_KEY_MESSAGE = 3;
+    // Linking a phone: sealed by an existing device to the one-time key a newly enrolled device of the same user shows
+    // in its QR code. Only to one device of the sender's own user, in a Send of its own.
+    PROVISIONING = 4;
+    // Made by the server, never sent by a device: sender_user replaced its identity key (replaceIdentityKey);
+    // ciphertext is the new public identity key, as uploaded. Sent to the devices of every contact.
+    IDENTITY_KEY_CHANGED = 5;
+    // Made by the server: sender_user and the recipient are now paired (both called confirmPair). ciphertext is empty.
+    PAIRED = 6;
+  }
+
+  // Given by the server (32 hex digits); what an Ack names.
+  string id = 1;
+  // Filled in by the server from the sender's certificate; a device leaves them empty in a Send.
+  string sender_user = 2;
+  uint32 sender_device = 3;
+  string recipient_user = 4;
+  uint32 recipient_device = 5;
+  Type type = 6;
+  // At most 256 KB.
+  bytes ciphertext = 7;
+  // When the server took the envelope, milliseconds since 1970 (UTC). Set by the server.
+  int64 server_timestamp = 8;
+  // In a Send only: a pairing token of recipient_user (the pairingToken mutation, from the recipient's QR code), so
+  // the server routes this one message between two users that aren't paired. The server takes it out before delivery.
+  string routing_token = 9;
+  // In a Send only, optional: the registration id the sender's session has for this device (from prekeyBundles).
+  // When it isn't the device's current one, the Send is refused STALE_DEVICES. 0 skips the check.
+  uint32 recipient_registration_id = 10;
+}
+
+message Ack {
+  repeated string ids = 1;
+}
+
+// One message to one other user, or to the sender's own devices only. It holds one envelope for every active device
+// of the recipient and one for every other active device of the sender (so all the sender's phones show what was
+// sent): a device that is missing or that isn't active gets the Send refused STALE_DEVICES. A PROVISIONING envelope
+// goes alone.
+message Send {
+  // Chosen by the device and given back in the SendResult.
+  string client_id = 1;
+  repeated Envelope envelopes = 2;
+}
+
+message SendResult {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // Queued for every device; envelope_ids are the ids given, in the order of the Send's envelopes.
+    ACCEPTED = 1;
+    // The users aren't paired and no envelope carried a valid routing token of the recipient.
+    NOT_PAIRED = 2;
+    // The envelopes don't cover exactly the active devices (or a registration id changed): devices lists them now.
+    // Fetch the new devices' prekeyBundles and send again.
+    STALE_DEVICES = 3;
+    // The recipient isn't a user of this server (or the provisioning target isn't an enrolled device).
+    UNKNOWN_USER = 4;
+    // One of the two blocked the other.
+    BLOCKED = 5;
+    // The Send is malformed: detail says how (no envelopes, more than one other user, an empty ciphertext, a type a
+    // device can't send, a device twice).
+    INVALID = 6;
+    // An envelope is over 256 KB.
+    TOO_LARGE = 7;
+    // A recipient device's queue is full (it hasn't connected for a long time); nothing was queued.
+    QUEUE_FULL = 8;
+  }
+
+  string client_id = 1;
+  Status status = 2;
+  repeated string envelope_ids = 3;
+  // With STALE_DEVICES: the active devices of each user the Send addressed (the recipient and the sender).
+  repeated UserDevices devices = 4;
+  // For the log, in English.
+  string detail = 5;
+}
+
+message UserDevices {
+  string user = 1;
+  repeated ActiveDevice devices = 2;
+}
+
+message ActiveDevice {
+  uint32 device_number = 1;
+  uint32 registration_id = 2;
+}
+
+message Ping {
+  uint64 id = 1;
+}
+
+message Pong {
+  uint64 id = 1;
+}
+
+message QueueEmpty {}

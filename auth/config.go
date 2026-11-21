@@ -33,6 +33,12 @@ type AppConfig struct {
 	// Take only certificates the registry lists (enrolled with a code): one the CA signed that it doesn't know is
 	// refused. Setup turns it on.
 	EnrolledOnly bool `json:"enrolled_only"`
+	// Pairs and blocks (default pairs.json): who may send to whom (docs/messaging.md).
+	PairsFile string `json:"pairs_file"`
+	// The SQLite database (default ptt.db): the devices' public prekeys and the message queue.
+	DatabaseFile string `json:"database_file"`
+	// Days an envelope waits in the queue for a device that doesn't take it (default 30).
+	QueueDays int `json:"queue_days"`
 	// Loopback-only listener for the admin GraphQL API (default 127.0.0.1:8082).
 	AdminAddr string `json:"admin_addr"`
 	// Token for the admin API, rewritten on every server start (default admin.token).
@@ -43,6 +49,9 @@ const (
 	DefaultPort           = "56400"
 	DefaultUsersFile      = "users.json"
 	DefaultDevicesFile    = "devices.json"
+	DefaultPairsFile      = "pairs.json"
+	DefaultDatabaseFile   = "ptt.db"
+	DefaultQueueDays      = 30
 	DefaultAdminAddr      = "127.0.0.1:8082"
 	DefaultAdminTokenFile = "admin.token"
 )
@@ -80,6 +89,15 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.DevicesFile == "" {
 		c.DevicesFile = DefaultDevicesFile
+	}
+	if c.PairsFile == "" {
+		c.PairsFile = DefaultPairsFile
+	}
+	if c.DatabaseFile == "" {
+		c.DatabaseFile = DefaultDatabaseFile
+	}
+	if c.QueueDays <= 0 {
+		c.QueueDays = DefaultQueueDays
 	}
 	if c.AdminAddr == "" {
 		c.AdminAddr = DefaultAdminAddr

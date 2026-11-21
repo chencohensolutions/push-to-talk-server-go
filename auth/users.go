@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,11 @@ import (
 type User struct {
 	Name    string    `json:"name"`
 	AddedAt time.Time `json:"added_at"`
+	// The user's public identity key (libsignal's serialized IdentityKey, 33 bytes), set by the first device's
+	// uploadPrekeys and changed only by replaceIdentityKey (docs/messaging.md). Empty until then.
+	IdentityKey []byte `json:"identity_key,omitempty"`
+	// When IdentityKey was last set.
+	IdentityKeySetAt *time.Time `json:"identity_key_set_at,omitempty"`
 }
 
 // ErrUserExists and ErrUnknownUser are what Add and Remove refuse.
@@ -142,6 +148,38 @@ func (u *Users) Remove(name string) (User, error) {
 		return user, nil
 	}
 	return User{}, fmt.Errorf("%w: %s", ErrUnknownUser, name)
+}
+
+// ErrIdentityKeyMismatch is SetIdentityKey with a key that isn't the one the user already has.
+var ErrIdentityKeyMismatch = errors.New("the user has another identity key")
+
+// SetIdentityKey gives user its identity key. When the user already has one, the same key changes nothing, and
+// another is refused with ErrIdentityKeyMismatch unless replace is set. It reports whether the key changed.
+func (u *Users) SetIdentityKey(name string, key []byte, replace bool, at time.Time) (bool, error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for i := range u.users {
+		if u.users[i].Name != name {
+			continue
+		}
+		current := u.users[i].IdentityKey
+		if bytes.Equal(current, key) {
+			return false, nil
+		}
+		if len(current) > 0 && !replace {
+			return false, ErrIdentityKeyMismatch
+		}
+		previous := u.users[i]
+		at = at.UTC()
+		u.users[i].IdentityKey = bytes.Clone(key)
+		u.users[i].IdentityKeySetAt = &at
+		if err := u.save(); err != nil {
+			u.users[i] = previous
+			return false, err
+		}
+		return true, nil
+	}
+	return false, fmt.Errorf("%w: %s", ErrUnknownUser, name)
 }
 
 // save writes the file through a temp file and rename. Callers hold mu.
