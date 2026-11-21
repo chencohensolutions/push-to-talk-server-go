@@ -38,3 +38,11 @@ const (
 	// CodeRateLimited: too many pairing tokens at once.
 	CodeRateLimited = "RATE_LIMITED"
 )
+
+// Codes of the invite fields (invite.graphql).
+const (
+	// CodeInvitesOff: the server's config.json has "invites": false.
+	CodeInvitesOff = "INVITES_OFF"
+	// CodeInvalidEmail: createInvite with something that isn't one plain email address.
+	CodeInvalidEmail = "INVALID_EMAIL"
+)

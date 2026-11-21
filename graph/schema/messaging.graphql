@@ -154,6 +154,8 @@ enum PairState {
 
 type Contact {
   user: String!
+  "The name the contact gave for themselves when they joined by an invite; null otherwise."
+  displayName: String
   "Null when the contact has no identity key on the server (it replaced it, and none of its phones uploaded one yet)."
   identityKey: String
   since: Time!

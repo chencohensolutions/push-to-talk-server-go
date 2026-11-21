@@ -48,6 +48,8 @@ Removed user hen and revoked 1 of its devices
 - `user remove` takes the user out of `users.json` (its certificates are refused from then on, since `identify`
   finds no user) and revokes all its devices, so a user added again by the same name doesn't get them back. A code
   made for the user before is refused too (`enroll.Service.UserExists`).
+- Names are unique in any case: `user add Hen` is refused beside `hen` (`auth.Users.Add`), so two users can't look
+  the same.
 - `users.json` also keeps each user's public identity key (`identity_key`), set by the first device's
   `uploadPrekeys` ([messaging.md](messaging.md)). `user remove` drops it with the user, and the user's pairs, blocks,
   prekeys and queued envelopes go too.
@@ -108,6 +110,45 @@ ptt://enroll?code=K7QM-4XPD&server=<url>&fingerprint=<sha256 of the server key>&
   for each of the server's addresses (at most 6: `public_url`, the router's mapping, the public IPv4 from STUN, IPv6,
   LAN). See [discovery.md](discovery.md).
 - The QR code is drawn white on black whatever the terminal's colors; on Windows use Windows Terminal.
+
+## Invites
+
+An enrolled user invites a friend with one link, `ptt://invite?…`, that enrolls the friend and pairs them with the
+inviter, so the friend needs no code from the server's owner (package `invite`, `graph/schema/invite.graphql`).
+
+1. The inviter's phone calls `createInvite(email)`. The server keeps the invite in `invites.json` (`invites_file`):
+   a short `id`, the SHA-256 of its code, who made it, the email it is for (optional, lower case), and when it
+   expires, **7 days** on. The code (128 random bits, base64url) is answered once and goes only into the link. At
+   most 5 invites wait per user; `invites` lists them and `cancelInvite(id)` stops one.
+2. The phone builds the link: the server part as in an enrollment link (`server`, `fingerprint`, `key`, `address`),
+   the invite `code`, and the inviter's pairing part (`u`, `k`, `s`: user, identity key, secret, as in the Add contact
+   QR code, without a token). With an email, `e` too.
+3. A friend **not enrolled here** opens it. `invitePreview(code)` says who it is from. They type their email;
+   `inviteEmailCode(code, email)` sends six random digits there, valid 15 minutes, a new code each time (the one
+   before stops working), at most 5 per invite and 30 seconds apart. `enrollWithInvite` then takes the email, the
+   digits, the friend's display name and the certificate request: the server checks the invite, that the email is
+   the invite's (when it has one) and nobody else's, and the digits (5 wrong ones drop the code); then it makes the
+   user and the device's certificate in one step, uses up the invite, and answers the certificate and a **pairing
+   token of the inviter**.
+4. A friend **already enrolled here** calls `acceptInvite(code)` with their certificate instead, and gets the
+   pairing token. Their own invite is refused (`OWN_INVITE`), and one for another email than theirs.
+5. The friend's phone pairs with the token as with one read from the inviter's QR code ([messaging.md](messaging.md)):
+   bundles with the token, the pair request with the secret `s`, `confirmPair`. The inviter's phone knows the secret
+   from step 2, so it accepts the request without a tap, and marks the contact "not verified" until the two compare
+   safety numbers: the link may have been forwarded.
+
+**The user.** The email is the unique part of an invited user: no two users share one, compared in lower case. The
+user name is made from the email's local part, in a–z, 0–9, `.`, `-` and `_` only, so it can't pass for another in
+a different script, with a number added when taken (`dana.cohen`, then `dana.cohen2`). `users.json` keeps `email`,
+`display_name` (the friend's first and last name, free text, at most 64 characters, not unique) and `invited_by`;
+`me` and `contacts` answer `displayName`, and `me` the `email`.
+
+**Mail.** With `smtp` in `config.json` the codes go by email (STARTTLS on 587, or TLS on 465; Gmail with an app
+password works). Without it they are written to the server's log, which is enough to try invites at home.
+
+**Limits.** Wrong invite codes and wrong email codes count against the client address's limit, as enrollment codes
+do (5 a minute). The email codes are in memory: a restart means asking for a new one. `"invites": false` turns
+invites off (`INVITES_OFF`).
 
 ## Issued certificates
 
@@ -185,8 +226,10 @@ server's admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/adm
 | `enrollmentPreview(code)` | no (`@public`) | the user a code is for, and when it expires |
 | `enrollDevice(input)` | no (`@public`) | the certificate, device number and CA |
 | `renewCertificate(csr, keyProtection)` | yes | a new certificate for the same device |
+| `invitePreview(code)`, `inviteEmailCode(code, email)`, `enrollWithInvite(input)` | no (`@public`) | redeeming an invite on a new phone ([Invites](#invites)) |
+| `createInvite(email)`, `invites`, `cancelInvite(id)`, `acceptInvite(code)` | yes | making invites, and redeeming one on an enrolled phone |
 | `serverInfo` | yes | `api`, `version`, `caCertificate`, `renewCertificates`, the caller's `deviceNumber`, and `discovery { fingerprint id key addresses }` |
-| `me` | yes | `user`, `deviceNumber`, `deviceName`, `identityKey`: what the app asks to show "connected" |
+| `me` | yes | `user`, `deviceNumber`, `deviceName`, `identityKey`, `displayName`, `email`: what the app asks to show "connected" |
 | `uploadPrekeys`, `prekeyCount`, `prekeyBundles`, `replaceIdentityKey` | yes | keys ([messaging.md](messaging.md)) |
 | `pairingToken`, `confirmPair`, `unpair`, `block`, `unblock`, `contacts`, `blocked`, `devices` | yes | pairing and contacts ([messaging.md](messaging.md)) |
 
@@ -220,7 +263,16 @@ pinned key) at any address. See the client repo's docs.
   "admin_token_file": "admin.token",            // optional (default)
   "discovery": true,                            // optional (default): publish the addresses in the DHT
   "port_mapping": true,                         // optional (default): UPnP / NAT-PMP
-  "playground": false                           // optional: serve the GraphQL playground at /
+  "playground": false,                          // optional: serve the GraphQL playground at /
+  "invites": true,                              // optional (default): users may invite friends
+  "invites_file": "invites.json",               // optional (default)
+  "smtp": {                                     // optional: send invite codes by email (else they are only logged)
+    "host": "smtp.gmail.com",
+    "port": 587,                                // 587 STARTTLS (default) or 465 TLS
+    "username": "you@gmail.com",
+    "password_file": "smtp.password",           // the (app) password, in its own file
+    "from": "Talk <you@gmail.com>"              // optional: the username when empty
+  }
 }
 ```
 
@@ -230,6 +282,10 @@ Unknown keys are refused at start, so a typo (or a Journal `config.json` with it
 it readable only by the account that runs the server.
 
 ## Threat notes
+
+- **Forwarded invite link:** whoever opens it first can redeem it (once, within 7 days). An invite for an email can
+  only be redeemed by someone who reads that mailbox. The inviter's phone shows the new contact as "not verified"
+  until they compare safety numbers, and `cancelInvite` stops a link that went astray.
 
 - **Stolen enrollment code:** usable once, for at most 10 minutes, and only for the user it was made for. If a code
   may have leaked, check `ptt-server devices` and revoke any device you don't recognize.

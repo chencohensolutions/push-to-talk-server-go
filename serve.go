@@ -24,6 +24,8 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/generated"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/resolver"
+	"github.com/chencohensolutions/push-to-talk-server-go/invite"
+	"github.com/chencohensolutions/push-to-talk-server-go/mail"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
 	"github.com/chencohensolutions/push-to-talk-server-go/version"
@@ -45,6 +47,8 @@ type server struct {
 	book  *contacts.Book
 	store *store.Store
 	relay *relay.Relay
+	// Invites (invites.json, the email codes); nil when config.json turns them off.
+	invites *invite.Service
 	// Who this server is and where, for serverInfo.discovery; nil when unknown.
 	discovery func() *model.ServerDiscovery
 }
@@ -121,8 +125,20 @@ func openServer(config auth.AppConfig) (*server, error) {
 		return nil, fmt.Errorf("failed to open the database: %w", err)
 	}
 	queueTTL := time.Duration(config.QueueDays) * 24 * time.Hour
-	return &server{config: config, users: users, enrollment: enrollment, book: book, store: st,
-		relay: relay.New(users, enrollment.Registry, st, book, queueTTL, time.Now)}, nil
+	s := &server{config: config, users: users, enrollment: enrollment, book: book, store: st,
+		relay: relay.New(users, enrollment.Registry, st, book, queueTTL, time.Now)}
+	if config.InvitesOn() {
+		invites, err := invite.Open(config.InvitesFile, time.Now)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open the invites: %w", err)
+		}
+		sender, err := mail.New(config.SMTP)
+		if err != nil {
+			return nil, fmt.Errorf("config.json: %w", err)
+		}
+		s.invites = invite.NewService(invites, users, enrollment, book, sender, time.Now)
+	}
+	return s, nil
 }
 
 // createTLSConfig loads the server certificate and trusts the client CA for client certificates.
@@ -198,7 +214,7 @@ func (s *server) newMux() *http.ServeMux {
 
 func (s *server) newGraphQLServer() *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
-		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Now: time.Now,
+		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Invites: s.invites, Now: time.Now,
 			Version: version.String(),
 			Discovery: func() *model.ServerDiscovery {
 				if s.discovery == nil {

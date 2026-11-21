@@ -18,8 +18,26 @@ type EnrollmentPreviewResult interface {
 	IsEnrollmentPreviewResult()
 }
 
+type InviteAcceptResult interface {
+	IsInviteAcceptResult()
+}
+
+type InviteEmailResult interface {
+	IsInviteEmailResult()
+}
+
+type InviteEnrollResult interface {
+	IsInviteEnrollResult()
+}
+
+type InvitePreviewResult interface {
+	IsInvitePreviewResult()
+}
+
 type Contact struct {
 	User string `json:"user"`
+	// The name the contact gave for themselves when they joined by an invite; null otherwise.
+	DisplayName *string `json:"displayName,omitempty"`
 	// Null when the contact has no identity key on the server (it replaced it, and none of its phones uploaded one yet).
 	IdentityKey *string   `json:"identityKey,omitempty"`
 	Since       time.Time `json:"since"`
@@ -32,6 +50,12 @@ type Contact struct {
 type ContactDevice struct {
 	DeviceNumber   int `json:"deviceNumber"`
 	RegistrationID int `json:"registrationId"`
+}
+
+type CreatedInvite struct {
+	Invite *Invite `json:"invite"`
+	// 22 characters, base64url: put it in the invite link. Shown only now.
+	Code string `json:"code"`
 }
 
 type EnrollDeviceInput struct {
@@ -74,6 +98,74 @@ func (EnrollmentRejected) IsEnrollmentPreviewResult() {}
 
 func (EnrollmentRejected) IsEnrollDeviceResult() {}
 
+type Invite struct {
+	// A short id, to cancel it by.
+	ID string `json:"id"`
+	// The address only it may be redeemed with; null for whoever opens it.
+	Email     *string   `json:"email,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+type InviteEmailSent struct {
+	Email string `json:"email"`
+	// When the code stops working.
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+func (InviteEmailSent) IsInviteEmailResult() {}
+
+type InviteEnrollInput struct {
+	// From the invite link.
+	Code  string `json:"code"`
+	Email string `json:"email"`
+	// The six digits sent to email; spaces and dashes are ignored.
+	EmailCode string `json:"emailCode"`
+	// The friend's own name, as their contacts see it (first and last name, any letters).
+	DisplayName string `json:"displayName"`
+	// As in EnrollDeviceInput.
+	DeviceName    string        `json:"deviceName"`
+	Csr           string        `json:"csr"`
+	KeyProtection KeyProtection `json:"keyProtection"`
+}
+
+type InviteEnrolled struct {
+	Device  *EnrolledDevice `json:"device"`
+	Pairing *InvitePairing  `json:"pairing"`
+}
+
+func (InviteEnrolled) IsInviteEnrollResult() {}
+
+type InvitePairing struct {
+	Inviter string `json:"inviter"`
+	// A pairing token of the inviter (as pairingToken), for the pair request; null when none could be made: scan their QR code instead.
+	PairingToken *PairingToken `json:"pairingToken,omitempty"`
+}
+
+func (InvitePairing) IsInviteAcceptResult() {}
+
+type InvitePreview struct {
+	Inviter            string  `json:"inviter"`
+	InviterDisplayName *string `json:"inviterDisplayName,omitempty"`
+	// The address the invite is for; null for anyone.
+	Email     *string   `json:"email,omitempty"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+func (InvitePreview) IsInvitePreviewResult() {}
+
+type InviteRejected struct {
+	Reason InviteRejectedReason `json:"reason"`
+}
+
+func (InviteRejected) IsInvitePreviewResult() {}
+
+func (InviteRejected) IsInviteEmailResult() {}
+
+func (InviteRejected) IsInviteEnrollResult() {}
+
+func (InviteRejected) IsInviteAcceptResult() {}
+
 type KyberPrekey struct {
 	KeyID      int    `json:"keyId"`
 	PublicKey  string `json:"publicKey"`
@@ -88,6 +180,10 @@ type Me struct {
 	DeviceNumber int `json:"deviceNumber"`
 	// The name the device enrolled with.
 	DeviceName string `json:"deviceName"`
+	// The name the user gave for themselves when they joined by an invite; null otherwise.
+	DisplayName *string `json:"displayName,omitempty"`
+	// The email the user proved when they joined by an invite; null otherwise.
+	Email *string `json:"email,omitempty"`
 	// The user's identity key, base64; null until a device of the user uploaded it (uploadPrekeys).
 	IdentityKey *string `json:"identityKey,omitempty"`
 }
@@ -269,6 +365,83 @@ func (e *EnrollmentRejectedReason) UnmarshalJSON(b []byte) error {
 }
 
 func (e EnrollmentRejectedReason) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type InviteRejectedReason string
+
+const (
+	// Wrong, used, canceled or expired invite.
+	InviteRejectedReasonInvalidCode  InviteRejectedReason = "INVALID_CODE"
+	InviteRejectedReasonInvalidEmail InviteRejectedReason = "INVALID_EMAIL"
+	// The invite is for another email address.
+	InviteRejectedReasonEmailMismatch InviteRejectedReason = "EMAIL_MISMATCH"
+	// Another user has this email: enroll a new phone of theirs with a code from the server's owner instead.
+	InviteRejectedReasonEmailTaken InviteRejectedReason = "EMAIL_TAKEN"
+	// The email code is wrong or expired; after 5 wrong ones, ask for a new one.
+	InviteRejectedReasonWrongEmailCode InviteRejectedReason = "WRONG_EMAIL_CODE"
+	// Too many wrong codes from this address (wait a minute), or too many email codes for this invite.
+	InviteRejectedReasonRateLimited InviteRejectedReason = "RATE_LIMITED"
+	// The certificate request is malformed, badly signed or not for an EC P-256 key.
+	InviteRejectedReasonInvalidCsr InviteRejectedReason = "INVALID_CSR"
+	// The inviter opened their own invite.
+	InviteRejectedReasonOwnInvite InviteRejectedReason = "OWN_INVITE"
+	// The server couldn't send the email; try again later.
+	InviteRejectedReasonMailFailed InviteRejectedReason = "MAIL_FAILED"
+)
+
+var AllInviteRejectedReason = []InviteRejectedReason{
+	InviteRejectedReasonInvalidCode,
+	InviteRejectedReasonInvalidEmail,
+	InviteRejectedReasonEmailMismatch,
+	InviteRejectedReasonEmailTaken,
+	InviteRejectedReasonWrongEmailCode,
+	InviteRejectedReasonRateLimited,
+	InviteRejectedReasonInvalidCsr,
+	InviteRejectedReasonOwnInvite,
+	InviteRejectedReasonMailFailed,
+}
+
+func (e InviteRejectedReason) IsValid() bool {
+	switch e {
+	case InviteRejectedReasonInvalidCode, InviteRejectedReasonInvalidEmail, InviteRejectedReasonEmailMismatch, InviteRejectedReasonEmailTaken, InviteRejectedReasonWrongEmailCode, InviteRejectedReasonRateLimited, InviteRejectedReasonInvalidCsr, InviteRejectedReasonOwnInvite, InviteRejectedReasonMailFailed:
+		return true
+	}
+	return false
+}
+
+func (e InviteRejectedReason) String() string {
+	return string(e)
+}
+
+func (e *InviteRejectedReason) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = InviteRejectedReason(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid InviteRejectedReason", str)
+	}
+	return nil
+}
+
+func (e InviteRejectedReason) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *InviteRejectedReason) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e InviteRejectedReason) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

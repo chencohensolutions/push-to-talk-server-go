@@ -15,5 +15,7 @@
   "admin_token_file": "admin.token",
   "discovery": true,
   "port_mapping": true,
-  "playground": false
+  "playground": false,
+  "invites": true,
+  "invites_file": "invites.json"
 }

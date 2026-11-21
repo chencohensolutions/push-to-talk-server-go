@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/chencohensolutions/push-to-talk-server-go/mail"
 )
 
 type AppConfig struct {
@@ -39,6 +41,13 @@ type AppConfig struct {
 	DatabaseFile string `json:"database_file"`
 	// Days an envelope waits in the queue for a device that doesn't take it (default 30).
 	QueueDays int `json:"queue_days"`
+	// Let enrolled users invite friends (createInvite): one link that enrolls the friend, after a code sent to their
+	// email, and pairs them with whoever invited them (docs/authentication.md, "Invites"). On unless set to false.
+	Invites *bool `json:"invites"`
+	// The invites waiting to be used (default invites.json).
+	InvitesFile string `json:"invites_file"`
+	// Where invite email codes are sent from. Without it the codes are only written to the server's log.
+	SMTP *mail.Config `json:"smtp"`
 	// Loopback-only listener for the admin GraphQL API (default 127.0.0.1:8082).
 	AdminAddr string `json:"admin_addr"`
 	// Token for the admin API, rewritten on every server start (default admin.token).
@@ -50,6 +59,7 @@ const (
 	DefaultUsersFile      = "users.json"
 	DefaultDevicesFile    = "devices.json"
 	DefaultPairsFile      = "pairs.json"
+	DefaultInvitesFile    = "invites.json"
 	DefaultDatabaseFile   = "ptt.db"
 	DefaultQueueDays      = 30
 	DefaultAdminAddr      = "127.0.0.1:8082"
@@ -58,6 +68,9 @@ const (
 
 // DiscoveryOn says whether the server uses the DHT: on unless config.json sets "discovery": false.
 func (c AppConfig) DiscoveryOn() bool { return c.Discovery == nil || *c.Discovery }
+
+// InvitesOn says whether users may invite friends: on unless "invites": false.
+func (c AppConfig) InvitesOn() bool { return c.Invites == nil || *c.Invites }
 
 // PortMappingOn says whether the server asks the router to forward its port: on unless "port_mapping": false.
 func (c AppConfig) PortMappingOn() bool { return c.PortMapping == nil || *c.PortMapping }
@@ -92,6 +105,9 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.PairsFile == "" {
 		c.PairsFile = DefaultPairsFile
+	}
+	if c.InvitesFile == "" {
+		c.InvitesFile = DefaultInvitesFile
 	}
 	if c.DatabaseFile == "" {
 		c.DatabaseFile = DefaultDatabaseFile
