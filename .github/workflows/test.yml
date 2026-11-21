@@ -1,0 +1,36 @@
+# go vet and go test on every push and pull request, on Linux and Windows (the owner's server runs Windows).
+name: Test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+
+      - name: Generated code is up to date
+        if: runner.os == 'Linux'
+        run: |
+          go tool gqlgen generate
+          go tool gqlgen generate --config gqlgen.admin.yml
+          git diff --exit-code
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
