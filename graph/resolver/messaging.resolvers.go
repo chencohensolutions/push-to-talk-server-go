@@ -265,6 +265,7 @@ func (r *queryResolver) Contacts(ctx context.Context) ([]*model.Contact, error) 
 			Devices: []*model.ContactDevice{}}
 		if u := r.Users.Find(name); u != nil {
 			contact.IdentityKey = encodeOrNil(u.IdentityKey)
+			contact.DisplayName = nonEmpty(u.DisplayName)
 		}
 		active, err := r.Relay.ActiveDevices(name)
 		if err != nil {

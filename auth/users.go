@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 	"unicode"
@@ -24,12 +25,22 @@ type User struct {
 	IdentityKey []byte `json:"identity_key,omitempty"`
 	// When IdentityKey was last set.
 	IdentityKeySetAt *time.Time `json:"identity_key_set_at,omitempty"`
+	// The email address the user proved they own by a code sent there, lower case; set for a user who joined by an
+	// invite (docs/authentication.md, "Invites"), empty for one added with `user add`. No two users share one.
+	Email string `json:"email,omitempty"`
+	// The name the user gave for themselves (first and last name, any letters); shown to their contacts. Not unique:
+	// the email and the keys tell people apart.
+	DisplayName string `json:"display_name,omitempty"`
+	// Who invited the user, when they joined by an invite.
+	InvitedBy string `json:"invited_by,omitempty"`
 }
 
 // ErrUserExists and ErrUnknownUser are what Add and Remove refuse.
 var (
 	ErrUserExists  = errors.New("user exists")
 	ErrUnknownUser = errors.New("unknown user")
+	// ErrEmailTaken is AddInvited with an email another user has.
+	ErrEmailTaken = errors.New("another user has this email")
 )
 
 // maxUserNameLength is the longest name a user may have, in characters.
@@ -65,6 +76,12 @@ func OpenUsers(path string) (*Users, error) {
 			return nil, fmt.Errorf("%s: user %q appears twice", path, user.Name)
 		}
 		seen[user.Name] = true
+		if user.Email != "" {
+			if seen["@"+user.Email] {
+				return nil, fmt.Errorf("%s: email %q appears twice", path, user.Email)
+			}
+			seen["@"+user.Email] = true
+		}
 	}
 	return u, nil
 }
@@ -109,19 +126,110 @@ func (u *Users) List() []User {
 	return list
 }
 
-// Add adds a user named name, added at at.
+// FindByEmail is the user whose email is email (any case), or nil.
+func (u *Users) FindByEmail(email string) *User {
+	email = strings.ToLower(strings.TrimSpace(email))
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	for i := range u.users {
+		if email != "" && u.users[i].Email == email {
+			user := u.users[i]
+			return &user
+		}
+	}
+	return nil
+}
+
+// Add adds a user named name, added at at. A name that differs from an existing one only in case ("Hen" beside
+// "hen") is refused too, so two users can't look the same.
 func (u *Users) Add(name string, at time.Time) (User, error) {
 	if err := CheckUserName(name); err != nil {
 		return User{}, err
 	}
 	u.mu.Lock()
 	defer u.mu.Unlock()
+	if u.nameTaken(name) {
+		return User{}, fmt.Errorf("%w: %s", ErrUserExists, name)
+	}
+	return u.add(User{Name: name, AddedAt: at.UTC()})
+}
+
+// nameTaken says whether a user has name, in any case. Callers hold mu.
+func (u *Users) nameTaken(name string) bool {
 	for _, user := range u.users {
-		if user.Name == name {
-			return User{}, fmt.Errorf("%w: %s", ErrUserExists, name)
+		if strings.EqualFold(user.Name, name) {
+			return true
 		}
 	}
-	user := User{Name: name, AddedAt: at.UTC()}
+	return false
+}
+
+// AddInvited adds a user who joined by an invite: with their verified email (lower case; ErrEmailTaken when another
+// user has it), their display name and who invited them. The user name is made from the email's local part, in
+// a–z, 0–9, '.', '-' and '_' only (so it can't look like another in a different script), with a number added when
+// it is taken: dana.cohen@example.com becomes dana.cohen, then dana.cohen2.
+func (u *Users) AddInvited(email, displayName, invitedBy string, at time.Time) (User, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for _, user := range u.users {
+		if user.Email == email {
+			return User{}, ErrEmailTaken
+		}
+	}
+	base := NameFromEmail(email)
+	name := base
+	for n := 2; u.nameTaken(name); n++ {
+		suffix := fmt.Sprint(n)
+		name = base[:min(len(base), maxUserNameLength-len(suffix))] + suffix
+	}
+	return u.add(User{Name: name, AddedAt: at.UTC(), Email: email, DisplayName: CleanDisplayName(displayName), InvitedBy: invitedBy})
+}
+
+// NameFromEmail is a user name made from an email's local part: lower-case a–z, 0–9, '.', '-' and '_', starting with a
+// letter or digit, at most 24 characters (room for a number); "user" when nothing is left.
+func NameFromEmail(email string) string {
+	local, _, _ := strings.Cut(strings.ToLower(email), "@")
+	local, _, _ = strings.Cut(local, "+") // dana+talk@ is dana
+	var b strings.Builder
+	for _, r := range local {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case (r == '.' || r == '-' || r == '_') && b.Len() > 0:
+			b.WriteRune(r)
+		}
+	}
+	name := strings.TrimRight(b.String(), ".-_")
+	if len(name) > 24 {
+		name = strings.TrimRight(name[:24], ".-_")
+	}
+	if name == "" {
+		return "user"
+	}
+	return name
+}
+
+// maxDisplayNameLength is the longest display name, in characters.
+const maxDisplayNameLength = 64
+
+// CleanDisplayName drops control characters and spaces at the ends, and keeps at most 64 characters.
+func CleanDisplayName(name string) string {
+	name = strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || r == '\u202e' || r == '\u202d' {
+			return -1
+		}
+		return r
+	}, name))
+	for utf8.RuneCountInString(name) > maxDisplayNameLength {
+		_, size := utf8.DecodeLastRuneInString(name)
+		name = name[:len(name)-size]
+	}
+	return name
+}
+
+// add appends user and saves. Callers hold mu.
+func (u *Users) add(user User) (User, error) {
 	u.users = append(u.users, user)
 	if err := u.save(); err != nil {
 		u.users = u.users[:len(u.users)-1]

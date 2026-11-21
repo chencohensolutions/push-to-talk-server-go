@@ -4,6 +4,7 @@
 package enroll
 
 import (
+	"crypto/x509"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -106,22 +107,44 @@ func (s *Service) Enroll(clientIP string, req Request) (Enrolled, Rejection, err
 		s.limiter.Fail(clientIP)
 		return Enrolled{}, RejectInvalidCode, nil
 	}
-	cert, err := s.Issuer.Issue(csr, pending.User)
+	enrolled, err := s.issue(pending.User, csr, req)
+	return enrolled, "", err
+}
+
+// EnrollAs issues a certificate for the request's key as a device of user, with no enrollment code: for a user an
+// invite just made, once the invite and the email code checked out (invite.Service). The caller checks the request
+// with CheckRequest first.
+func (s *Service) EnrollAs(user string, req Request) (Enrolled, error) {
+	csr, err := ParseDeviceCSR(req.CSR)
 	if err != nil {
-		return Enrolled{}, "", err
+		return Enrolled{}, err
+	}
+	return s.issue(user, csr, req)
+}
+
+// CheckRequest says whether req's certificate request is one Enroll takes.
+func CheckRequest(req Request) bool {
+	_, err := ParseDeviceCSR(req.CSR)
+	return err == nil
+}
+
+func (s *Service) issue(user string, csr *x509.CertificateRequest, req Request) (Enrolled, error) {
+	cert, err := s.Issuer.Issue(csr, user)
+	if err != nil {
+		return Enrolled{}, err
 	}
 	device, err := s.Registry.Add(Device{
 		Serial:        SerialString(cert.SerialNumber),
-		User:          pending.User,
+		User:          user,
 		Name:          cleanDeviceName(req.DeviceName),
 		KeyProtection: req.KeyProtection,
 		RegisteredAt:  s.now().UTC(),
 		ExpiresAt:     cert.NotAfter.UTC(),
 	})
 	if err != nil { // ErrTooManyDevices among them
-		return Enrolled{}, "", err
+		return Enrolled{}, err
 	}
-	return Enrolled{Device: device, Certificate: cert.Raw}, "", nil
+	return Enrolled{Device: device, Certificate: cert.Raw}, nil
 }
 
 // Renew issues a new certificate for the enrolled device with serial, for the request's key (a new one, made by the

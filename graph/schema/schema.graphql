@@ -42,6 +42,10 @@ type Me {
   deviceNumber: Int!
   "The name the device enrolled with."
   deviceName: String!
+  "The name the user gave for themselves when they joined by an invite; null otherwise."
+  displayName: String
+  "The email the user proved when they joined by an invite; null otherwise."
+  email: String
 }
 
 type Mutation {

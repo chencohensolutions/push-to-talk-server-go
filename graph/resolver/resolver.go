@@ -9,6 +9,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
+	"github.com/chencohensolutions/push-to-talk-server-go/invite"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 )
 
@@ -22,7 +23,9 @@ type Resolver struct {
 	Users      *auth.Users
 	// Who may reach whom, the prekeys and the queue (docs/messaging.md).
 	Relay *relay.Relay
-	Now   func() time.Time
+	// Invites (docs/authentication.md, "Invites"); nil when the config turns them off.
+	Invites *invite.Service
+	Now     func() time.Time
 	// The server's build, shown by serverInfo.
 	Version string
 	// Who this server is and where, for serverInfo.discovery; nil when unknown.
@@ -72,4 +75,16 @@ func (r *Resolver) enrolledDevice(enrolled enroll.Enrolled) model.EnrolledDevice
 		ExpiresAt:     device.ExpiresAt,
 		CaCertificate: nonEmpty(r.caPEM()),
 	}
+}
+
+func inviteModel(i invite.Invite) *model.Invite {
+	return &model.Invite{ID: i.ID, Email: nonEmpty(i.Email), CreatedAt: i.CreatedAt, ExpiresAt: i.ExpiresAt}
+}
+
+func pairingModel(p invite.Pairing) *model.InvitePairing {
+	out := &model.InvitePairing{Inviter: p.Inviter}
+	if p.Token != "" {
+		out.PairingToken = &model.PairingToken{Token: p.Token, ExpiresAt: p.ExpiresAt}
+	}
+	return out
 }

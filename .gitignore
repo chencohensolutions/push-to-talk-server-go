@@ -41,6 +41,7 @@ users.json
 devices.json
 devices.revoked.json
 pairs.json
+invites.json
 ptt.db
 ptt.db-*
 server.log

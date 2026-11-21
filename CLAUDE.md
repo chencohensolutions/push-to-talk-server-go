@@ -30,7 +30,8 @@ The docs describe what is built, and must be kept in step with the code in the s
   bundle downloads, installer, releases, self-update).
 
 **Phases.** Phase 1: enroll and find the server. Phase 2 (built too): identity keys and prekeys, `/ws` with the
-message queue, pairing, linking a phone. Phase 3 FCM (the registry already reserves `fcm_token` and
+message queue, pairing, linking a phone, invites (one link that enrolls a friend by their verified email and pairs
+them). Phase 3 FCM (the registry already reserves `fcm_token` and
 `notifications_enabled`); 4 groups; 5a clips and floor control; 5b LiveKit (`/rtc`, `talkToken`, UDP 7882 and TCP
 7881 in `serverPorts`).
 
@@ -65,7 +66,7 @@ bin/protoc --plugin=protoc-gen-go=bin/protoc-gen-go --go_out=. \
 
 - The admin commands read `config.json` and `admin.token` in the current folder (or beside the program), so run them
   from the server folder.
-- `config.json`, `certs/`, `users.json`, `devices.json`, `devices.revoked.json`, `pairs.json`, `ptt.db` and
+- `config.json`, `certs/`, `users.json`, `devices.json`, `devices.revoked.json`, `pairs.json`, `invites.json`, `ptt.db` and
   `admin.token` are gitignored local state. `config.example.json` shows the shape. A second server for testing runs
   from its own folder with its own `port` and `admin_addr`, and `"port_mapping": false` so it leaves the router to
   the real one (docs/install.md).
@@ -103,6 +104,10 @@ fields); introspection is blocked too. Resolvers get the user with `auth.FromCon
 - `portmap`: UPnP IGD and NAT-PMP, a `Mapper` of `{proto, port}` that maps, renews and removes.
 - `store`: SQLite (`ptt.db`, modernc.org/sqlite, pure Go): the devices' public keys and one-time prekeys, and the
   message queue, one row per (recipient device, envelope).
+- `invite`: invites (`invites.json`, hashed codes, 7 days), the email codes (memory), and redeeming one: a new user
+  named from the verified email and enrolled (`enrollWithInvite`), or an enrolled one (`acceptInvite`); both get a
+  pairing token of the inviter.
+- `mail`: the email codes, over SMTP (`smtp` in config.json) or to the log.
 - `contacts`: `pairs.json` (pairs, pairings waiting for both confirmations, blocks) and the pairing tokens (memory).
 - `relay`: who may reach whom, the Send checks (`Send`), the active devices, `/ws` (`ServeHTTP`,
   github.com/coder/websocket), `Revoked` (closes sockets, drops keys and queues) and the hourly `Sweep`.

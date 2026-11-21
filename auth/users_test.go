@@ -85,3 +85,39 @@ func TestConfigDefaultsAndUnknownKeys(t *testing.T) {
 		t.Fatalf("a Journal config.json: %v", err)
 	}
 }
+
+func TestNamesAreUniqueInAnyCase(t *testing.T) {
+	users, _ := OpenUsers(filepath.Join(t.TempDir(), "users.json"))
+	if _, err := users.Add("hen", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := users.Add("Hen", time.Now()); !errors.Is(err, ErrUserExists) {
+		t.Fatalf("Hen beside hen: %v", err)
+	}
+}
+
+func TestInvitedUsersAreNamedFromTheirEmail(t *testing.T) {
+	for email, want := range map[string]string{
+		"Dana.Cohen@example.com":                     "dana.cohen",
+		"dana+talk@example.com":                      "dana",
+		".-_x_@example.com":                          "x",
+		"דנה@example.com":                            "user",
+		"a.very.long.name.indeed.longer@example.com": "a.very.long.name.indeed",
+	} {
+		if got := NameFromEmail(email); got != want {
+			t.Errorf("NameFromEmail(%q) = %q, want %q", email, got, want)
+		}
+	}
+	users, _ := OpenUsers(filepath.Join(t.TempDir(), "users.json"))
+	users.Add("dana", time.Now())
+	first, err := users.AddInvited("Dana@Example.com", " Dana ", "hen", time.Now())
+	if err != nil || first.Name != "dana2" || first.Email != "dana@example.com" || first.DisplayName != "Dana" {
+		t.Fatalf("first = %+v, %v", first, err)
+	}
+	if _, err := users.AddInvited("dana@example.COM", "Other", "hen", time.Now()); !errors.Is(err, ErrEmailTaken) {
+		t.Fatalf("the same email again: %v", err)
+	}
+	if found := users.FindByEmail(" DANA@example.com"); found == nil || found.Name != "dana2" {
+		t.Fatalf("FindByEmail = %+v", found)
+	}
+}

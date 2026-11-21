@@ -101,6 +101,8 @@ func (r *queryResolver) Me(ctx context.Context) (*model.Me, error) {
 	me := &model.Me{User: user.Name, DeviceNumber: device.DeviceNumber, DeviceName: device.Name}
 	if current := r.Users.Find(user.Name); current != nil {
 		me.IdentityKey = encodeOrNil(current.IdentityKey)
+		me.DisplayName = nonEmpty(current.DisplayName)
+		me.Email = nonEmpty(current.Email)
 	}
 	return me, nil
 }
