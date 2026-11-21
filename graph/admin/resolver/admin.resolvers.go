@@ -46,6 +46,7 @@ func (r *mutationResolver) RemoveUser(ctx context.Context, name string) (*model.
 	if err != nil {
 		return nil, fmt.Errorf("user %s removed, but its devices couldn't be revoked: %w", user.Name, err)
 	}
+	r.revoked(user.Name)
 	log.Printf("Admin: removed user %s and revoked %d of its devices", user.Name, revoked)
 	return &model.RemovedUser{Name: user.Name, RevokedDevices: revoked}, nil
 }
@@ -69,6 +70,7 @@ func (r *mutationResolver) RevokeDevice(ctx context.Context, serial string) (*en
 	if err != nil {
 		return nil, err
 	}
+	r.revoked(device.User)
 	log.Printf("Admin: revoked device %q of %s (serial %s)", device.Name, device.User, device.Serial)
 	return &device, nil
 }

@@ -1,0 +1,179 @@
+# --- Keys, pairing and contacts (phase 2) ------------------------------------------------------------------------
+# See docs/messaging.md. The server keeps public keys only, and routes ciphertext it can't read over /ws (proto/ptt.proto).
+# Keys are base64 (standard, with padding) of libsignal's serialized form.
+#
+# Errors a device acts on carry a code in extensions.code: NOT_ENROLLED (a certificate made outside enrollment, device
+# number 0), INVALID_KEY, MISSING_KEYS, IDENTITY_KEY_MISMATCH, NO_IDENTITY_KEY, OTHER_DEVICES_ACTIVE, UNKNOWN_USER,
+# NOT_PAIRED, BLOCKED, NO_PAIRING, RATE_LIMITED.
+
+extend type Query {
+  "How many one-time prekeys the server still holds for the calling device."
+  prekeyCount: PrekeyCount!
+  """
+  The keys to open a libsignal session with each active device of user (one that is enrolled, not revoked, and has
+  uploaded its keys), the caller's own device left out. Each fetch uses up one one-time EC prekey and one one-time
+  Kyber prekey of every device; when a device has no one-time Kyber prekey left, its last-resort one is given.
+  Allowed for a contact (paired, and neither blocked the other), for the caller's own user, or with routingToken: a
+  pairing token of user from user's QR code (at most 5 fetches per token). NOT_PAIRED, BLOCKED or UNKNOWN_USER
+  otherwise.
+  """
+  prekeyBundles(user: String!, routingToken: String): PrekeyBundles!
+  "The users the caller is paired with, by name, with their identity keys and active devices."
+  contacts: [Contact!]!
+  "The users the caller blocked, by name."
+  blocked: [String!]!
+  "The devices of the caller's own user that are enrolled and not revoked, by device number."
+  devices: [OwnDevice!]!
+}
+
+extend type Me {
+  "The user's identity key, base64; null until a device of the user uploaded it (uploadPrekeys)."
+  identityKey: String
+}
+
+extend type Mutation {
+  """
+  Stores the calling device's public keys. identityKey must be the user's: the first device to upload sets it, and a
+  different one is refused IDENTITY_KEY_MISMATCH (replaceIdentityKey changes it). The first upload of a device needs
+  signedPrekey and kyberLastResortPrekey (MISSING_KEYS otherwise); later ones may leave them out to keep the ones
+  stored, and add one-time prekeys, at most 100 of each kind per call and 500 held. A key whose size or type byte is
+  wrong is refused INVALID_KEY. The server can't check the signatures (that needs libsignal); the phones do.
+  """
+  uploadPrekeys(input: UploadPrekeysInput!): PrekeyCount!
+  """
+  Gives the user a new identity key: after every phone of the user was lost and enrolled again. Refused
+  OTHER_DEVICES_ACTIVE while another device of the user that isn't revoked has keys stored (revoke the old phones
+  first). The keys stored for the user's devices are dropped (they were signed by the old key), and every contact's
+  devices get an IDENTITY_KEY_CHANGED envelope.
+  """
+  replaceIdentityKey(identityKey: String!): Boolean!
+  """
+  A single-use pairing token for the caller's user, valid for 10 minutes, for the Add contact QR code. One Send from
+  a user who isn't a contact, with the token in its envelopes, is routed to the caller's devices; that is the pair
+  request. RATE_LIMITED with 10 unused tokens.
+  """
+  pairingToken: PairingToken!
+  """
+  Records that the caller's user confirms the pairing with user. Allowed once a pairing token of one of the two was
+  used by the other (within 7 days; NO_PAIRING otherwise). The pair is made when both confirmed: then both users'
+  devices get a PAIRED envelope, and the result is PAIRED; before that it is WAITING.
+  """
+  confirmPair(user: String!): PairState!
+  "Removes the pair with user (and a pairing waiting): nothing is routed between the two from now on. False if there was none."
+  unpair(user: String!): Boolean!
+  "Refuses everything from user, until unblock: sends both ways, prekey bundles, pairing. The pair is kept."
+  block(user: String!): Boolean!
+  "Takes the block of user away. False if there was none."
+  unblock(user: String!): Boolean!
+}
+
+input UploadPrekeysInput {
+  "The user's public identity key, 33 bytes (type 0x05 and 32 bytes)."
+  identityKey: String!
+  "libsignal's registration id of this device, 1 to 16380."
+  registrationId: Int!
+  "The signed EC prekey: a 33-byte public key and the identity key's 64-byte signature."
+  signedPrekey: SignedPrekeyInput
+  "The last-resort Kyber (ML-KEM 1024) prekey: a 1569-byte public key and its signature."
+  kyberLastResortPrekey: SignedPrekeyInput
+  "One-time EC prekeys to add; one with an id the server holds replaces it."
+  oneTimePrekeys: [PrekeyInput!]
+  "One-time Kyber prekeys to add, signed."
+  oneTimeKyberPrekeys: [SignedPrekeyInput!]
+}
+
+input PrekeyInput {
+  "0 to 16777215."
+  keyId: Int!
+  publicKey: String!
+}
+
+input SignedPrekeyInput {
+  "0 to 16777215."
+  keyId: Int!
+  publicKey: String!
+  signature: String!
+}
+
+type PrekeyCount {
+  "One-time EC prekeys held for the device."
+  oneTimePrekeys: Int!
+  "One-time Kyber prekeys held for the device."
+  oneTimeKyberPrekeys: Int!
+  "Upload more when either count is under this (20)."
+  refillBelow: Int!
+}
+
+type PrekeyBundles {
+  user: String!
+  identityKey: String!
+  "One per active device of the user, by device number; empty when none has keys."
+  devices: [PrekeyBundle!]!
+}
+
+type PrekeyBundle {
+  deviceNumber: Int!
+  registrationId: Int!
+  signedPrekey: SignedPrekey!
+  "A one-time EC prekey; null when the device has none left."
+  prekey: Prekey
+  "A one-time Kyber prekey, or the last-resort one when none is left (lastResort)."
+  kyberPrekey: KyberPrekey!
+}
+
+type Prekey {
+  keyId: Int!
+  publicKey: String!
+}
+
+type SignedPrekey {
+  keyId: Int!
+  publicKey: String!
+  signature: String!
+}
+
+type KyberPrekey {
+  keyId: Int!
+  publicKey: String!
+  signature: String!
+  lastResort: Boolean!
+}
+
+type PairingToken {
+  "22 characters, base64url: put it in the QR code."
+  token: String!
+  expiresAt: Time!
+}
+
+enum PairState {
+  "The caller confirmed; the other user hasn't yet."
+  WAITING
+  "Both confirmed: the two are contacts."
+  PAIRED
+}
+
+type Contact {
+  user: String!
+  "Null when the contact has no identity key on the server (it replaced it, and none of its phones uploaded one yet)."
+  identityKey: String
+  since: Time!
+  "The caller blocked this contact."
+  blocked: Boolean!
+  "Its active devices, by device number."
+  devices: [ContactDevice!]!
+}
+
+type ContactDevice {
+  deviceNumber: Int!
+  registrationId: Int!
+}
+
+type OwnDevice {
+  deviceNumber: Int!
+  name: String!
+  "Null until the device uploaded its keys."
+  registrationId: Int
+  registeredAt: Time!
+  "The device that asked."
+  current: Boolean!
+}

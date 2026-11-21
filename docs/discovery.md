@@ -32,7 +32,9 @@ Every 5 minutes the server works out its addresses (`discovery.Own`), the most l
 4. its global IPv6 addresses;
 5. its LAN addresses, for phones at home.
 
-The phone gets them in the QR code (`address=`, at most 6) and in `serverInfo.discovery.addresses`.
+The phone gets them in the QR code (`address=`, at most 6) and in `serverInfo.discovery.addresses`. The order is the
+same for every caller: the server doesn't look at where a phone is, so a phone at home tries the public addresses
+first and its finder falls through to a LAN one when they don't answer (a router without hairpin NAT).
 
 ## The DHT record
 

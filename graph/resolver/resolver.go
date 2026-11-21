@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/pem"
+	"time"
 
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
+	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 )
 
 // This file will not be regenerated automatically.
@@ -17,6 +19,10 @@ import (
 
 type Resolver struct {
 	Enrollment *enroll.Service
+	Users      *auth.Users
+	// Who may reach whom, the prekeys and the queue (docs/messaging.md).
+	Relay *relay.Relay
+	Now   func() time.Time
 	// The server's build, shown by serverInfo.
 	Version string
 	// Who this server is and where, for serverInfo.discovery; nil when unknown.

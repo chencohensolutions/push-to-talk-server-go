@@ -48,13 +48,16 @@ Removed user hen and revoked 1 of its devices
 - `user remove` takes the user out of `users.json` (its certificates are refused from then on, since `identify`
   finds no user) and revokes all its devices, so a user added again by the same name doesn't get them back. A code
   made for the user before is refused too (`enroll.Service.UserExists`).
-- Phase 2 adds the user's identity public key to `users.json`.
+- `users.json` also keeps each user's public identity key (`identity_key`), set by the first device's
+  `uploadPrekeys` ([messaging.md](messaging.md)). `user remove` drops it with the user, and the user's pairs, blocks,
+  prekeys and queued envelopes go too.
 
 ## Access rules
 
 | Endpoint | Without client certificate | With a valid client certificate |
 |---|---|---|
 | `POST /query` (GraphQL) | Only root fields marked `@public` (`enrollmentPreview`, `enrollDevice`). Everything else, including introspection, returns `client certificate required for <field>` with `extensions.code` `UNAUTHORIZED`. | Every field |
+| `GET /ws` (WebSocket) | `401` | An enrolled device (`403` for a certificate outside the registry); see [messaging.md](messaging.md) |
 | `GET /` (playground) | Only with `"playground": true` in config.json (off by default); it can only call `@public` fields without a certificate | The same |
 | Admin API (`admin_addr`) | Loopback only, needs the admin token | n/a |
 
@@ -141,7 +144,7 @@ Every enrolled device gets a small **device number**, 1 to 127, unique among its
 Every enrolled certificate is appended to `devices_file` (default `devices.json`; `enroll/devices.go`, written
 atomically): serial, user, device name, device number, key protection, registration and expiry dates, the revocation
 date and `renewed_from`. Two fields are reserved for phase 3 and nothing sets them yet: `fcm_token` and
-`notifications_enabled`. Prekeys come in phase 2.
+`notifications_enabled`. A device's public prekeys are in `ptt.db`, not here ([messaging.md](messaging.md)).
 
 ```
 $ ptt-server devices
@@ -153,7 +156,9 @@ Revoked "Pixel 9", device 1 of user hen (serial b582e90a5ea9c2a16b60802e95543c85
 
 - `revoke` revokes the certificate and every other certificate of the same device (same user and device number:
   what it renewed, and a renewal in flight), `Registry.RevokeDevice`.
-- A revoked serial is rejected with `401` on the next connection.
+- A revoked serial is rejected with `401` on the next connection. Its open `/ws` closes at once (code `4003`), and its
+  queue and prekeys are deleted, so senders must leave it out from then on (`relay.Relay.Revoked`, called by the
+  admin API after `revoke` and `user remove`).
 - Revoked serials are also kept in `devices.revoked.json` beside `devices.json`, read at start, so a lost or replaced
   `devices.json` doesn't bring a revoked phone back; a damaged one stops the server rather than let everyone in.
 - `keyProtection` is what the device *reports* (`STRONGBOX`, `TEE`, `SECURE_ENCLAVE`, `SOFTWARE`). The server does not
@@ -171,9 +176,9 @@ server's admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/adm
   file mode is not enforced, so keep the server folder private to the account that runs it.
 - The admin schema is separate from the public one, so admin operations never appear on `/query`.
 
-## The public API in phase 1
+## The public API
 
-`graph/schema/schema.graphql` and `discovery.graphql`:
+`graph/schema/schema.graphql`, `discovery.graphql` and `messaging.graphql`:
 
 | Field | Certificate | What |
 |---|---|---|
@@ -181,7 +186,11 @@ server's admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/adm
 | `enrollDevice(input)` | no (`@public`) | the certificate, device number and CA |
 | `renewCertificate(csr, keyProtection)` | yes | a new certificate for the same device |
 | `serverInfo` | yes | `api`, `version`, `caCertificate`, `renewCertificates`, the caller's `deviceNumber`, and `discovery { fingerprint id key addresses }` |
-| `me` | yes | `user`, `deviceNumber`, `deviceName`: what the app asks to show "connected" |
+| `me` | yes | `user`, `deviceNumber`, `deviceName`, `identityKey`: what the app asks to show "connected" |
+| `uploadPrekeys`, `prekeyCount`, `prekeyBundles`, `replaceIdentityKey` | yes | keys ([messaging.md](messaging.md)) |
+| `pairingToken`, `confirmPair`, `unpair`, `block`, `unblock`, `contacts`, `blocked`, `devices` | yes | pairing and contacts ([messaging.md](messaging.md)) |
+
+The keys and pairing fields need an enrolled device (`NOT_ENROLLED` for a certificate made outside enrollment).
 
 ## Client side (push-to-talk-kmp)
 
@@ -204,6 +213,9 @@ pinned key) at any address. See the client repo's docs.
   "port": "56400",                              // optional (default)
   "users_file": "users.json",                   // optional (default)
   "devices_file": "devices.json",               // optional (default)
+  "pairs_file": "pairs.json",                   // optional (default): pairs and blocks (messaging.md)
+  "database_file": "ptt.db",                    // optional (default): prekeys and the message queue
+  "queue_days": 30,                             // optional (default): how long an envelope waits for its device
   "admin_addr": "127.0.0.1:8082",               // optional (default), must be loopback
   "admin_token_file": "admin.token",            // optional (default)
   "discovery": true,                            // optional (default): publish the addresses in the DHT
@@ -224,6 +236,7 @@ it readable only by the account that runs the server.
 - **Network attacker during enrollment:** the phone pins the server key from the QR code, so it cannot be tricked into
   sending the code to another server. The CA it keeps afterwards comes over that checked connection.
 - **Lost or stolen phone:** `ptt-server revoke <serial>`. The key cannot be extracted from the phone's secure
-  hardware. From phase 2 the user's other devices also replace their sender and talk keys.
+  hardware. Its `/ws` closes at once and nothing is routed to it any more; the user's other devices and its groups
+  replace their sender and talk keys (phases 4 and 5).
 - **Anonymous probing:** without a certificate, only the two enrollment fields respond, and they are rate limited.
   The schema cannot be introspected.

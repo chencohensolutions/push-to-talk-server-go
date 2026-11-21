@@ -19,10 +19,13 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
+	"github.com/chencohensolutions/push-to-talk-server-go/contacts"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/generated"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/resolver"
+	"github.com/chencohensolutions/push-to-talk-server-go/relay"
+	"github.com/chencohensolutions/push-to-talk-server-go/store"
 	"github.com/chencohensolutions/push-to-talk-server-go/version"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -38,6 +41,10 @@ type server struct {
 	config     auth.AppConfig
 	users      *auth.Users
 	enrollment *enroll.Service
+	// Pairs and blocks (pairs.json), the database (prekeys, the queue) and the routing over /ws.
+	book  *contacts.Book
+	store *store.Store
+	relay *relay.Relay
 	// Who this server is and where, for serverInfo.discovery; nil when unknown.
 	discovery func() *model.ServerDiscovery
 }
@@ -64,6 +71,7 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 		mapPorts(running, config, d, unmapped)
 		go d.publisher.Run(running)
 	}
+	go s.relay.Run(running)
 	go serveAdmin(s)
 	go func() {
 		<-running.Done()
@@ -73,6 +81,7 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 		case <-unmapped:
 		case <-time.After(10 * time.Second):
 		}
+		s.store.Close() // writes SQLite's log back into ptt.db
 		log.Printf("Stopped")
 		stopped()
 	}()
@@ -103,7 +112,17 @@ func openServer(config auth.AppConfig) (*server, error) {
 		return nil, err
 	}
 	enrollment.UserExists = func(name string) bool { return users.Find(name) != nil }
-	return &server{config: config, users: users, enrollment: enrollment}, nil
+	book, err := contacts.Open(config.PairsFile, time.Now)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open the pairs: %w", err)
+	}
+	st, err := store.Open(config.DatabaseFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open the database: %w", err)
+	}
+	queueTTL := time.Duration(config.QueueDays) * 24 * time.Hour
+	return &server{config: config, users: users, enrollment: enrollment, book: book, store: st,
+		relay: relay.New(users, enrollment.Registry, st, book, queueTTL, time.Now)}, nil
 }
 
 // createTLSConfig loads the server certificate and trusts the client CA for client certificates.
@@ -172,12 +191,15 @@ func (s *server) newMux() *http.ServeMux {
 	mux.Handle("/query", withDeadlines(queryReadTimeout, queryWriteTimeout,
 		identify(s.config, s.users, s.enrollment.Registry, true, limitBody(anonymousQueryBytes, queryBytes,
 			s.newGraphQLServer()))))
+	// The WebSocket for envelopes (docs/messaging.md): only enrolled devices, and no deadline, since it stays open.
+	mux.Handle("/ws", identify(s.config, s.users, s.enrollment.Registry, false, s.relay))
 	return mux
 }
 
 func (s *server) newGraphQLServer() *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
-		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Version: version.String(),
+		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Now: time.Now,
+			Version: version.String(),
 			Discovery: func() *model.ServerDiscovery {
 				if s.discovery == nil {
 					return nil

@@ -24,8 +24,8 @@ const setupUsage = `usage:
       a new server with its own new CA (--import-ca uses ca.pem and ca-key.pem from another server instead), and
       its first user when --user is given (more with ptt-server user add)
   ptt-server setup --dir <folder> --move-from <old server folder> [options]
-      a server moved from another PC: copies its config.json, certificates, users.json and devices.json (only
-      reads them)
+      a server moved from another PC: copies its config.json, certificates, users.json, devices.json, pairs.json
+      and ptt.db (only reads them; stop the old server first)
 
 Run it again at any time: what is there is kept, and only what is missing is made.
 
@@ -166,8 +166,9 @@ func setup(_ context.Context, o setupOptions) error {
 	return nil
 }
 
-// moveServer copies the old server's config.json, the certificates it names, its users and its device registry
-// into the current folder. The old folder is only read; admin.token isn't copied (the server writes a new one at
+// moveServer copies the old server's config.json, the certificates it names, its users, its device registry, its
+// pairs and its database (with SQLite's write-ahead log, when the old server didn't stop cleanly) into the current
+// folder. The old folder is only read; admin.token isn't copied (the server writes a new one at
 // start).
 func moveServer(from string) error {
 	old, err := auth.LoadConfig(filepath.Join(from, configPath))
@@ -178,7 +179,8 @@ func moveServer(from string) error {
 		return err
 	}
 	fmt.Printf("config.json: copied from %s\n", from)
-	optional := []string{old.UsersFile, old.DevicesFile, enroll.RevokedPath(old.DevicesFile)}
+	optional := []string{old.UsersFile, old.DevicesFile, enroll.RevokedPath(old.DevicesFile), old.PairsFile,
+		old.DatabaseFile, old.DatabaseFile + "-wal"}
 	files := append([]string{old.TLSCert, old.TLSKey, old.ClientCA, old.ClientCAKey}, optional...)
 	for _, name := range files {
 		if name == "" {

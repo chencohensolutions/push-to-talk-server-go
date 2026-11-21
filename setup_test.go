@@ -77,8 +77,10 @@ func TestSetupNewServer(t *testing.T) {
 	if _, err := createTLSConfig(config); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := openServer(config); err != nil {
+	if s, err := openServer(config); err != nil {
 		t.Fatal(err)
+	} else {
+		s.store.Close() // Windows can't remove the folder with the database open
 	}
 	if _, err := openDiscovery(config); err != nil {
 		t.Fatal(err)

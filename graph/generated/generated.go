@@ -38,6 +38,19 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	Contact struct {
+		Blocked     func(childComplexity int) int
+		Devices     func(childComplexity int) int
+		IdentityKey func(childComplexity int) int
+		Since       func(childComplexity int) int
+		User        func(childComplexity int) int
+	}
+
+	ContactDevice struct {
+		DeviceNumber   func(childComplexity int) int
+		RegistrationID func(childComplexity int) int
+	}
+
 	EnrolledDevice struct {
 		CaCertificate func(childComplexity int) int
 		Certificate   func(childComplexity int) int
@@ -57,20 +70,78 @@ type ComplexityRoot struct {
 		Reason func(childComplexity int) int
 	}
 
+	KyberPrekey struct {
+		KeyID      func(childComplexity int) int
+		LastResort func(childComplexity int) int
+		PublicKey  func(childComplexity int) int
+		Signature  func(childComplexity int) int
+	}
+
 	Me struct {
 		DeviceName   func(childComplexity int) int
 		DeviceNumber func(childComplexity int) int
+		IdentityKey  func(childComplexity int) int
 		User         func(childComplexity int) int
 	}
 
 	Mutation struct {
-		EnrollDevice     func(childComplexity int, input model.EnrollDeviceInput) int
-		RenewCertificate func(childComplexity int, csr string, keyProtection model.KeyProtection) int
+		Block              func(childComplexity int, user string) int
+		ConfirmPair        func(childComplexity int, user string) int
+		EnrollDevice       func(childComplexity int, input model.EnrollDeviceInput) int
+		PairingToken       func(childComplexity int) int
+		RenewCertificate   func(childComplexity int, csr string, keyProtection model.KeyProtection) int
+		ReplaceIdentityKey func(childComplexity int, identityKey string) int
+		Unblock            func(childComplexity int, user string) int
+		Unpair             func(childComplexity int, user string) int
+		UploadPrekeys      func(childComplexity int, input model.UploadPrekeysInput) int
+	}
+
+	OwnDevice struct {
+		Current        func(childComplexity int) int
+		DeviceNumber   func(childComplexity int) int
+		Name           func(childComplexity int) int
+		RegisteredAt   func(childComplexity int) int
+		RegistrationID func(childComplexity int) int
+	}
+
+	PairingToken struct {
+		ExpiresAt func(childComplexity int) int
+		Token     func(childComplexity int) int
+	}
+
+	Prekey struct {
+		KeyID     func(childComplexity int) int
+		PublicKey func(childComplexity int) int
+	}
+
+	PrekeyBundle struct {
+		DeviceNumber   func(childComplexity int) int
+		KyberPrekey    func(childComplexity int) int
+		Prekey         func(childComplexity int) int
+		RegistrationID func(childComplexity int) int
+		SignedPrekey   func(childComplexity int) int
+	}
+
+	PrekeyBundles struct {
+		Devices     func(childComplexity int) int
+		IdentityKey func(childComplexity int) int
+		User        func(childComplexity int) int
+	}
+
+	PrekeyCount struct {
+		OneTimeKyberPrekeys func(childComplexity int) int
+		OneTimePrekeys      func(childComplexity int) int
+		RefillBelow         func(childComplexity int) int
 	}
 
 	Query struct {
+		Blocked           func(childComplexity int) int
+		Contacts          func(childComplexity int) int
+		Devices           func(childComplexity int) int
 		EnrollmentPreview func(childComplexity int, code string) int
 		Me                func(childComplexity int) int
+		PrekeyBundles     func(childComplexity int, user string, routingToken *string) int
+		PrekeyCount       func(childComplexity int) int
 		ServerInfo        func(childComplexity int) int
 	}
 
@@ -89,16 +160,34 @@ type ComplexityRoot struct {
 		RenewCertificates func(childComplexity int) int
 		Version           func(childComplexity int) int
 	}
+
+	SignedPrekey struct {
+		KeyID     func(childComplexity int) int
+		PublicKey func(childComplexity int) int
+		Signature func(childComplexity int) int
+	}
 }
 
 type MutationResolver interface {
 	EnrollDevice(ctx context.Context, input model.EnrollDeviceInput) (model.EnrollDeviceResult, error)
 	RenewCertificate(ctx context.Context, csr string, keyProtection model.KeyProtection) (model.EnrollDeviceResult, error)
+	UploadPrekeys(ctx context.Context, input model.UploadPrekeysInput) (*model.PrekeyCount, error)
+	ReplaceIdentityKey(ctx context.Context, identityKey string) (bool, error)
+	PairingToken(ctx context.Context) (*model.PairingToken, error)
+	ConfirmPair(ctx context.Context, user string) (model.PairState, error)
+	Unpair(ctx context.Context, user string) (bool, error)
+	Block(ctx context.Context, user string) (bool, error)
+	Unblock(ctx context.Context, user string) (bool, error)
 }
 type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
 	ServerInfo(ctx context.Context) (*model.ServerInfo, error)
 	Me(ctx context.Context) (*model.Me, error)
+	PrekeyCount(ctx context.Context) (*model.PrekeyCount, error)
+	PrekeyBundles(ctx context.Context, user string, routingToken *string) (*model.PrekeyBundles, error)
+	Contacts(ctx context.Context) ([]*model.Contact, error)
+	Blocked(ctx context.Context) ([]string, error)
+	Devices(ctx context.Context) ([]*model.OwnDevice, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -114,6 +203,50 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	ec := newExecutionContext(nil, e, nil)
 	_ = ec
 	switch typeName + "." + field {
+
+	case "Contact.blocked":
+		if e.ComplexityRoot.Contact.Blocked == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Contact.Blocked(childComplexity), true
+	case "Contact.devices":
+		if e.ComplexityRoot.Contact.Devices == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Contact.Devices(childComplexity), true
+	case "Contact.identityKey":
+		if e.ComplexityRoot.Contact.IdentityKey == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Contact.IdentityKey(childComplexity), true
+	case "Contact.since":
+		if e.ComplexityRoot.Contact.Since == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Contact.Since(childComplexity), true
+	case "Contact.user":
+		if e.ComplexityRoot.Contact.User == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Contact.User(childComplexity), true
+
+	case "ContactDevice.deviceNumber":
+		if e.ComplexityRoot.ContactDevice.DeviceNumber == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ContactDevice.DeviceNumber(childComplexity), true
+	case "ContactDevice.registrationId":
+		if e.ComplexityRoot.ContactDevice.RegistrationID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ContactDevice.RegistrationID(childComplexity), true
 
 	case "EnrolledDevice.caCertificate":
 		if e.ComplexityRoot.EnrolledDevice.CaCertificate == nil {
@@ -178,6 +311,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.EnrollmentRejected.Reason(childComplexity), true
 
+	case "KyberPrekey.keyId":
+		if e.ComplexityRoot.KyberPrekey.KeyID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.KyberPrekey.KeyID(childComplexity), true
+	case "KyberPrekey.lastResort":
+		if e.ComplexityRoot.KyberPrekey.LastResort == nil {
+			break
+		}
+
+		return e.ComplexityRoot.KyberPrekey.LastResort(childComplexity), true
+	case "KyberPrekey.publicKey":
+		if e.ComplexityRoot.KyberPrekey.PublicKey == nil {
+			break
+		}
+
+		return e.ComplexityRoot.KyberPrekey.PublicKey(childComplexity), true
+	case "KyberPrekey.signature":
+		if e.ComplexityRoot.KyberPrekey.Signature == nil {
+			break
+		}
+
+		return e.ComplexityRoot.KyberPrekey.Signature(childComplexity), true
+
 	case "Me.deviceName":
 		if e.ComplexityRoot.Me.DeviceName == nil {
 			break
@@ -190,6 +348,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Me.DeviceNumber(childComplexity), true
+	case "Me.identityKey":
+		if e.ComplexityRoot.Me.IdentityKey == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Me.IdentityKey(childComplexity), true
 	case "Me.user":
 		if e.ComplexityRoot.Me.User == nil {
 			break
@@ -197,6 +361,28 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Me.User(childComplexity), true
 
+	case "Mutation.block":
+		if e.ComplexityRoot.Mutation.Block == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_block_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.Block(childComplexity, args["user"].(string)), true
+	case "Mutation.confirmPair":
+		if e.ComplexityRoot.Mutation.ConfirmPair == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_confirmPair_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.ConfirmPair(childComplexity, args["user"].(string)), true
 	case "Mutation.enrollDevice":
 		if e.ComplexityRoot.Mutation.EnrollDevice == nil {
 			break
@@ -208,6 +394,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.EnrollDevice(childComplexity, args["input"].(model.EnrollDeviceInput)), true
+	case "Mutation.pairingToken":
+		if e.ComplexityRoot.Mutation.PairingToken == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Mutation.PairingToken(childComplexity), true
 	case "Mutation.renewCertificate":
 		if e.ComplexityRoot.Mutation.RenewCertificate == nil {
 			break
@@ -219,7 +411,195 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RenewCertificate(childComplexity, args["csr"].(string), args["keyProtection"].(model.KeyProtection)), true
+	case "Mutation.replaceIdentityKey":
+		if e.ComplexityRoot.Mutation.ReplaceIdentityKey == nil {
+			break
+		}
 
+		args, err := ec.field_Mutation_replaceIdentityKey_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.ReplaceIdentityKey(childComplexity, args["identityKey"].(string)), true
+	case "Mutation.unblock":
+		if e.ComplexityRoot.Mutation.Unblock == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_unblock_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.Unblock(childComplexity, args["user"].(string)), true
+	case "Mutation.unpair":
+		if e.ComplexityRoot.Mutation.Unpair == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_unpair_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.Unpair(childComplexity, args["user"].(string)), true
+	case "Mutation.uploadPrekeys":
+		if e.ComplexityRoot.Mutation.UploadPrekeys == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_uploadPrekeys_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.UploadPrekeys(childComplexity, args["input"].(model.UploadPrekeysInput)), true
+
+	case "OwnDevice.current":
+		if e.ComplexityRoot.OwnDevice.Current == nil {
+			break
+		}
+
+		return e.ComplexityRoot.OwnDevice.Current(childComplexity), true
+	case "OwnDevice.deviceNumber":
+		if e.ComplexityRoot.OwnDevice.DeviceNumber == nil {
+			break
+		}
+
+		return e.ComplexityRoot.OwnDevice.DeviceNumber(childComplexity), true
+	case "OwnDevice.name":
+		if e.ComplexityRoot.OwnDevice.Name == nil {
+			break
+		}
+
+		return e.ComplexityRoot.OwnDevice.Name(childComplexity), true
+	case "OwnDevice.registeredAt":
+		if e.ComplexityRoot.OwnDevice.RegisteredAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.OwnDevice.RegisteredAt(childComplexity), true
+	case "OwnDevice.registrationId":
+		if e.ComplexityRoot.OwnDevice.RegistrationID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.OwnDevice.RegistrationID(childComplexity), true
+
+	case "PairingToken.expiresAt":
+		if e.ComplexityRoot.PairingToken.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PairingToken.ExpiresAt(childComplexity), true
+	case "PairingToken.token":
+		if e.ComplexityRoot.PairingToken.Token == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PairingToken.Token(childComplexity), true
+
+	case "Prekey.keyId":
+		if e.ComplexityRoot.Prekey.KeyID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Prekey.KeyID(childComplexity), true
+	case "Prekey.publicKey":
+		if e.ComplexityRoot.Prekey.PublicKey == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Prekey.PublicKey(childComplexity), true
+
+	case "PrekeyBundle.deviceNumber":
+		if e.ComplexityRoot.PrekeyBundle.DeviceNumber == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PrekeyBundle.DeviceNumber(childComplexity), true
+	case "PrekeyBundle.kyberPrekey":
+		if e.ComplexityRoot.PrekeyBundle.KyberPrekey == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PrekeyBundle.KyberPrekey(childComplexity), true
+	case "PrekeyBundle.prekey":
+		if e.ComplexityRoot.PrekeyBundle.Prekey == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PrekeyBundle.Prekey(childComplexity), true
+	case "PrekeyBundle.registrationId":
+		if e.ComplexityRoot.PrekeyBundle.RegistrationID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PrekeyBundle.RegistrationID(childComplexity), true
+	case "PrekeyBundle.signedPrekey":
+		if e.ComplexityRoot.PrekeyBundle.SignedPrekey == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PrekeyBundle.SignedPrekey(childComplexity), true
+
+	case "PrekeyBundles.devices":
+		if e.ComplexityRoot.PrekeyBundles.Devices == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PrekeyBundles.Devices(childComplexity), true
+	case "PrekeyBundles.identityKey":
+		if e.ComplexityRoot.PrekeyBundles.IdentityKey == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PrekeyBundles.IdentityKey(childComplexity), true
+	case "PrekeyBundles.user":
+		if e.ComplexityRoot.PrekeyBundles.User == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PrekeyBundles.User(childComplexity), true
+
+	case "PrekeyCount.oneTimeKyberPrekeys":
+		if e.ComplexityRoot.PrekeyCount.OneTimeKyberPrekeys == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PrekeyCount.OneTimeKyberPrekeys(childComplexity), true
+	case "PrekeyCount.oneTimePrekeys":
+		if e.ComplexityRoot.PrekeyCount.OneTimePrekeys == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PrekeyCount.OneTimePrekeys(childComplexity), true
+	case "PrekeyCount.refillBelow":
+		if e.ComplexityRoot.PrekeyCount.RefillBelow == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PrekeyCount.RefillBelow(childComplexity), true
+
+	case "Query.blocked":
+		if e.ComplexityRoot.Query.Blocked == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.Blocked(childComplexity), true
+	case "Query.contacts":
+		if e.ComplexityRoot.Query.Contacts == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.Contacts(childComplexity), true
+	case "Query.devices":
+		if e.ComplexityRoot.Query.Devices == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.Devices(childComplexity), true
 	case "Query.enrollmentPreview":
 		if e.ComplexityRoot.Query.EnrollmentPreview == nil {
 			break
@@ -238,6 +618,23 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.Me(childComplexity), true
+	case "Query.prekeyBundles":
+		if e.ComplexityRoot.Query.PrekeyBundles == nil {
+			break
+		}
+
+		args, err := ec.field_Query_prekeyBundles_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.PrekeyBundles(childComplexity, args["user"].(string), args["routingToken"].(*string)), true
+	case "Query.prekeyCount":
+		if e.ComplexityRoot.Query.PrekeyCount == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.PrekeyCount(childComplexity), true
 	case "Query.serverInfo":
 		if e.ComplexityRoot.Query.ServerInfo == nil {
 			break
@@ -307,6 +704,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.ServerInfo.Version(childComplexity), true
 
+	case "SignedPrekey.keyId":
+		if e.ComplexityRoot.SignedPrekey.KeyID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SignedPrekey.KeyID(childComplexity), true
+	case "SignedPrekey.publicKey":
+		if e.ComplexityRoot.SignedPrekey.PublicKey == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SignedPrekey.PublicKey(childComplexity), true
+	case "SignedPrekey.signature":
+		if e.ComplexityRoot.SignedPrekey.Signature == nil {
+			break
+		}
+
+		return e.ComplexityRoot.SignedPrekey.Signature(childComplexity), true
+
 	}
 	return 0, false
 }
@@ -316,6 +732,9 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 	ec := newExecutionContext(opCtx, e, make(chan graphql.DeferredResult))
 	inputUnmarshalMap := graphql.BuildUnmarshalerMap(
 		ec.unmarshalInputEnrollDeviceInput,
+		ec.unmarshalInputPrekeyInput,
+		ec.unmarshalInputSignedPrekeyInput,
+		ec.unmarshalInputUploadPrekeysInput,
 	)
 	first := true
 
@@ -413,6 +832,186 @@ type ServerDiscovery {
   key: String
   "Where the server can be reached now, https://host:port, the most likely first (public, IPv6, then LAN)."
   addresses: [String!]!
+}
+`, BuiltIn: false},
+	{Name: "../schema/messaging.graphql", Input: `# --- Keys, pairing and contacts (phase 2) ------------------------------------------------------------------------
+# See docs/messaging.md. The server keeps public keys only, and routes ciphertext it can't read over /ws (proto/ptt.proto).
+# Keys are base64 (standard, with padding) of libsignal's serialized form.
+#
+# Errors a device acts on carry a code in extensions.code: NOT_ENROLLED (a certificate made outside enrollment, device
+# number 0), INVALID_KEY, MISSING_KEYS, IDENTITY_KEY_MISMATCH, NO_IDENTITY_KEY, OTHER_DEVICES_ACTIVE, UNKNOWN_USER,
+# NOT_PAIRED, BLOCKED, NO_PAIRING, RATE_LIMITED.
+
+extend type Query {
+  "How many one-time prekeys the server still holds for the calling device."
+  prekeyCount: PrekeyCount!
+  """
+  The keys to open a libsignal session with each active device of user (one that is enrolled, not revoked, and has
+  uploaded its keys), the caller's own device left out. Each fetch uses up one one-time EC prekey and one one-time
+  Kyber prekey of every device; when a device has no one-time Kyber prekey left, its last-resort one is given.
+  Allowed for a contact (paired, and neither blocked the other), for the caller's own user, or with routingToken: a
+  pairing token of user from user's QR code (at most 5 fetches per token). NOT_PAIRED, BLOCKED or UNKNOWN_USER
+  otherwise.
+  """
+  prekeyBundles(user: String!, routingToken: String): PrekeyBundles!
+  "The users the caller is paired with, by name, with their identity keys and active devices."
+  contacts: [Contact!]!
+  "The users the caller blocked, by name."
+  blocked: [String!]!
+  "The devices of the caller's own user that are enrolled and not revoked, by device number."
+  devices: [OwnDevice!]!
+}
+
+extend type Me {
+  "The user's identity key, base64; null until a device of the user uploaded it (uploadPrekeys)."
+  identityKey: String
+}
+
+extend type Mutation {
+  """
+  Stores the calling device's public keys. identityKey must be the user's: the first device to upload sets it, and a
+  different one is refused IDENTITY_KEY_MISMATCH (replaceIdentityKey changes it). The first upload of a device needs
+  signedPrekey and kyberLastResortPrekey (MISSING_KEYS otherwise); later ones may leave them out to keep the ones
+  stored, and add one-time prekeys, at most 100 of each kind per call and 500 held. A key whose size or type byte is
+  wrong is refused INVALID_KEY. The server can't check the signatures (that needs libsignal); the phones do.
+  """
+  uploadPrekeys(input: UploadPrekeysInput!): PrekeyCount!
+  """
+  Gives the user a new identity key: after every phone of the user was lost and enrolled again. Refused
+  OTHER_DEVICES_ACTIVE while another device of the user that isn't revoked has keys stored (revoke the old phones
+  first). The keys stored for the user's devices are dropped (they were signed by the old key), and every contact's
+  devices get an IDENTITY_KEY_CHANGED envelope.
+  """
+  replaceIdentityKey(identityKey: String!): Boolean!
+  """
+  A single-use pairing token for the caller's user, valid for 10 minutes, for the Add contact QR code. One Send from
+  a user who isn't a contact, with the token in its envelopes, is routed to the caller's devices; that is the pair
+  request. RATE_LIMITED with 10 unused tokens.
+  """
+  pairingToken: PairingToken!
+  """
+  Records that the caller's user confirms the pairing with user. Allowed once a pairing token of one of the two was
+  used by the other (within 7 days; NO_PAIRING otherwise). The pair is made when both confirmed: then both users'
+  devices get a PAIRED envelope, and the result is PAIRED; before that it is WAITING.
+  """
+  confirmPair(user: String!): PairState!
+  "Removes the pair with user (and a pairing waiting): nothing is routed between the two from now on. False if there was none."
+  unpair(user: String!): Boolean!
+  "Refuses everything from user, until unblock: sends both ways, prekey bundles, pairing. The pair is kept."
+  block(user: String!): Boolean!
+  "Takes the block of user away. False if there was none."
+  unblock(user: String!): Boolean!
+}
+
+input UploadPrekeysInput {
+  "The user's public identity key, 33 bytes (type 0x05 and 32 bytes)."
+  identityKey: String!
+  "libsignal's registration id of this device, 1 to 16380."
+  registrationId: Int!
+  "The signed EC prekey: a 33-byte public key and the identity key's 64-byte signature."
+  signedPrekey: SignedPrekeyInput
+  "The last-resort Kyber (ML-KEM 1024) prekey: a 1569-byte public key and its signature."
+  kyberLastResortPrekey: SignedPrekeyInput
+  "One-time EC prekeys to add; one with an id the server holds replaces it."
+  oneTimePrekeys: [PrekeyInput!]
+  "One-time Kyber prekeys to add, signed."
+  oneTimeKyberPrekeys: [SignedPrekeyInput!]
+}
+
+input PrekeyInput {
+  "0 to 16777215."
+  keyId: Int!
+  publicKey: String!
+}
+
+input SignedPrekeyInput {
+  "0 to 16777215."
+  keyId: Int!
+  publicKey: String!
+  signature: String!
+}
+
+type PrekeyCount {
+  "One-time EC prekeys held for the device."
+  oneTimePrekeys: Int!
+  "One-time Kyber prekeys held for the device."
+  oneTimeKyberPrekeys: Int!
+  "Upload more when either count is under this (20)."
+  refillBelow: Int!
+}
+
+type PrekeyBundles {
+  user: String!
+  identityKey: String!
+  "One per active device of the user, by device number; empty when none has keys."
+  devices: [PrekeyBundle!]!
+}
+
+type PrekeyBundle {
+  deviceNumber: Int!
+  registrationId: Int!
+  signedPrekey: SignedPrekey!
+  "A one-time EC prekey; null when the device has none left."
+  prekey: Prekey
+  "A one-time Kyber prekey, or the last-resort one when none is left (lastResort)."
+  kyberPrekey: KyberPrekey!
+}
+
+type Prekey {
+  keyId: Int!
+  publicKey: String!
+}
+
+type SignedPrekey {
+  keyId: Int!
+  publicKey: String!
+  signature: String!
+}
+
+type KyberPrekey {
+  keyId: Int!
+  publicKey: String!
+  signature: String!
+  lastResort: Boolean!
+}
+
+type PairingToken {
+  "22 characters, base64url: put it in the QR code."
+  token: String!
+  expiresAt: Time!
+}
+
+enum PairState {
+  "The caller confirmed; the other user hasn't yet."
+  WAITING
+  "Both confirmed: the two are contacts."
+  PAIRED
+}
+
+type Contact {
+  user: String!
+  "Null when the contact has no identity key on the server (it replaced it, and none of its phones uploaded one yet)."
+  identityKey: String
+  since: Time!
+  "The caller blocked this contact."
+  blocked: Boolean!
+  "Its active devices, by device number."
+  devices: [ContactDevice!]!
+}
+
+type ContactDevice {
+  deviceNumber: Int!
+  registrationId: Int!
+}
+
+type OwnDevice {
+  deviceNumber: Int!
+  name: String!
+  "Null until the device uploaded its keys."
+  registrationId: Int
+  registeredAt: Time!
+  "The device that asked."
+  current: Boolean!
 }
 `, BuiltIn: false},
 	{Name: "../schema/schema.graphql", Input: `# --- Authentication -----------------------------------------------------------
@@ -540,6 +1139,46 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // Each function is generated once per unique object type, deduplicating the
 // switch statements that were previously inlined in every fieldContext_* function.
 
+func (ec *executionContext) childFields_Contact(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "user":
+		return ec.fieldContext_Contact_user(ctx, field)
+	case "identityKey":
+		return ec.fieldContext_Contact_identityKey(ctx, field)
+	case "since":
+		return ec.fieldContext_Contact_since(ctx, field)
+	case "blocked":
+		return ec.fieldContext_Contact_blocked(ctx, field)
+	case "devices":
+		return ec.fieldContext_Contact_devices(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type Contact", field.Name)
+}
+
+func (ec *executionContext) childFields_ContactDevice(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "deviceNumber":
+		return ec.fieldContext_ContactDevice_deviceNumber(ctx, field)
+	case "registrationId":
+		return ec.fieldContext_ContactDevice_registrationId(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type ContactDevice", field.Name)
+}
+
+func (ec *executionContext) childFields_KyberPrekey(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "keyId":
+		return ec.fieldContext_KyberPrekey_keyId(ctx, field)
+	case "publicKey":
+		return ec.fieldContext_KyberPrekey_publicKey(ctx, field)
+	case "signature":
+		return ec.fieldContext_KyberPrekey_signature(ctx, field)
+	case "lastResort":
+		return ec.fieldContext_KyberPrekey_lastResort(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type KyberPrekey", field.Name)
+}
+
 func (ec *executionContext) childFields_Me(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "user":
@@ -548,8 +1187,86 @@ func (ec *executionContext) childFields_Me(ctx context.Context, field graphql.Co
 		return ec.fieldContext_Me_deviceNumber(ctx, field)
 	case "deviceName":
 		return ec.fieldContext_Me_deviceName(ctx, field)
+	case "identityKey":
+		return ec.fieldContext_Me_identityKey(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Me", field.Name)
+}
+
+func (ec *executionContext) childFields_OwnDevice(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "deviceNumber":
+		return ec.fieldContext_OwnDevice_deviceNumber(ctx, field)
+	case "name":
+		return ec.fieldContext_OwnDevice_name(ctx, field)
+	case "registrationId":
+		return ec.fieldContext_OwnDevice_registrationId(ctx, field)
+	case "registeredAt":
+		return ec.fieldContext_OwnDevice_registeredAt(ctx, field)
+	case "current":
+		return ec.fieldContext_OwnDevice_current(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type OwnDevice", field.Name)
+}
+
+func (ec *executionContext) childFields_PairingToken(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "token":
+		return ec.fieldContext_PairingToken_token(ctx, field)
+	case "expiresAt":
+		return ec.fieldContext_PairingToken_expiresAt(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type PairingToken", field.Name)
+}
+
+func (ec *executionContext) childFields_Prekey(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "keyId":
+		return ec.fieldContext_Prekey_keyId(ctx, field)
+	case "publicKey":
+		return ec.fieldContext_Prekey_publicKey(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type Prekey", field.Name)
+}
+
+func (ec *executionContext) childFields_PrekeyBundle(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "deviceNumber":
+		return ec.fieldContext_PrekeyBundle_deviceNumber(ctx, field)
+	case "registrationId":
+		return ec.fieldContext_PrekeyBundle_registrationId(ctx, field)
+	case "signedPrekey":
+		return ec.fieldContext_PrekeyBundle_signedPrekey(ctx, field)
+	case "prekey":
+		return ec.fieldContext_PrekeyBundle_prekey(ctx, field)
+	case "kyberPrekey":
+		return ec.fieldContext_PrekeyBundle_kyberPrekey(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type PrekeyBundle", field.Name)
+}
+
+func (ec *executionContext) childFields_PrekeyBundles(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "user":
+		return ec.fieldContext_PrekeyBundles_user(ctx, field)
+	case "identityKey":
+		return ec.fieldContext_PrekeyBundles_identityKey(ctx, field)
+	case "devices":
+		return ec.fieldContext_PrekeyBundles_devices(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type PrekeyBundles", field.Name)
+}
+
+func (ec *executionContext) childFields_PrekeyCount(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "oneTimePrekeys":
+		return ec.fieldContext_PrekeyCount_oneTimePrekeys(ctx, field)
+	case "oneTimeKyberPrekeys":
+		return ec.fieldContext_PrekeyCount_oneTimeKyberPrekeys(ctx, field)
+	case "refillBelow":
+		return ec.fieldContext_PrekeyCount_refillBelow(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type PrekeyCount", field.Name)
 }
 
 func (ec *executionContext) childFields_ServerDiscovery(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -582,6 +1299,18 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_discovery(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ServerInfo", field.Name)
+}
+
+func (ec *executionContext) childFields_SignedPrekey(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "keyId":
+		return ec.fieldContext_SignedPrekey_keyId(ctx, field)
+	case "publicKey":
+		return ec.fieldContext_SignedPrekey_publicKey(ctx, field)
+	case "signature":
+		return ec.fieldContext_SignedPrekey_signature(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type SignedPrekey", field.Name)
 }
 
 func (ec *executionContext) childFields___Directive(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -700,6 +1429,34 @@ func (ec *executionContext) childFields___Type(ctx context.Context, field graphq
 
 // region    ***************************** args.gotpl *****************************
 
+func (ec *executionContext) field_Mutation_block_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "user",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["user"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_confirmPair_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "user",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["user"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_enrollDevice_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -736,6 +1493,62 @@ func (ec *executionContext) field_Mutation_renewCertificate_args(ctx context.Con
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_replaceIdentityKey_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "identityKey",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["identityKey"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_unblock_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "user",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["user"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_unpair_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "user",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["user"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_uploadPrekeys_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "input",
+		func(ctx context.Context, v any) (model.UploadPrekeysInput, error) {
+			return ec.unmarshalNUploadPrekeysInput2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐUploadPrekeysInput(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["input"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -761,6 +1574,28 @@ func (ec *executionContext) field_Query_enrollmentPreview_args(ctx context.Conte
 		return nil, err
 	}
 	args["code"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_prekeyBundles_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "user",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["user"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "routingToken",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["routingToken"] = arg1
 	return args, nil
 }
 
@@ -827,6 +1662,176 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _Contact_user(ctx context.Context, field graphql.CollectedField, obj *model.Contact) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Contact_user(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Contact_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Contact", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Contact_identityKey(ctx context.Context, field graphql.CollectedField, obj *model.Contact) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Contact_identityKey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.IdentityKey, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Contact_identityKey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Contact", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Contact_since(ctx context.Context, field graphql.CollectedField, obj *model.Contact) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Contact_since(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Since, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Contact_since(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Contact", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _Contact_blocked(ctx context.Context, field graphql.CollectedField, obj *model.Contact) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Contact_blocked(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Blocked, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Contact_blocked(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Contact", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Contact_devices(ctx context.Context, field graphql.CollectedField, obj *model.Contact) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Contact_devices(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Devices, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.ContactDevice) graphql.Marshaler {
+			return ec.marshalNContactDevice2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐContactDeviceᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Contact_devices(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Contact",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_ContactDevice(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ContactDevice_deviceNumber(ctx context.Context, field graphql.CollectedField, obj *model.ContactDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ContactDevice_deviceNumber(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DeviceNumber, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ContactDevice_deviceNumber(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ContactDevice", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _ContactDevice_registrationId(ctx context.Context, field graphql.CollectedField, obj *model.ContactDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ContactDevice_registrationId(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RegistrationID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ContactDevice_registrationId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ContactDevice", field, false, false, errors.New("field of type Int does not have child fields"))
+}
 
 func (ec *executionContext) _EnrolledDevice_user(ctx context.Context, field graphql.CollectedField, obj *model.EnrolledDevice) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
@@ -1058,6 +2063,98 @@ func (ec *executionContext) fieldContext_EnrollmentRejected_reason(_ context.Con
 	return graphql.NewScalarFieldContext("EnrollmentRejected", field, false, false, errors.New("field of type EnrollmentRejectedReason does not have child fields"))
 }
 
+func (ec *executionContext) _KyberPrekey_keyId(ctx context.Context, field graphql.CollectedField, obj *model.KyberPrekey) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_KyberPrekey_keyId(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.KeyID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_KyberPrekey_keyId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("KyberPrekey", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _KyberPrekey_publicKey(ctx context.Context, field graphql.CollectedField, obj *model.KyberPrekey) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_KyberPrekey_publicKey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PublicKey, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_KyberPrekey_publicKey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("KyberPrekey", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _KyberPrekey_signature(ctx context.Context, field graphql.CollectedField, obj *model.KyberPrekey) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_KyberPrekey_signature(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Signature, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_KyberPrekey_signature(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("KyberPrekey", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _KyberPrekey_lastResort(ctx context.Context, field graphql.CollectedField, obj *model.KyberPrekey) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_KyberPrekey_lastResort(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LastResort, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_KyberPrekey_lastResort(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("KyberPrekey", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _Me_user(ctx context.Context, field graphql.CollectedField, obj *model.Me) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -1124,6 +2221,29 @@ func (ec *executionContext) _Me_deviceName(ctx context.Context, field graphql.Co
 	)
 }
 func (ec *executionContext) fieldContext_Me_deviceName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Me", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Me_identityKey(ctx context.Context, field graphql.CollectedField, obj *model.Me) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Me_identityKey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.IdentityKey, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Me_identityKey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Me", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -1226,6 +2346,798 @@ func (ec *executionContext) fieldContext_Mutation_renewCertificate(ctx context.C
 		return fc, err
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_uploadPrekeys(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_uploadPrekeys(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().UploadPrekeys(ctx, fc.Args["input"].(model.UploadPrekeysInput))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.PrekeyCount) graphql.Marshaler {
+			return ec.marshalNPrekeyCount2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyCount(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_uploadPrekeys(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_PrekeyCount(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_uploadPrekeys_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_replaceIdentityKey(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_replaceIdentityKey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().ReplaceIdentityKey(ctx, fc.Args["identityKey"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_replaceIdentityKey(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_replaceIdentityKey_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_pairingToken(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_pairingToken(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Mutation().PairingToken(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.PairingToken) graphql.Marshaler {
+			return ec.marshalNPairingToken2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPairingToken(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_pairingToken(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_PairingToken(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_confirmPair(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_confirmPair(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().ConfirmPair(ctx, fc.Args["user"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.PairState) graphql.Marshaler {
+			return ec.marshalNPairState2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPairState(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_confirmPair(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type PairState does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_confirmPair_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_unpair(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_unpair(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().Unpair(ctx, fc.Args["user"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_unpair(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_unpair_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_block(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_block(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().Block(ctx, fc.Args["user"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_block(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_block_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_unblock(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_unblock(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().Unblock(ctx, fc.Args["user"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_unblock(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_unblock_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _OwnDevice_deviceNumber(ctx context.Context, field graphql.CollectedField, obj *model.OwnDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_OwnDevice_deviceNumber(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DeviceNumber, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_OwnDevice_deviceNumber(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("OwnDevice", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _OwnDevice_name(ctx context.Context, field graphql.CollectedField, obj *model.OwnDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_OwnDevice_name(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Name, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_OwnDevice_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("OwnDevice", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _OwnDevice_registrationId(ctx context.Context, field graphql.CollectedField, obj *model.OwnDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_OwnDevice_registrationId(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RegistrationID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *int) graphql.Marshaler {
+			return ec.marshalOInt2ᚖint(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_OwnDevice_registrationId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("OwnDevice", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _OwnDevice_registeredAt(ctx context.Context, field graphql.CollectedField, obj *model.OwnDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_OwnDevice_registeredAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RegisteredAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_OwnDevice_registeredAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("OwnDevice", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _OwnDevice_current(ctx context.Context, field graphql.CollectedField, obj *model.OwnDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_OwnDevice_current(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Current, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_OwnDevice_current(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("OwnDevice", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _PairingToken_token(ctx context.Context, field graphql.CollectedField, obj *model.PairingToken) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PairingToken_token(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Token, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PairingToken_token(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PairingToken", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _PairingToken_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.PairingToken) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PairingToken_expiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PairingToken_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PairingToken", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _Prekey_keyId(ctx context.Context, field graphql.CollectedField, obj *model.Prekey) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Prekey_keyId(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.KeyID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Prekey_keyId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Prekey", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _Prekey_publicKey(ctx context.Context, field graphql.CollectedField, obj *model.Prekey) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Prekey_publicKey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PublicKey, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Prekey_publicKey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Prekey", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _PrekeyBundle_deviceNumber(ctx context.Context, field graphql.CollectedField, obj *model.PrekeyBundle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PrekeyBundle_deviceNumber(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.DeviceNumber, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PrekeyBundle_deviceNumber(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PrekeyBundle", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _PrekeyBundle_registrationId(ctx context.Context, field graphql.CollectedField, obj *model.PrekeyBundle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PrekeyBundle_registrationId(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RegistrationID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PrekeyBundle_registrationId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PrekeyBundle", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _PrekeyBundle_signedPrekey(ctx context.Context, field graphql.CollectedField, obj *model.PrekeyBundle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PrekeyBundle_signedPrekey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.SignedPrekey, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.SignedPrekey) graphql.Marshaler {
+			return ec.marshalNSignedPrekey2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐSignedPrekey(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PrekeyBundle_signedPrekey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PrekeyBundle",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_SignedPrekey(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PrekeyBundle_prekey(ctx context.Context, field graphql.CollectedField, obj *model.PrekeyBundle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PrekeyBundle_prekey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Prekey, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Prekey) graphql.Marshaler {
+			return ec.marshalOPrekey2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekey(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_PrekeyBundle_prekey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PrekeyBundle",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Prekey(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PrekeyBundle_kyberPrekey(ctx context.Context, field graphql.CollectedField, obj *model.PrekeyBundle) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PrekeyBundle_kyberPrekey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.KyberPrekey, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.KyberPrekey) graphql.Marshaler {
+			return ec.marshalNKyberPrekey2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐKyberPrekey(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PrekeyBundle_kyberPrekey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PrekeyBundle",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_KyberPrekey(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PrekeyBundles_user(ctx context.Context, field graphql.CollectedField, obj *model.PrekeyBundles) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PrekeyBundles_user(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PrekeyBundles_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PrekeyBundles", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _PrekeyBundles_identityKey(ctx context.Context, field graphql.CollectedField, obj *model.PrekeyBundles) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PrekeyBundles_identityKey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.IdentityKey, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PrekeyBundles_identityKey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PrekeyBundles", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _PrekeyBundles_devices(ctx context.Context, field graphql.CollectedField, obj *model.PrekeyBundles) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PrekeyBundles_devices(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Devices, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.PrekeyBundle) graphql.Marshaler {
+			return ec.marshalNPrekeyBundle2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyBundleᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PrekeyBundles_devices(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "PrekeyBundles",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_PrekeyBundle(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _PrekeyCount_oneTimePrekeys(ctx context.Context, field graphql.CollectedField, obj *model.PrekeyCount) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PrekeyCount_oneTimePrekeys(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.OneTimePrekeys, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PrekeyCount_oneTimePrekeys(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PrekeyCount", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _PrekeyCount_oneTimeKyberPrekeys(ctx context.Context, field graphql.CollectedField, obj *model.PrekeyCount) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PrekeyCount_oneTimeKyberPrekeys(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.OneTimeKyberPrekeys, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PrekeyCount_oneTimeKyberPrekeys(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PrekeyCount", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _PrekeyCount_refillBelow(ctx context.Context, field graphql.CollectedField, obj *model.PrekeyCount) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PrekeyCount_refillBelow(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RefillBelow, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_PrekeyCount_refillBelow(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PrekeyCount", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
 func (ec *executionContext) _Query_enrollmentPreview(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -1344,6 +3256,169 @@ func (ec *executionContext) fieldContext_Query_me(_ context.Context, field graph
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return ec.childFields_Me(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_prekeyCount(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_prekeyCount(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().PrekeyCount(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.PrekeyCount) graphql.Marshaler {
+			return ec.marshalNPrekeyCount2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyCount(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_prekeyCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_PrekeyCount(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_prekeyBundles(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_prekeyBundles(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().PrekeyBundles(ctx, fc.Args["user"].(string), fc.Args["routingToken"].(*string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.PrekeyBundles) graphql.Marshaler {
+			return ec.marshalNPrekeyBundles2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyBundles(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_prekeyBundles(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_PrekeyBundles(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_prekeyBundles_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_contacts(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_contacts(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().Contacts(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.Contact) graphql.Marshaler {
+			return ec.marshalNContact2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐContactᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_contacts(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Contact(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_blocked(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_blocked(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().Blocked(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []string) graphql.Marshaler {
+			return ec.marshalNString2ᚕstringᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_blocked(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Query", field, true, true, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Query_devices(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_devices(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().Devices(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.OwnDevice) graphql.Marshaler {
+			return ec.marshalNOwnDevice2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐOwnDeviceᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_devices(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_OwnDevice(ctx, field)
 		},
 	}
 	return fc, nil
@@ -1662,6 +3737,75 @@ func (ec *executionContext) fieldContext_ServerInfo_discovery(_ context.Context,
 		},
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _SignedPrekey_keyId(ctx context.Context, field graphql.CollectedField, obj *model.SignedPrekey) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SignedPrekey_keyId(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.KeyID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SignedPrekey_keyId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SignedPrekey", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _SignedPrekey_publicKey(ctx context.Context, field graphql.CollectedField, obj *model.SignedPrekey) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SignedPrekey_publicKey(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PublicKey, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SignedPrekey_publicKey(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SignedPrekey", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _SignedPrekey_signature(ctx context.Context, field graphql.CollectedField, obj *model.SignedPrekey) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SignedPrekey_signature(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Signature, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_SignedPrekey_signature(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("SignedPrekey", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) ___Directive_name(ctx context.Context, field graphql.CollectedField, obj *introspection.Directive) (ret graphql.Marshaler) {
@@ -2774,6 +4918,152 @@ func (ec *executionContext) unmarshalInputEnrollDeviceInput(ctx context.Context,
 	return it, nil
 }
 
+func (ec *executionContext) unmarshalInputPrekeyInput(ctx context.Context, obj any) (model.PrekeyInput, error) {
+	var it model.PrekeyInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"keyId", "publicKey"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "keyId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("keyId"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.KeyID = data
+		case "publicKey":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("publicKey"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PublicKey = data
+		}
+	}
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputSignedPrekeyInput(ctx context.Context, obj any) (model.SignedPrekeyInput, error) {
+	var it model.SignedPrekeyInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"keyId", "publicKey", "signature"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "keyId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("keyId"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.KeyID = data
+		case "publicKey":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("publicKey"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.PublicKey = data
+		case "signature":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("signature"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Signature = data
+		}
+	}
+	return it, nil
+}
+
+func (ec *executionContext) unmarshalInputUploadPrekeysInput(ctx context.Context, obj any) (model.UploadPrekeysInput, error) {
+	var it model.UploadPrekeysInput
+	if obj == nil {
+		return it, nil
+	}
+
+	asMap := map[string]any{}
+	for k, v := range obj.(map[string]any) {
+		asMap[k] = v
+	}
+
+	fieldsInOrder := [...]string{"identityKey", "registrationId", "signedPrekey", "kyberLastResortPrekey", "oneTimePrekeys", "oneTimeKyberPrekeys"}
+	for _, k := range fieldsInOrder {
+		v, ok := asMap[k]
+		if !ok {
+			continue
+		}
+		switch k {
+		case "identityKey":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("identityKey"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.IdentityKey = data
+		case "registrationId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("registrationId"))
+			data, err := ec.unmarshalNInt2int(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.RegistrationID = data
+		case "signedPrekey":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("signedPrekey"))
+			data, err := ec.unmarshalOSignedPrekeyInput2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐSignedPrekeyInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.SignedPrekey = data
+		case "kyberLastResortPrekey":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("kyberLastResortPrekey"))
+			data, err := ec.unmarshalOSignedPrekeyInput2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐSignedPrekeyInput(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.KyberLastResortPrekey = data
+		case "oneTimePrekeys":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("oneTimePrekeys"))
+			data, err := ec.unmarshalOPrekeyInput2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyInputᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OneTimePrekeys = data
+		case "oneTimeKyberPrekeys":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("oneTimeKyberPrekeys"))
+			data, err := ec.unmarshalOSignedPrekeyInput2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐSignedPrekeyInputᚄ(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.OneTimeKyberPrekeys = data
+		}
+	}
+	return it, nil
+}
+
 // endregion **************************** input.gotpl *****************************
 
 // region    ************************** interface.gotpl ***************************
@@ -2835,6 +5125,106 @@ func (ec *executionContext) _EnrollmentPreviewResult(ctx context.Context, sel as
 // endregion ************************** interface.gotpl ***************************
 
 // region    **************************** object.gotpl ****************************
+
+var contactImplementors = []string{"Contact"}
+
+func (ec *executionContext) _Contact(ctx context.Context, sel ast.SelectionSet, obj *model.Contact) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, contactImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Contact")
+		case "user":
+			out.Values[i] = ec._Contact_user(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "identityKey":
+			out.Values[i] = ec._Contact_identityKey(ctx, field, obj)
+		case "since":
+			out.Values[i] = ec._Contact_since(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "blocked":
+			out.Values[i] = ec._Contact_blocked(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "devices":
+			out.Values[i] = ec._Contact_devices(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var contactDeviceImplementors = []string{"ContactDevice"}
+
+func (ec *executionContext) _ContactDevice(ctx context.Context, sel ast.SelectionSet, obj *model.ContactDevice) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, contactDeviceImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ContactDevice")
+		case "deviceNumber":
+			out.Values[i] = ec._ContactDevice_deviceNumber(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "registrationId":
+			out.Values[i] = ec._ContactDevice_registrationId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
 
 var enrolledDeviceImplementors = []string{"EnrolledDevice", "EnrollDeviceResult"}
 
@@ -2985,6 +5375,60 @@ func (ec *executionContext) _EnrollmentRejected(ctx context.Context, sel ast.Sel
 	return out
 }
 
+var kyberPrekeyImplementors = []string{"KyberPrekey"}
+
+func (ec *executionContext) _KyberPrekey(ctx context.Context, sel ast.SelectionSet, obj *model.KyberPrekey) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, kyberPrekeyImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("KyberPrekey")
+		case "keyId":
+			out.Values[i] = ec._KyberPrekey_keyId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "publicKey":
+			out.Values[i] = ec._KyberPrekey_publicKey(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "signature":
+			out.Values[i] = ec._KyberPrekey_signature(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lastResort":
+			out.Values[i] = ec._KyberPrekey_lastResort(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var meImplementors = []string{"Me"}
 
 func (ec *executionContext) _Me(ctx context.Context, sel ast.SelectionSet, obj *model.Me) graphql.Marshaler {
@@ -3011,6 +5455,8 @@ func (ec *executionContext) _Me(ctx context.Context, sel ast.SelectionSet, obj *
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "identityKey":
+			out.Values[i] = ec._Me_identityKey(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -3064,6 +5510,353 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_renewCertificate(ctx, field)
 			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "uploadPrekeys":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_uploadPrekeys(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "replaceIdentityKey":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_replaceIdentityKey(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pairingToken":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_pairingToken(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "confirmPair":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_confirmPair(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "unpair":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_unpair(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "block":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_block(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "unblock":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_unblock(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var ownDeviceImplementors = []string{"OwnDevice"}
+
+func (ec *executionContext) _OwnDevice(ctx context.Context, sel ast.SelectionSet, obj *model.OwnDevice) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, ownDeviceImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("OwnDevice")
+		case "deviceNumber":
+			out.Values[i] = ec._OwnDevice_deviceNumber(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "name":
+			out.Values[i] = ec._OwnDevice_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "registrationId":
+			out.Values[i] = ec._OwnDevice_registrationId(ctx, field, obj)
+		case "registeredAt":
+			out.Values[i] = ec._OwnDevice_registeredAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "current":
+			out.Values[i] = ec._OwnDevice_current(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var pairingTokenImplementors = []string{"PairingToken"}
+
+func (ec *executionContext) _PairingToken(ctx context.Context, sel ast.SelectionSet, obj *model.PairingToken) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, pairingTokenImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PairingToken")
+		case "token":
+			out.Values[i] = ec._PairingToken_token(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._PairingToken_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var prekeyImplementors = []string{"Prekey"}
+
+func (ec *executionContext) _Prekey(ctx context.Context, sel ast.SelectionSet, obj *model.Prekey) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, prekeyImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Prekey")
+		case "keyId":
+			out.Values[i] = ec._Prekey_keyId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "publicKey":
+			out.Values[i] = ec._Prekey_publicKey(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var prekeyBundleImplementors = []string{"PrekeyBundle"}
+
+func (ec *executionContext) _PrekeyBundle(ctx context.Context, sel ast.SelectionSet, obj *model.PrekeyBundle) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, prekeyBundleImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PrekeyBundle")
+		case "deviceNumber":
+			out.Values[i] = ec._PrekeyBundle_deviceNumber(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "registrationId":
+			out.Values[i] = ec._PrekeyBundle_registrationId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "signedPrekey":
+			out.Values[i] = ec._PrekeyBundle_signedPrekey(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "prekey":
+			out.Values[i] = ec._PrekeyBundle_prekey(ctx, field, obj)
+		case "kyberPrekey":
+			out.Values[i] = ec._PrekeyBundle_kyberPrekey(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var prekeyBundlesImplementors = []string{"PrekeyBundles"}
+
+func (ec *executionContext) _PrekeyBundles(ctx context.Context, sel ast.SelectionSet, obj *model.PrekeyBundles) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, prekeyBundlesImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PrekeyBundles")
+		case "user":
+			out.Values[i] = ec._PrekeyBundles_user(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "identityKey":
+			out.Values[i] = ec._PrekeyBundles_identityKey(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "devices":
+			out.Values[i] = ec._PrekeyBundles_devices(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var prekeyCountImplementors = []string{"PrekeyCount"}
+
+func (ec *executionContext) _PrekeyCount(ctx context.Context, sel ast.SelectionSet, obj *model.PrekeyCount) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, prekeyCountImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("PrekeyCount")
+		case "oneTimePrekeys":
+			out.Values[i] = ec._PrekeyCount_oneTimePrekeys(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "oneTimeKyberPrekeys":
+			out.Values[i] = ec._PrekeyCount_oneTimeKyberPrekeys(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "refillBelow":
+			out.Values[i] = ec._PrekeyCount_refillBelow(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -3163,6 +5956,116 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 					}
 				}()
 				res = ec._Query_me(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "prekeyCount":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_prekeyCount(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "prekeyBundles":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_prekeyBundles(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "contacts":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_contacts(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "blocked":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_blocked(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "devices":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_devices(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -3292,6 +6195,55 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "discovery":
 			out.Values[i] = ec._ServerInfo_discovery(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var signedPrekeyImplementors = []string{"SignedPrekey"}
+
+func (ec *executionContext) _SignedPrekey(ctx context.Context, sel ast.SelectionSet, obj *model.SignedPrekey) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, signedPrekeyImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("SignedPrekey")
+		case "keyId":
+			out.Values[i] = ec._SignedPrekey_keyId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "publicKey":
+			out.Values[i] = ec._SignedPrekey_publicKey(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "signature":
+			out.Values[i] = ec._SignedPrekey_signature(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -3666,6 +6618,58 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 	return res
 }
 
+func (ec *executionContext) marshalNContact2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐContactᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Contact) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNContact2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐContact(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNContact2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐContact(ctx context.Context, sel ast.SelectionSet, v *model.Contact) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Contact(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNContactDevice2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐContactDeviceᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.ContactDevice) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNContactDevice2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐContactDevice(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNContactDevice2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐContactDevice(ctx context.Context, sel ast.SelectionSet, v *model.ContactDevice) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ContactDevice(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNEnrollDeviceInput2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐEnrollDeviceInput(ctx context.Context, v any) (model.EnrollDeviceInput, error) {
 	res, err := ec.unmarshalInputEnrollDeviceInput(ctx, v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -3727,6 +6731,16 @@ func (ec *executionContext) marshalNKeyProtection2githubᚗcomᚋchencohensoluti
 	return v
 }
 
+func (ec *executionContext) marshalNKyberPrekey2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐKyberPrekey(ctx context.Context, sel ast.SelectionSet, v *model.KyberPrekey) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._KyberPrekey(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNMe2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐMe(ctx context.Context, sel ast.SelectionSet, v model.Me) graphql.Marshaler {
 	return ec._Me(ctx, sel, &v)
 }
@@ -3741,6 +6755,115 @@ func (ec *executionContext) marshalNMe2ᚖgithubᚗcomᚋchencohensolutionsᚋpu
 	return ec._Me(ctx, sel, v)
 }
 
+func (ec *executionContext) marshalNOwnDevice2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐOwnDeviceᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.OwnDevice) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNOwnDevice2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐOwnDevice(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNOwnDevice2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐOwnDevice(ctx context.Context, sel ast.SelectionSet, v *model.OwnDevice) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._OwnDevice(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNPairState2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPairState(ctx context.Context, v any) (model.PairState, error) {
+	var res model.PairState
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNPairState2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPairState(ctx context.Context, sel ast.SelectionSet, v model.PairState) graphql.Marshaler {
+	return v
+}
+
+func (ec *executionContext) marshalNPairingToken2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPairingToken(ctx context.Context, sel ast.SelectionSet, v model.PairingToken) graphql.Marshaler {
+	return ec._PairingToken(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPairingToken2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPairingToken(ctx context.Context, sel ast.SelectionSet, v *model.PairingToken) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PairingToken(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPrekeyBundle2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyBundleᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.PrekeyBundle) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNPrekeyBundle2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyBundle(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNPrekeyBundle2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyBundle(ctx context.Context, sel ast.SelectionSet, v *model.PrekeyBundle) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PrekeyBundle(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPrekeyBundles2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyBundles(ctx context.Context, sel ast.SelectionSet, v model.PrekeyBundles) graphql.Marshaler {
+	return ec._PrekeyBundles(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPrekeyBundles2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyBundles(ctx context.Context, sel ast.SelectionSet, v *model.PrekeyBundles) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PrekeyBundles(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNPrekeyCount2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyCount(ctx context.Context, sel ast.SelectionSet, v model.PrekeyCount) graphql.Marshaler {
+	return ec._PrekeyCount(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNPrekeyCount2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyCount(ctx context.Context, sel ast.SelectionSet, v *model.PrekeyCount) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._PrekeyCount(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNPrekeyInput2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyInput(ctx context.Context, v any) (*model.PrekeyInput, error) {
+	res, err := ec.unmarshalInputPrekeyInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
 func (ec *executionContext) marshalNServerInfo2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐServerInfo(ctx context.Context, sel ast.SelectionSet, v model.ServerInfo) graphql.Marshaler {
 	return ec._ServerInfo(ctx, sel, &v)
 }
@@ -3753,6 +6876,21 @@ func (ec *executionContext) marshalNServerInfo2ᚖgithubᚗcomᚋchencohensoluti
 		return graphql.Null
 	}
 	return ec._ServerInfo(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNSignedPrekey2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐSignedPrekey(ctx context.Context, sel ast.SelectionSet, v *model.SignedPrekey) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._SignedPrekey(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNSignedPrekeyInput2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐSignedPrekeyInput(ctx context.Context, v any) (*model.SignedPrekeyInput, error) {
+	res, err := ec.unmarshalInputSignedPrekeyInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {
@@ -3815,6 +6953,11 @@ func (ec *executionContext) marshalNTime2timeᚐTime(ctx context.Context, sel as
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) unmarshalNUploadPrekeysInput2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐUploadPrekeysInput(ctx context.Context, v any) (model.UploadPrekeysInput, error) {
+	res, err := ec.unmarshalInputUploadPrekeysInput(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalN__Directive2githubᚗcomᚋ99designsᚋgqlgenᚋgraphqlᚋintrospectionᚐDirective(ctx context.Context, sel ast.SelectionSet, v introspection.Directive) graphql.Marshaler {
@@ -3988,11 +7131,80 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	return res
 }
 
+func (ec *executionContext) unmarshalOInt2ᚖint(ctx context.Context, v any) (*int, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := graphql.UnmarshalInt(v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOInt2ᚖint(ctx context.Context, sel ast.SelectionSet, v *int) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	_ = sel
+	_ = ctx
+	res := graphql.MarshalInt(*v)
+	return res
+}
+
+func (ec *executionContext) marshalOPrekey2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekey(ctx context.Context, sel ast.SelectionSet, v *model.Prekey) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._Prekey(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOPrekeyInput2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyInputᚄ(ctx context.Context, v any) ([]*model.PrekeyInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]*model.PrekeyInput, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNPrekeyInput2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPrekeyInput(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
 func (ec *executionContext) marshalOServerDiscovery2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐServerDiscovery(ctx context.Context, sel ast.SelectionSet, v *model.ServerDiscovery) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
 	return ec._ServerDiscovery(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalOSignedPrekeyInput2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐSignedPrekeyInputᚄ(ctx context.Context, v any) ([]*model.SignedPrekeyInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var vSlice []any
+	vSlice = graphql.CoerceList(v)
+	var err error
+	res := make([]*model.SignedPrekeyInput, len(vSlice))
+	for i := range vSlice {
+		ctx := graphql.WithPathContext(ctx, graphql.NewPathWithIndex(i))
+		res[i], err = ec.unmarshalNSignedPrekeyInput2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐSignedPrekeyInput(ctx, vSlice[i])
+		if err != nil {
+			return nil, err
+		}
+	}
+	return res, nil
+}
+
+func (ec *executionContext) unmarshalOSignedPrekeyInput2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐSignedPrekeyInput(ctx context.Context, v any) (*model.SignedPrekeyInput, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := ec.unmarshalInputSignedPrekeyInput(ctx, v)
+	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) unmarshalOString2ᚖstring(ctx context.Context, v any) (*string, error) {

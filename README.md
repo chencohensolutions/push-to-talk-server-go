@@ -1,8 +1,9 @@
 # ptt-server
 
 A self-hosted server for a push-to-talk messenger. Phones enroll with it through a one-time code or QR code and
-connect with mutual TLS; they find it again through the BitTorrent DHT when its address changes. Later phases add
-end-to-end encrypted messages, talk clips and live audio through a LiveKit server running beside it. The server only
+connect with mutual TLS; they find it again through the BitTorrent DHT when its address changes. Users pair by QR code, and the server
+routes libsignal envelopes between their phones over a WebSocket, queued until each device takes them. Later phases
+add push wake-ups, groups, talk clips and live audio through a LiveKit server running beside it. The server only
 ever routes and stores ciphertext.
 
 The phone app is [push-to-talk-kmp](https://github.com/chencohensolutions/push-to-talk-kmp). Much of this server is
@@ -24,6 +25,7 @@ ptt-server devices
 - [docs/install.md](docs/install.md): setup, the Windows service, ports
 - [docs/authentication.md](docs/authentication.md): users, enrollment, device numbers, revocation, the admin API
 - [docs/discovery.md](docs/discovery.md): the server's id, the DHT record, port mapping
+- [docs/messaging.md](docs/messaging.md): identity keys and prekeys, pairing, `/ws` and the message queue
 
 ## License
 

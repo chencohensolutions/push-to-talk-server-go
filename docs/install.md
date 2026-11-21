@@ -30,7 +30,8 @@ ptt-server setup --dir <folder> --move-from <old server folder>
 | `certs/ca.pem`, `certs/ca-key.pem` | this server's own CA (RSA 4096, CN `ptt-server-ca`, 10 years; package `certs`), or the one `--import-ca` names |
 | `certs/server.pem`, `certs/server-key.pem` | the TLS certificate (RSA 2048, `serverAuth`, 825 days, the most iOS takes) for `localhost`, the host name, every private IPv4 address and each `--address` |
 
-The server writes `admin.token` at every start, and `devices.json` / `devices.revoked.json` once a device enrolls.
+The server writes `admin.token` at every start, `ptt.db` (prekeys and the message queue, SQLite) and `pairs.json`
+(pairs and blocks) as they are needed, and `devices.json` / `devices.revoked.json` once a device enrolls.
 
 - **Each server has its own CA.** Phones enroll by the QR code, which pins the server's key, and keep its CA from
   `enrollDevice` / `serverInfo.caCertificate`. Keep `certs/ca-key.pem` private and backed up: a new CA means every
@@ -40,9 +41,21 @@ The server writes `admin.token` at every start, and `devices.json` / `devices.re
 - A server certificate that doesn't list an `--address` (or a new LAN address) is kept with a note; phones enrolled by
   QR code check the key, not the names, so they still connect. `--reissue-server-cert` makes it again (the old files
   are kept as `.bak`), with a **new key**, which changes the server's id: phones must enroll again.
-- `--move-from <old folder>` copies `config.json`, the certificates, `users.json`, `devices.json` and
-  `devices.revoked.json` from a server moved from another PC; the old folder is only read, and `admin.token` isn't
-  copied.
+- `--move-from <old folder>` copies `config.json`, the certificates, `users.json`, `devices.json`,
+  `devices.revoked.json`, `pairs.json` and `ptt.db` from a server moved from another PC (stop it first); the old
+  folder is only read, and `admin.token` isn't copied.
+
+## A second server for testing
+
+A test server beside the real one runs from its own folder (`ptt-server setup --dir <folder> --port 56410`) with its
+own `admin_addr`, and with the router left to the real server:
+
+```jsonc
+  "port": "56410",
+  "admin_addr": "127.0.0.1:8092",
+  "port_mapping": false,   // the real server maps the router's port; a test server mustn't take it over
+  "discovery": false       // optional: don't publish the test server in the DHT
+```
 
 ## The Windows service
 
@@ -69,7 +82,7 @@ On macOS and Linux run it with launchd or systemd from the server folder.
 
 | Port | Who listens | Open to the internet |
 |---|---|---|
-| TCP 56400 (`port`) | ptt-server: GraphQL on `/query` (later `/ws`, `/blob`, `/rtc`) | Yes: the server maps it on the router itself (docs/discovery.md), or forward it by hand |
+| TCP 56400 (`port`) | ptt-server: GraphQL on `/query`, the WebSocket on `/ws` (later `/blob`, `/rtc`) | Yes: the server maps it on the router itself (docs/discovery.md), or forward it by hand |
 | TCP 127.0.0.1:8082 (`admin_addr`) | the admin API | No, loopback only |
 | UDP 7882, TCP 7881 | LiveKit's media, from phase 5b | Yes, same number outside and inside |
 

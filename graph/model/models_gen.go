@@ -18,6 +18,22 @@ type EnrollmentPreviewResult interface {
 	IsEnrollmentPreviewResult()
 }
 
+type Contact struct {
+	User string `json:"user"`
+	// Null when the contact has no identity key on the server (it replaced it, and none of its phones uploaded one yet).
+	IdentityKey *string   `json:"identityKey,omitempty"`
+	Since       time.Time `json:"since"`
+	// The caller blocked this contact.
+	Blocked bool `json:"blocked"`
+	// Its active devices, by device number.
+	Devices []*ContactDevice `json:"devices"`
+}
+
+type ContactDevice struct {
+	DeviceNumber   int `json:"deviceNumber"`
+	RegistrationID int `json:"registrationId"`
+}
+
 type EnrollDeviceInput struct {
 	// As shown by `ptt-server enroll-code`; case, dashes and spaces are ignored.
 	Code string `json:"code"`
@@ -58,6 +74,13 @@ func (EnrollmentRejected) IsEnrollmentPreviewResult() {}
 
 func (EnrollmentRejected) IsEnrollDeviceResult() {}
 
+type KyberPrekey struct {
+	KeyID      int    `json:"keyId"`
+	PublicKey  string `json:"publicKey"`
+	Signature  string `json:"signature"`
+	LastResort bool   `json:"lastResort"`
+}
+
 type Me struct {
 	// The user the device's certificate names (CN).
 	User string `json:"user"`
@@ -65,9 +88,64 @@ type Me struct {
 	DeviceNumber int `json:"deviceNumber"`
 	// The name the device enrolled with.
 	DeviceName string `json:"deviceName"`
+	// The user's identity key, base64; null until a device of the user uploaded it (uploadPrekeys).
+	IdentityKey *string `json:"identityKey,omitempty"`
 }
 
 type Mutation struct {
+}
+
+type OwnDevice struct {
+	DeviceNumber int    `json:"deviceNumber"`
+	Name         string `json:"name"`
+	// Null until the device uploaded its keys.
+	RegistrationID *int      `json:"registrationId,omitempty"`
+	RegisteredAt   time.Time `json:"registeredAt"`
+	// The device that asked.
+	Current bool `json:"current"`
+}
+
+type PairingToken struct {
+	// 22 characters, base64url: put it in the QR code.
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+type Prekey struct {
+	KeyID     int    `json:"keyId"`
+	PublicKey string `json:"publicKey"`
+}
+
+type PrekeyBundle struct {
+	DeviceNumber   int           `json:"deviceNumber"`
+	RegistrationID int           `json:"registrationId"`
+	SignedPrekey   *SignedPrekey `json:"signedPrekey"`
+	// A one-time EC prekey; null when the device has none left.
+	Prekey *Prekey `json:"prekey,omitempty"`
+	// A one-time Kyber prekey, or the last-resort one when none is left (lastResort).
+	KyberPrekey *KyberPrekey `json:"kyberPrekey"`
+}
+
+type PrekeyBundles struct {
+	User        string `json:"user"`
+	IdentityKey string `json:"identityKey"`
+	// One per active device of the user, by device number; empty when none has keys.
+	Devices []*PrekeyBundle `json:"devices"`
+}
+
+type PrekeyCount struct {
+	// One-time EC prekeys held for the device.
+	OneTimePrekeys int `json:"oneTimePrekeys"`
+	// One-time Kyber prekeys held for the device.
+	OneTimeKyberPrekeys int `json:"oneTimeKyberPrekeys"`
+	// Upload more when either count is under this (20).
+	RefillBelow int `json:"refillBelow"`
+}
+
+type PrekeyInput struct {
+	// 0 to 16777215.
+	KeyID     int    `json:"keyId"`
+	PublicKey string `json:"publicKey"`
 }
 
 type Query struct {
@@ -103,6 +181,34 @@ type ServerInfo struct {
 	DeviceNumber int `json:"deviceNumber"`
 	// How to find this server when its address changes; null when the server can't read its own key.
 	Discovery *ServerDiscovery `json:"discovery,omitempty"`
+}
+
+type SignedPrekey struct {
+	KeyID     int    `json:"keyId"`
+	PublicKey string `json:"publicKey"`
+	Signature string `json:"signature"`
+}
+
+type SignedPrekeyInput struct {
+	// 0 to 16777215.
+	KeyID     int    `json:"keyId"`
+	PublicKey string `json:"publicKey"`
+	Signature string `json:"signature"`
+}
+
+type UploadPrekeysInput struct {
+	// The user's public identity key, 33 bytes (type 0x05 and 32 bytes).
+	IdentityKey string `json:"identityKey"`
+	// libsignal's registration id of this device, 1 to 16380.
+	RegistrationID int `json:"registrationId"`
+	// The signed EC prekey: a 33-byte public key and the identity key's 64-byte signature.
+	SignedPrekey *SignedPrekeyInput `json:"signedPrekey,omitempty"`
+	// The last-resort Kyber (ML-KEM 1024) prekey: a 1569-byte public key and its signature.
+	KyberLastResortPrekey *SignedPrekeyInput `json:"kyberLastResortPrekey,omitempty"`
+	// One-time EC prekeys to add; one with an id the server holds replaces it.
+	OneTimePrekeys []*PrekeyInput `json:"oneTimePrekeys,omitempty"`
+	// One-time Kyber prekeys to add, signed.
+	OneTimeKyberPrekeys []*SignedPrekeyInput `json:"oneTimeKyberPrekeys,omitempty"`
 }
 
 type EnrollmentRejectedReason string
@@ -227,6 +333,63 @@ func (e *KeyProtection) UnmarshalJSON(b []byte) error {
 }
 
 func (e KeyProtection) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type PairState string
+
+const (
+	// The caller confirmed; the other user hasn't yet.
+	PairStateWaiting PairState = "WAITING"
+	// Both confirmed: the two are contacts.
+	PairStatePaired PairState = "PAIRED"
+)
+
+var AllPairState = []PairState{
+	PairStateWaiting,
+	PairStatePaired,
+}
+
+func (e PairState) IsValid() bool {
+	switch e {
+	case PairStateWaiting, PairStatePaired:
+		return true
+	}
+	return false
+}
+
+func (e PairState) String() string {
+	return string(e)
+}
+
+func (e *PairState) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = PairState(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid PairState", str)
+	}
+	return nil
+}
+
+func (e PairState) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *PairState) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e PairState) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

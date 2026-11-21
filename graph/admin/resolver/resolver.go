@@ -17,4 +17,13 @@ type Resolver struct {
 	UserStore  *auth.Users
 	Enrollment *enroll.Service
 	Now        func() time.Time
+	// Revoked is called after a device of user was revoked, or user removed, so it takes effect at once: its /ws
+	// connections close and its keys and queue go (relay.Relay.Revoked). Nil does nothing.
+	Revoked func(user string)
+}
+
+func (r *Resolver) revoked(user string) {
+	if r.Revoked != nil {
+		r.Revoked(user)
+	}
 }

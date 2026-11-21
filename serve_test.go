@@ -82,6 +82,8 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		PublicURL:    "https://ptt.test:56400",
 		UsersFile:    filepath.Join(dir, "users.json"),
 		DevicesFile:  filepath.Join(dir, "devices.json"),
+		PairsFile:    filepath.Join(dir, "pairs.json"),
+		DatabaseFile: filepath.Join(dir, "ptt.db"),
 		EnrolledOnly: true,
 	}.WithDefaults()
 	for _, change := range configure {
@@ -91,6 +93,7 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { s.store.Close() }) // before the folder is removed: Windows can't remove an open file
 	d, err := newServerDiscovery(config, serverLeaf, serverKey)
 	if err != nil {
 		t.Fatal(err)
