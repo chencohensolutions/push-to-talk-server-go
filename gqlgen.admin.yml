@@ -1,0 +1,23 @@
+# Admin API (loopback only). Generate with: go tool gqlgen generate --config gqlgen.admin.yml
+schema:
+  - graph/admin/schema/*.graphql
+
+exec:
+  filename: graph/admin/generated/generated.go
+  package: generated
+
+model:
+  filename: graph/admin/model/models_gen.go
+  package: model
+
+resolver:
+  layout: follow-schema
+  dir: graph/admin/resolver
+  package: resolver
+
+models:
+  Device:
+    model: github.com/chencohensolutions/push-to-talk-server-go/enroll.Device
+    fields:
+      renewedFrom:
+        resolver: true

@@ -1,0 +1,17 @@
+# Public API (/query, mTLS). Generate with: go tool gqlgen generate
+schema:
+  - graph/schema/*.graphql
+
+exec:
+  filename: graph/generated/generated.go
+
+model:
+  filename: graph/model/models_gen.go
+
+resolver:
+  layout: follow-schema
+  dir: graph/resolver
+
+models:
+  Int64:
+    model: github.com/99designs/gqlgen/graphql.Int64
