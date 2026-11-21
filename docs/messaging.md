@@ -57,7 +57,8 @@ uses one up and the server would otherwise rewrite the whole registry on every f
 - **`replaceIdentityKey(identityKey)`**: after every phone of a user was lost and enrolled again. Refused
   `OTHER_DEVICES_ACTIVE` while another device of the user still has keys (revoke the old phones first). It drops the
   keys stored for the user's devices (they were signed by the old key) and sends each contact's devices an
-  `IDENTITY_KEY_CHANGED` envelope carrying the new key; their apps show "security key changed".
+  `IDENTITY_KEY_CHANGED` envelope whose `ciphertext` is the raw bytes of the new 33-byte key (not encrypted: it is
+  public); their apps show "security key changed".
 - `me.identityKey` is the user's identity key, null before the first upload.
 
 ## Pairing and contacts
@@ -74,7 +75,9 @@ Who may reach whom is in `pairs.json` (`pairs_file`; package `contacts`, written
 
 - **`pairingToken`** → `{ token expiresAt }`: 128 random bits (22 characters, base64url) for the caller's user, valid
   10 minutes, single use, kept in memory as a hash. At most 10 unused at once (`RATE_LIMITED`). The phone puts it in
-  the Add contact QR code beside the user name, the identity key and a secret that never reaches the server.
+  the Add contact QR code beside the user name, the identity key and a secret that never reaches the server. The
+  code's format, `ptt://pair?v=1&u&k&t&s&f`, is the app's and is defined in push-to-talk-kmp's `docs/design.md`;
+  the server only ever sees the token.
 - **The pair request**: the scanning phone fetches `prekeyBundles(user, routingToken)` and sends one Send whose
   envelopes for that user all carry `routing_token`. The server routes it although the two aren't paired, uses the
   token up, takes it out of the envelopes, and records a pairing waiting in `pending`.
