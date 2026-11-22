@@ -123,6 +123,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		r.mu.Unlock()
 		r.disconnected(c.device.User)
 		r.talkerGone(c.device)
+		_ = r.Registry.Seen(c.serial, time.Now()) // it was here until now (Your devices' last seen)
 	}()
 	// Revoked between identify and here: don't stay.
 	if r.Registry.IsRevoked(device.Serial) {

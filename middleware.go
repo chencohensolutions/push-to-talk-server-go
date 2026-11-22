@@ -65,6 +65,11 @@ func identify(config auth.AppConfig, users *auth.Users, registry *enroll.Registr
 				log.Printf("Renewed certificate %s of %q in use: %s revoked", serial, device.Name, old)
 			}
 		}
+		if enrolled {
+			if err := registry.Seen(serial, time.Now()); err != nil {
+				log.Printf("Noting that device %d of %s was seen: %v", device.DeviceNumber, currentUser.Name, err)
+			}
+		}
 		log.Printf("Client connected: user=%s device=%d from %s (%s %s)", currentUser.Name, device.DeviceNumber,
 			r.RemoteAddr, r.Method, r.URL.Path)
 		next.ServeHTTP(w, r.WithContext(auth.WithUser(ctx, currentUser)))

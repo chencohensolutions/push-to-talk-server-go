@@ -247,6 +247,8 @@ atomically): serial, user, device name, device number, key protection, registrat
 date and `renewed_from`, and the device's push registration: `fcm_token` and `notifications_enabled`, set by
 `registerPush` ([messaging.md](messaging.md), "Push"), kept by a renewed certificate, cleared when the device is
 revoked, and dropped when FCM says the token is gone. A device's public prekeys are in `ptt.db`, not here.
+`last_seen_at` is when the certificate last reached the server, to the minute (`Registry.Seen`, from `identify` on
+every request and when its `/ws` closes; the file is written at most once a minute per device).
 
 ```
 $ ptt-server devices
@@ -263,6 +265,12 @@ Revoked "Pixel 9", device 1 of user hen (serial b582e90a5ea9c2a16b60802e95543c85
   admin API after `revoke` and `user remove`).
 - Revoked serials are also kept in `devices.revoked.json` beside `devices.json`, read at start, so a lost or replaced
   `devices.json` doesn't bring a revoked phone back; a damaged one stops the server rather than let everyone in.
+- **From the app** (Your devices, 2026-11-22, hen): `devices` lists the caller's own active devices with
+  `lastSeenAt`, `keyProtection` and `current`, and `revokeMyDevice(deviceNumber)` revokes another of them exactly as
+  `revoke` does (all its certificates, its `/ws`, keys and queue). It answers `CURRENT_DEVICE` for the calling
+  device's own number (a phone doesn't revoke itself) and `NOT_FOUND` for a number no active device of the caller's
+  user has, so another user's devices can't be reached. Any of the user's phones can revoke the others, as in
+  Signal's Linked devices.
 - `keyProtection` is what the device *reports* (`STRONGBOX`, `TEE`, `SECURE_ENCLAVE`, `SOFTWARE`). The server does not
   verify it (no key attestation), so treat it as informational.
 

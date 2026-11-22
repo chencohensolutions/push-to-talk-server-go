@@ -37,6 +37,9 @@ type Device struct {
 	// revoking clears them, and a token FCM answers as gone is dropped.
 	FCMToken             string `json:"fcm_token,omitempty"`
 	NotificationsEnabled bool   `json:"notifications_enabled,omitempty"`
+	// When the device last reached the server with this certificate (a request or its /ws closing), to the minute:
+	// what Your devices shows (OwnDevice.lastSeenAt). Nil when it never did since this was kept (2026-11-22).
+	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
 }
 
 var (
@@ -270,6 +273,33 @@ func (r *Registry) revokeWhere(at time.Time, match func(Device) bool) error {
 		return err
 	}
 	return nil
+}
+
+// SeenRounding is how finely LastSeenAt is kept: the registry is written at most once a minute per device.
+const SeenRounding = time.Minute
+
+// Seen notes that the device with serial reached the server at at. The file is written only when the time moved on
+// by a minute, so a busy device doesn't rewrite it on every request.
+func (r *Registry) Seen(serial string, at time.Time) error {
+	at = at.UTC().Truncate(SeenRounding)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.devices {
+		if r.devices[i].Serial != serial {
+			continue
+		}
+		if last := r.devices[i].LastSeenAt; last != nil && !at.After(*last) {
+			return nil
+		}
+		previous := r.devices[i].LastSeenAt
+		r.devices[i].LastSeenAt = &at
+		if err := r.save(); err != nil {
+			r.devices[i].LastSeenAt = previous
+			return err
+		}
+		return nil
+	}
+	return ErrDeviceNotFound
 }
 
 // Find returns the device with this certificate serial.

@@ -238,6 +238,11 @@ type OwnDevice struct {
 	// Null until the device uploaded its keys.
 	RegistrationID *int      `json:"registrationId,omitempty"`
 	RegisteredAt   time.Time `json:"registeredAt"`
+	// When the device last reached the server (a request, or its /ws closing), to the minute; null when it hasn't since
+	// the server started keeping it (2026-11-22). A device connected now shows the time it connected or last asked.
+	LastSeenAt *time.Time `json:"lastSeenAt,omitempty"`
+	// Where its key is kept, as it said when it enrolled.
+	KeyProtection KeyProtection `json:"keyProtection"`
 	// The device that asked.
 	Current bool `json:"current"`
 }
@@ -646,6 +651,67 @@ func (e *PairState) UnmarshalJSON(b []byte) error {
 }
 
 func (e PairState) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+// What revokeMyDevice did.
+type RevokeMyDeviceResult string
+
+const (
+	// The device is revoked: its certificate is refused from now on, its /ws closed, its keys and queue dropped.
+	RevokeMyDeviceResultRevoked RevokeMyDeviceResult = "REVOKED"
+	// No active device of the caller's user has this number (another user's devices are never touched).
+	RevokeMyDeviceResultNotFound RevokeMyDeviceResult = "NOT_FOUND"
+	// The number is the calling device's own: a phone can't revoke itself.
+	RevokeMyDeviceResultCurrentDevice RevokeMyDeviceResult = "CURRENT_DEVICE"
+)
+
+var AllRevokeMyDeviceResult = []RevokeMyDeviceResult{
+	RevokeMyDeviceResultRevoked,
+	RevokeMyDeviceResultNotFound,
+	RevokeMyDeviceResultCurrentDevice,
+}
+
+func (e RevokeMyDeviceResult) IsValid() bool {
+	switch e {
+	case RevokeMyDeviceResultRevoked, RevokeMyDeviceResultNotFound, RevokeMyDeviceResultCurrentDevice:
+		return true
+	}
+	return false
+}
+
+func (e RevokeMyDeviceResult) String() string {
+	return string(e)
+}
+
+func (e *RevokeMyDeviceResult) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = RevokeMyDeviceResult(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid RevokeMyDeviceResult", str)
+	}
+	return nil
+}
+
+func (e RevokeMyDeviceResult) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *RevokeMyDeviceResult) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e RevokeMyDeviceResult) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

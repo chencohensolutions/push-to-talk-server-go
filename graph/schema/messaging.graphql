@@ -48,6 +48,12 @@ extend type Mutation {
   """
   replaceIdentityKey(identityKey: String!): Boolean!
   """
+  Revokes another device of the caller's own user, by its device number (Your devices in the app): every certificate
+  of that device, as ptt-server revoke does, so it can't connect again; its /ws closes and its keys and queue go, and
+  contacts stop sending to it. Never the calling device (CURRENT_DEVICE) and never another user's (NOT_FOUND).
+  """
+  revokeMyDevice(deviceNumber: Int!): RevokeMyDeviceResult!
+  """
   A single-use pairing token for the caller's user, valid for 10 minutes, for the Add contact QR code. One Send from
   a user who isn't a contact, with the token in its envelopes, is routed to the caller's devices; that is the pair
   request. RATE_LIMITED with 10 unused tokens.
@@ -176,6 +182,23 @@ type OwnDevice {
   "Null until the device uploaded its keys."
   registrationId: Int
   registeredAt: Time!
+  """
+  When the device last reached the server (a request, or its /ws closing), to the minute; null when it hasn't since
+  the server started keeping it (2026-11-22). A device connected now shows the time it connected or last asked.
+  """
+  lastSeenAt: Time
+  "Where its key is kept, as it said when it enrolled."
+  keyProtection: KeyProtection!
   "The device that asked."
   current: Boolean!
+}
+
+"What revokeMyDevice did."
+enum RevokeMyDeviceResult {
+  "The device is revoked: its certificate is refused from now on, its /ws closed, its keys and queue dropped."
+  REVOKED
+  "No active device of the caller's user has this number (another user's devices are never touched)."
+  NOT_FOUND
+  "The number is the calling device's own: a phone can't revoke itself."
+  CURRENT_DEVICE
 }
