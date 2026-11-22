@@ -62,6 +62,12 @@ type AppConfig struct {
 	// The live talk path (phase 5b): a LiveKit server beside this one (docs/install.md, "LiveKit"). Without it,
 	// talkToken answers LIVE_OFF and talk goes by the clip path only.
 	LiveKit *LiveKitConfig `json:"livekit,omitempty"`
+	// The GitHub repository (owner/name) the Talk app is released from, followed hourly so phones are pushed an
+	// "app_update" when a new release is out (docs/install.md, "App updates"). Default
+	// chencohensolutions/push-to-talk-kmp; "none" turns it off.
+	AppReleases string `json:"app_releases,omitempty"`
+	// The latest app release seen (default app-release.json).
+	AppReleaseFile string `json:"app_release_file,omitempty"`
 	// Loopback-only listener for the admin GraphQL API (default 127.0.0.1:8082).
 	AdminAddr string `json:"admin_addr"`
 	// Token for the admin API, rewritten on every server start (default admin.token).
@@ -85,7 +91,12 @@ type LiveKitConfig struct {
 	// The most devices in one call's room (default 32). Each device in a video call receives every other camera, so
 	// the server's upload grows with the square of this; phones subscribe to a small layer for small tiles.
 	MaxCallDevices int `json:"max_call_devices,omitempty"`
+	// Whether the server keeps every call's streams, still encrypted end to end (default true; 2026-11-22, hen).
+	KeepCalls *bool `json:"keep_calls,omitempty"`
 }
+
+// KeepsCalls says whether the server keeps every call (livekit.keep_calls, default on).
+func (l LiveKitConfig) KeepsCalls() bool { return l.KeepCalls == nil || *l.KeepCalls }
 
 // DefaultMaxCallDevices is livekit.max_call_devices when config.json doesn't say: 32 (2026-11-22, hen; it was 8).
 const DefaultMaxCallDevices = 32
@@ -116,6 +127,8 @@ const (
 	DefaultBlobDir        = "blobs"
 	DefaultBlobDays       = 30
 	DefaultAdminAddr      = "127.0.0.1:8082"
+	DefaultAppReleases    = "chencohensolutions/push-to-talk-kmp"
+	DefaultAppReleaseFile = "app-release.json"
 	DefaultAdminTokenFile = "admin.token"
 )
 
@@ -124,6 +137,9 @@ func (c AppConfig) DiscoveryOn() bool { return c.Discovery == nil || *c.Discover
 
 // InvitesOn says whether users may invite friends: on unless "invites": false.
 func (c AppConfig) InvitesOn() bool { return c.Invites == nil || *c.Invites }
+
+// AppReleasesOn says whether the server follows the app's releases: on unless app_releases is "none".
+func (c AppConfig) AppReleasesOn() bool { return c.AppReleases != "none" }
 
 // PushOn says whether config.json names an FCM service account.
 func (c AppConfig) PushOn() bool { return c.FCM != nil && c.FCM.ServiceAccountFile != "" }
@@ -213,6 +229,12 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.QueueDays <= 0 {
 		c.QueueDays = DefaultQueueDays
+	}
+	if c.AppReleases == "" {
+		c.AppReleases = DefaultAppReleases
+	}
+	if c.AppReleaseFile == "" {
+		c.AppReleaseFile = DefaultAppReleaseFile
 	}
 	if c.AdminAddr == "" {
 		c.AdminAddr = DefaultAdminAddr

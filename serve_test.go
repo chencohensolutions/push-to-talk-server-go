@@ -77,17 +77,18 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 	keyDER, _ := x509.MarshalECPrivateKey(caKey)
 	writePEM(t, filepath.Join(dir, "ca-key.pem"), "EC PRIVATE KEY", keyDER)
 	config := auth.AppConfig{
-		ClientCA:     filepath.Join(dir, "ca.pem"),
-		ClientCAKey:  filepath.Join(dir, "ca-key.pem"),
-		PublicURL:    "https://ptt.test:56400",
-		UsersFile:    filepath.Join(dir, "users.json"),
-		DevicesFile:  filepath.Join(dir, "devices.json"),
-		PairsFile:    filepath.Join(dir, "pairs.json"),
-		GroupsFile:   filepath.Join(dir, "groups.json"),
-		BlobDir:      filepath.Join(dir, "blobs"),
-		InvitesFile:  filepath.Join(dir, "invites.json"),
-		DatabaseFile: filepath.Join(dir, "ptt.db"),
-		EnrolledOnly: true,
+		ClientCA:       filepath.Join(dir, "ca.pem"),
+		ClientCAKey:    filepath.Join(dir, "ca-key.pem"),
+		PublicURL:      "https://ptt.test:56400",
+		UsersFile:      filepath.Join(dir, "users.json"),
+		DevicesFile:    filepath.Join(dir, "devices.json"),
+		PairsFile:      filepath.Join(dir, "pairs.json"),
+		GroupsFile:     filepath.Join(dir, "groups.json"),
+		BlobDir:        filepath.Join(dir, "blobs"),
+		InvitesFile:    filepath.Join(dir, "invites.json"),
+		AppReleaseFile: filepath.Join(dir, "app-release.json"),
+		DatabaseFile:   filepath.Join(dir, "ptt.db"),
+		EnrolledOnly:   true,
 	}.WithDefaults()
 	for _, change := range configure {
 		change(&config)

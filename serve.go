@@ -22,6 +22,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/lru"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
+	"github.com/chencohensolutions/push-to-talk-server-go/apprelease"
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	"github.com/chencohensolutions/push-to-talk-server-go/blobs"
 	"github.com/chencohensolutions/push-to-talk-server-go/contacts"
@@ -33,6 +34,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/invite"
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	"github.com/chencohensolutions/push-to-talk-server-go/push"
+	"github.com/chencohensolutions/push-to-talk-server-go/recorder"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
 	"github.com/chencohensolutions/push-to-talk-server-go/version"
@@ -61,6 +63,10 @@ type server struct {
 	// LiveKit's keys (talkToken) and its signalling, which /rtc passes to; nil without LiveKit.
 	liveKeys *livekit.Keys
 	rtc      http.Handler
+	// Saves calls (recordCall); nil without LiveKit.
+	recorder *recorder.Recorder
+	// Follows the app's releases and pushes app_update to the phones; nil when app_releases is "none".
+	appReleases *apprelease.Watcher
 	// liveRestart restarts the livekit-server this server runs (restartLiveKit); nil when it runs none.
 	liveRestart chan struct{}
 }
@@ -103,6 +109,10 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 		go d.publisher.Run(running)
 	}
 	go s.relay.Run(running)
+	if s.appReleases != nil {
+		log.Printf("App releases: followed hourly at github.com/%s; phones are pushed app_update for a new one", config.AppReleases)
+		go s.appReleases.Run(running)
+	}
 	if binary := liveKitBinary(config); binary != "" {
 		s.liveRestart = make(chan struct{}, 1)
 		go livekit.Run(running, binary, config.LiveKit.ConfigFile, *s.liveKeys, s.liveRestart)
@@ -110,6 +120,9 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	go serveAdmin(s)
 	go func() {
 		<-running.Done()
+		if s.recorder != nil {
+			s.recorder.StopAll() // the saved calls' tracks are completed
+		}
 		stop() // a second Ctrl+C now ends the process the usual way
 		log.Printf("Stopping: removing the port mapping (Ctrl+C again to stop now)")
 		select {
@@ -191,6 +204,10 @@ func openServer(config auth.AppConfig) (*server, error) {
 			return nil, fmt.Errorf("config.json livekit url: %w", err)
 		}
 		s.liveKeys = &keys
+		if config.LiveKit.KeepsCalls() {
+			s.recorder = &recorder.Recorder{Keys: keys, URL: config.LiveKit.URL, Blobs: s.relay.Blobs}
+			log.Printf("Calls: kept, encrypted end to end, in %s (livekit.keep_calls)", config.BlobDir)
+		}
 		maxCall := config.LiveKit.MaxCallDevices
 		if maxCall <= 0 {
 			maxCall = auth.DefaultMaxCallDevices
@@ -201,6 +218,15 @@ func openServer(config auth.AppConfig) (*server, error) {
 			config.LiveKit.UDPPort, config.LiveKit.TCPPort)
 	} else {
 		log.Printf("Live talk: off (no livekit in config.json); talk goes by the clip path")
+	}
+	if config.AppReleasesOn() {
+		pusher := s.relay.Push
+		s.appReleases, err = apprelease.Open(config.AppReleases, config.AppReleaseFile, func(apprelease.Release) int {
+			return pusher.AppUpdate()
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to open the app release: %w", err)
+		}
 	}
 	if config.InvitesOn() {
 		invites, err := invite.Open(config.InvitesFile, time.Now)
@@ -292,8 +318,9 @@ func (s *server) newMux() *http.ServeMux {
 
 func (s *server) newGraphQLServer() *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
-		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Invites: s.invites, Now: time.Now, LiveKeys: s.liveKeys,
-			Version: version.String(),
+		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Invites: s.invites, Now: time.Now, LiveKeys: s.liveKeys, Recorder: s.recorder,
+			AppReleases: s.appReleases,
+			Version:     version.String(),
 			Discovery: func() *model.ServerDiscovery {
 				if s.discovery == nil {
 					return nil

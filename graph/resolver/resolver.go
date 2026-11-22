@@ -6,11 +6,13 @@ import (
 	"encoding/pem"
 	"time"
 
+	"github.com/chencohensolutions/push-to-talk-server-go/apprelease"
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/invite"
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
+	"github.com/chencohensolutions/push-to-talk-server-go/recorder"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 )
 
@@ -29,6 +31,11 @@ type Resolver struct {
 	Now     func() time.Time
 	// LiveKit's API key and secret, to sign room tokens (talkToken); nil without LiveKit.
 	LiveKeys *livekit.Keys
+	// Keeps every call without re-encoding it (callToken starts it, callRecording lists it); nil without LiveKit or
+	// with livekit.keep_calls false.
+	Recorder *recorder.Recorder
+	// Follows the app's releases (appRelease); nil when config.json turns it off.
+	AppReleases *apprelease.Watcher
 	// The server's build, shown by serverInfo.
 	Version string
 	// Who this server is and where, for serverInfo.discovery; nil when unknown.

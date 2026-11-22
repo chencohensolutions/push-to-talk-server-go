@@ -3,6 +3,7 @@ package resolver
 import (
 	"time"
 
+	"github.com/chencohensolutions/push-to-talk-server-go/apprelease"
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
 )
@@ -22,6 +23,8 @@ type Resolver struct {
 	Revoked func(user string)
 	// LiveKitRestart restarts the livekit-server this server runs, and says whether it runs one. Nil: none.
 	LiveKitRestart func() bool
+	// AppReleases follows the app's releases (checkAppRelease); nil when app_releases is "none".
+	AppReleases *apprelease.Watcher
 }
 
 func (r *Resolver) revoked(user string) {

@@ -75,6 +75,9 @@ type Grant struct {
 	CanPublish     *bool  `json:"canPublish,omitempty"`
 	CanSubscribe   *bool  `json:"canSubscribe,omitempty"`
 	CanPublishData *bool  `json:"canPublishData,omitempty"`
+	// Hidden: the others don't see this participant (the server's call recorder).
+	Hidden   bool `json:"hidden,omitempty"`
+	Recorder bool `json:"recorder,omitempty"`
 }
 
 func yes() *bool { v := true; return &v }
@@ -104,6 +107,16 @@ func (k Keys) Sign(identity string, grant Grant, now time.Time, ttl time.Duratio
 func (k Keys) JoinToken(identity, room string, now time.Time) (string, error) {
 	return k.Sign(identity, Grant{Room: room, RoomJoin: true, CanPublish: yes(), CanSubscribe: yes(),
 		CanPublishData: no()}, now, TokenTTL)
+}
+
+// RecorderIdentity is the server's call recorder in a call's room (package recorder). It has no dot, so it is never
+// taken for a device.
+const RecorderIdentity = "ptt-recorder"
+
+// RecorderToken is the recorder's token for room: join hidden, receive every track, send nothing.
+func (k Keys) RecorderToken(room string, now time.Time) (string, error) {
+	return k.Sign(RecorderIdentity, Grant{Room: room, RoomJoin: true, CanPublish: no(), CanSubscribe: yes(),
+		CanPublishData: no(), Hidden: true, Recorder: true}, now, TokenTTL)
 }
 
 // Identity is a device's identity in LiveKit rooms: "user.device".

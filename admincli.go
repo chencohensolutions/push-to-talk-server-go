@@ -35,6 +35,8 @@ func runAdminCommand(config auth.AppConfig, command string, args []string) error
 		return devicesCommand(config, args)
 	case command == "revoke" && len(args) == 1:
 		return revokeCommand(config, args[0])
+	case command == "app-update" && (len(args) == 0 || len(args) == 1 && args[0] == "--push"):
+		return appUpdateCommand(config, len(args) == 1)
 	default:
 		fmt.Fprint(os.Stderr, usage)
 		return fmt.Errorf("unknown command or wrong arguments: %s", strings.Join(append([]string{command}, args...), " "))
@@ -282,4 +284,31 @@ func adminQuery(config auth.AppConfig, query string, variables map[string]any, o
 		return fmt.Errorf("%s", result.Errors[0].Message)
 	}
 	return json.Unmarshal(result.Data, out)
+}
+
+// appUpdateCommand is `ptt-server app-update [--push]`: the server reads the app's latest release now, and pushes
+// app_update to the phones when it is new, or with --push either way (docs/install.md, "App updates").
+func appUpdateCommand(config auth.AppConfig, push bool) error {
+	var data struct {
+		CheckAppRelease struct {
+			Tag     string `json:"tag"`
+			Version string `json:"version"`
+			New     bool   `json:"new"`
+			Pushed  int    `json:"pushed"`
+		} `json:"checkAppRelease"`
+	}
+	if err := adminQuery(config, `mutation($push: Boolean!) { checkAppRelease(push: $push) { tag version new pushed } }`,
+		map[string]any{"push": push}, &data); err != nil {
+		return err
+	}
+	c := data.CheckAppRelease
+	switch {
+	case c.Pushed > 0:
+		fmt.Printf("The latest release is %s (Talk %s). Pushed app_update to %d devices.\n", c.Tag, c.Version, c.Pushed)
+	case push || c.New:
+		fmt.Printf("The latest release is %s (Talk %s). No device has a push token (or push is off), so none was told.\n", c.Tag, c.Version)
+	default:
+		fmt.Printf("The latest release is %s (Talk %s), already announced. Nothing pushed; --push sends it again.\n", c.Tag, c.Version)
+	}
+	return nil
 }

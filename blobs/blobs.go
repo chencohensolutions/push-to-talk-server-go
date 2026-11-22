@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +27,8 @@ const (
 	MaxFileBytes = 100 << 20
 	// MaxClipBytes bounds one clip: 60 seconds of 24 kbit/s Opus is about 180 KB, so this is generous.
 	MaxClipBytes = 4 << 20
+	// MaxTrackBytes bounds one recorded track of a call: 4 hours of 1 Mbit/s video is about 1.8 GB.
+	MaxTrackBytes = 2 << 30
 )
 
 // Kind is what a blob holds.
@@ -36,7 +39,23 @@ const (
 	Clip Kind = "clip"
 	// File: bytes a device uploaded as they are.
 	File Kind = "file"
+	// Track: one participant's audio or video in a saved call, as the server's recorder received it from LiveKit
+	// (still encrypted end to end with the call's key): records of a timestamp, flags and one frame (package recorder).
+	Track Kind = "track"
 )
+
+// TrackInfo is what a Track blob holds: whose stream, which, and when it began.
+type TrackInfo struct {
+	// The call's id, and the participant's LiveKit identity ("user.device").
+	Call     string `json:"call"`
+	Identity string `json:"identity"`
+	// "audio" or "video", and the codec's MIME type (video/VP8, audio/opus).
+	Media string `json:"media"`
+	Codec string `json:"codec"`
+	// When its first frame arrived; each record's timestamp counts from the recording's start (Recording).
+	Started   time.Time `json:"started_at"`
+	Recording time.Time `json:"recording_started_at"`
+}
 
 // Meta is what the server knows of a blob.
 type Meta struct {
@@ -51,6 +70,8 @@ type Meta struct {
 	Size     int64     `json:"size"`
 	Complete bool      `json:"complete"`
 	Created  time.Time `json:"created_at"`
+	// For a Track: the stream it holds.
+	Track *TrackInfo `json:"track,omitempty"`
 
 	writing bool // an upload is going on
 }
@@ -112,6 +133,9 @@ func Open(dir string, now func() time.Time) (*Store, error) {
 	}
 	return s, nil
 }
+
+// Root is the blobs folder.
+func (s *Store) Root() string { return s.dir }
 
 func (s *Store) dataPath(id string) string { return filepath.Join(s.dir, id+".blob") }
 func (s *Store) metaPath(id string) string { return filepath.Join(s.dir, id+".json") }
@@ -181,7 +205,7 @@ func (s *Store) Changed(id string) <-chan struct{} {
 	return ch
 }
 
-// AppendRecord adds one record to clip id: a 4-byte big-endian length, then the record. last completes the clip.
+// AppendRecord adds one record to clip or track id: a 4-byte big-endian length, then the record. last completes it.
 func (s *Store) AppendRecord(id string, record []byte, last bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -189,11 +213,12 @@ func (s *Store) AppendRecord(id string, record []byte, last bool) error {
 	switch {
 	case !ok:
 		return ErrNotFound
-	case m.Kind != Clip:
-		return fmt.Errorf("blob %s isn't a clip", id)
+	case m.Kind != Clip && m.Kind != Track:
+		return fmt.Errorf("blob %s isn't a clip or a track", id)
 	case m.Complete:
 		return ErrComplete
-	case m.Size+4+int64(len(record)) > MaxClipBytes:
+	case m.Kind == Clip && m.Size+4+int64(len(record)) > MaxClipBytes,
+		m.Kind == Track && m.Size+4+int64(len(record)) > MaxTrackBytes:
 		return ErrTooLarge
 	}
 	f, err := os.OpenFile(s.dataPath(id), os.O_WRONLY|os.O_APPEND, 0o600)
@@ -219,7 +244,26 @@ func (s *Store) AppendRecord(id string, record []byte, last bool) error {
 	return nil
 }
 
-// Finish completes clip id without a last record (its burst timed out or its talker dropped).
+// OfCall is the Track blobs of call, oldest first.
+func (s *Store) OfCall(call string) []Meta {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Meta
+	for _, m := range s.metas {
+		if m.Kind == Track && m.Track != nil && m.Track.Call == call {
+			out = append(out, *m)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].Track.Started.Equal(out[j].Track.Started) {
+			return out[i].Track.Started.Before(out[j].Track.Started)
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+// Finish completes clip or track id without a last record (its burst timed out or its talker dropped).
 func (s *Store) Finish(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -320,13 +364,14 @@ func (s *Store) remove(id string) {
 	os.Remove(s.metaPath(id))
 }
 
-// Expire deletes the blobs made before before, and answers how many.
+// Expire deletes the blobs made before before, and answers how many. A saved call's tracks are kept: they stay
+// until a way to delete them is decided (2026-11-22, hen: "store the encrypted calls forever").
 func (s *Store) Expire(before time.Time) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
 	for id, m := range s.metas {
-		if m.Created.Before(before) {
+		if m.Kind != Track && m.Created.Before(before) {
 			s.remove(id)
 			n++
 		}

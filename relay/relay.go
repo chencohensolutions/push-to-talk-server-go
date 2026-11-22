@@ -271,6 +271,11 @@ func (r *Relay) route(from store.Device, send *pb.Send) *pb.SendResult {
 		if r.Book.Blocked(from.User, other) {
 			return refuse(pb.SendResult_BLOCKED, "%s and %s", from.User, other)
 		}
+		if !r.Book.Paired(from.User, other) && send.GetPushKind() == pb.PushKind_PUSH_CALL {
+			// 2026-11-22 (hen): a call invite rings only a contact. Group members who aren't contacts still exchange
+			// one-to-one messages (the group's sender keys travel that way), but they call each other in the group.
+			return refuse(pb.SendResult_NOT_PAIRED, "%s isn't a contact of %s: one-to-one calls are for contacts", other, from.User)
+		}
 		if !r.Book.Paired(from.User, other) && !r.ShareGroup(from.User, other) {
 			// A pair request: every envelope for the recipient carries the same unused token of the recipient.
 			for _, e := range envelopes {

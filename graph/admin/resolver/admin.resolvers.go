@@ -7,6 +7,7 @@ package resolver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -81,6 +82,19 @@ func (r *mutationResolver) RestartLiveKit(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	return r.LiveKitRestart(), nil
+}
+
+// CheckAppRelease is the resolver for the checkAppRelease field.
+func (r *mutationResolver) CheckAppRelease(ctx context.Context, push bool) (*model.AppReleaseCheck, error) {
+	if r.AppReleases == nil {
+		return nil, errors.New(`config.json's app_releases is "none": the server doesn't follow the app's releases`)
+	}
+	result, err := r.AppReleases.Check(ctx, push)
+	if err != nil {
+		return nil, err
+	}
+	return &model.AppReleaseCheck{Tag: result.Release.Tag, Version: result.Release.Version, New: result.New,
+		Pushed: result.Told}, nil
 }
 
 // Users is the resolver for the users field.

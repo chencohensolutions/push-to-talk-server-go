@@ -243,7 +243,8 @@ Revoked "Pixel 9", device 1 of user hen (serial b582e90a5ea9c2a16b60802e95543c85
 
 `ptt-server user add | user remove | users | enroll-code | devices | revoke` are thin GraphQL clients of the running
 server's admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphql`). `ptt-server livekit
-update` ends with its `restartLiveKit` mutation (docs/install.md, "LiveKit").
+update` ends with its `restartLiveKit` mutation (docs/install.md, "LiveKit"), and `ptt-server app-update [--push]`
+is the `checkAppRelease` mutation (docs/install.md, "App updates").
 
 - Served on `admin_addr` (default `127.0.0.1:8082`, beside Journal's 8081). The server refuses to start if that is
   not a loopback address, so the admin API is never reachable from the network.

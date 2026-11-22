@@ -27,9 +27,15 @@ const (
 	clipFollow = MaxBurst + lastSegmentWait
 )
 
+// MayRead says whether user may read blob m (mayRead), for the listing of a saved call's tracks.
+func (r *Relay) MayRead(user string, m blobs.Meta) bool { return r.mayRead(user, m) }
+
 // mayRead says whether user may read blob m: its maker, the other user of its one-to-one conversation, or a member of
-// its group now. Blocks apply.
+// its group now. Blocks apply. A kept call's track is only for the people who were in that call (joinedCall).
 func (r *Relay) mayRead(user string, m blobs.Meta) bool {
+	if m.Kind == blobs.Track && !r.joinedCall(user, m) {
+		return false
+	}
 	switch {
 	case user == m.Owner:
 		return true
@@ -39,6 +45,30 @@ func (r *Relay) mayRead(user string, m blobs.Meta) bool {
 	default:
 		return user == m.Peer && !r.Book.Blocked(user, m.Owner)
 	}
+}
+
+// joinedCall says whether user was in the call whose track m is: one of their devices sent a stream that the recorder
+// kept. 2026-11-22 (hen): a group member who didn't join that call, or joined the group later, may not download it,
+// though they can't decrypt it either (they never had the call's key).
+func (r *Relay) joinedCall(user string, m blobs.Meta) bool {
+	if m.Track == nil || r.Blobs == nil {
+		return false
+	}
+	for _, t := range r.Blobs.OfCall(m.Track.Call) {
+		if identityUser(t.Track.Identity) == user {
+			return true
+		}
+	}
+	return false
+}
+
+// identityUser is the user of a LiveKit identity "user.device" (a user name may hold dots: the number is after the
+// last).
+func identityUser(identity string) string {
+	if dot := strings.LastIndex(identity, "."); dot >= 0 {
+		return identity[:dot]
+	}
+	return identity
 }
 
 func setBlobHeaders(w http.ResponseWriter, m blobs.Meta) {
@@ -180,8 +210,12 @@ func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta) 
 		io.Copy(w, f)
 		return
 	}
-	// A clip: send what is there, then follow it until its last record.
-	w.Header().Set("Content-Type", "application/vnd.ptt.clip")
+	// A clip or a saved call's track: send what is there, then follow it until its last record.
+	if m.Kind == blobs.Track {
+		w.Header().Set("Content-Type", "application/vnd.ptt.track")
+	} else {
+		w.Header().Set("Content-Type", "application/vnd.ptt.clip")
+	}
 	if offset > 0 {
 		w.WriteHeader(http.StatusPartialContent)
 	}

@@ -1,5 +1,5 @@
 # Admin API, served only on the loopback admin listener (admin_addr) and used by the
-# `ptt-server user add | user remove | users | enroll-code | devices | revoke | livekit update` commands. See docs/authentication.md.
+# `ptt-server user add | user remove | users | enroll-code | devices | revoke | livekit update | app-update` commands. See docs/authentication.md.
 
 scalar Time
 
@@ -24,6 +24,22 @@ type Mutation {
   this server doesn't run LiveKit itself (no "livekit" in config.json, or its binary is "none").
   """
   restartLiveKit: Boolean!
+  """
+  Reads the app's latest GitHub release now (`ptt-server app-update`), instead of waiting for the hourly read. A
+  release the server hadn't seen is pushed to every phone as app_update; with push, the release is pushed either way
+  (`ptt-server app-update --push`). Fails when config.json's app_releases is "none" or GitHub can't be read.
+  """
+  checkAppRelease(push: Boolean! = false): AppReleaseCheck!
+}
+
+"What checkAppRelease found."
+type AppReleaseCheck {
+  tag: String!
+  version: String!
+  "The server hadn't seen this release before."
+  new: Boolean!
+  "How many devices were pushed app_update (devices with an FCM token); 0 when nothing was sent."
+  pushed: Int!
 }
 
 type User {

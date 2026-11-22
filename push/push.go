@@ -189,6 +189,49 @@ func (p *Pusher) push(d store.Device, kind Kind) {
 	}
 }
 
+// AppUpdateTTL is how long FCM keeps an "app_update" push for a phone that is off.
+const AppUpdateTTL = 7 * 24 * time.Hour
+
+// AppUpdate tells every device with a push token that a new release of the app is out (package apprelease): a
+// normal-priority "app_update" push, kept a week, sent to connected devices too (the app takes it while open as
+// well). The phone then reads appRelease and offers the update. The pushes go one after another, in the background;
+// AppUpdate answers how many devices they go to.
+func (p *Pusher) AppUpdate() int {
+	if !p.On() {
+		return 0
+	}
+	now := p.Now()
+	seen := map[store.Device]bool{}
+	var targets []enroll.Device
+	for _, d := range p.Registry.List("") {
+		key := store.Device{User: d.User, Number: d.DeviceNumber}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		if target, ok := p.Registry.PushTarget(d.User, d.DeviceNumber, now); ok {
+			targets = append(targets, target)
+		}
+	}
+	m := Wake{Kind: "app_update", TTL: AppUpdateTTL}
+	go func() {
+		for _, t := range targets {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			err := p.Sender.Send(ctx, t.FCMToken, m)
+			cancel()
+			if errors.Is(err, ErrUnregistered) {
+				if _, err := p.Registry.DropPushToken(t.FCMToken); err != nil {
+					log.Printf("Push to device %d of %s: dropping its token: %v", t.DeviceNumber, t.User, err)
+				}
+			} else if err != nil {
+				log.Printf("Push (app_update) to device %d of %s: %v", t.DeviceNumber, t.User, err)
+			}
+		}
+		log.Printf("Push: told %d devices about the app update", len(targets))
+	}()
+	return len(targets)
+}
+
 // Forget drops what the pusher keeps for d (a revoked device).
 func (p *Pusher) Forget(d store.Device) {
 	if p == nil {

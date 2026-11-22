@@ -1,0 +1,29 @@
+# --- App updates ----------------------------------------------------------------------------------------------------
+# See docs/install.md, "App updates". The server follows the app's GitHub releases once an hour and pushes
+# {"kind": "app_update"} to every phone when a new one is out, so phones don't ask GitHub on a timer. A phone reads
+# appRelease when the app opens and when that push arrives.
+
+extend type Query {
+  """
+  The app's latest release that the server has seen (pre-releases left out), or null when the server doesn't follow
+  the releases (app_releases "none") or hasn't read them yet. A phone compares version with its own, downloads apkUrl
+  and installs it only when the file's SHA-256 is sha256 and it is signed with the phone's own app key.
+  """
+  appRelease: AppRelease
+}
+
+type AppRelease {
+  "The release's tag: v1.0.3."
+  tag: String!
+  "The version in the APK's name: 1.0.3 (versionName)."
+  version: String!
+  "The APK's address (GitHub's release download), https."
+  apkUrl: String!
+  "The APK's size in bytes."
+  size: Int!
+  "The APK's SHA-256, lowercase hex, from the release's SHA256SUMS."
+  sha256: String!
+  "The release's notes, Markdown; null when it has none."
+  notes: String
+  publishedAt: Time!
+}
