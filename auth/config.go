@@ -82,7 +82,13 @@ type LiveKitConfig struct {
 	// The media ports LiveKit listens on, mapped on the router with the same number (defaults 7881 and 7882).
 	TCPPort int `json:"tcp_port,omitempty"`
 	UDPPort int `json:"udp_port,omitempty"`
+	// The most devices in one call's room (default 32). Each device in a video call receives every other camera, so
+	// the server's upload grows with the square of this; phones subscribe to a small layer for small tiles.
+	MaxCallDevices int `json:"max_call_devices,omitempty"`
 }
+
+// DefaultMaxCallDevices is livekit.max_call_devices when config.json doesn't say: 32 (2026-11-22, hen; it was 8).
+const DefaultMaxCallDevices = 32
 
 // LiveKitOn says whether the live talk path is set up ("livekit" in config.json).
 func (c AppConfig) LiveKitOn() bool { return c.LiveKit != nil }
@@ -184,6 +190,9 @@ func (c AppConfig) WithDefaults() AppConfig {
 		}
 		if l.UDPPort == 0 {
 			l.UDPPort = 7882
+		}
+		if l.MaxCallDevices == 0 {
+			l.MaxCallDevices = DefaultMaxCallDevices
 		}
 		c.LiveKit = &l
 	}

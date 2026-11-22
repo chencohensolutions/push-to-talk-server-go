@@ -105,7 +105,10 @@ server runs as before and talk goes by the clip path only.
 - **config.json**: `"livekit": {}` turns it on with the defaults; setup writes it for a new server. Fields:
   `binary` (default: `livekit-server.exe` / `livekit-server` beside ptt-server when it is there; `"none"` runs
   nothing), `config_file` (`livekit.yaml`), `keys_file` (`livekit.keys`), `url` (`http://127.0.0.1:7880`),
-  `tcp_port` (7881), `udp_port` (7882).
+  `tcp_port` (7881), `udp_port` (7882), `max_call_devices` (32: the most devices in one call; it was 8 until
+  2026-11-22). In a video call every device receives every other camera, so the server's upload grows with the
+  square of the count: phones take a small simulcast layer for small tiles, but a full 32-device video call can
+  still need well over 100 Mbit/s of upload from the server.
 - **`ptt-server setup`** (run it again after adding `"livekit"`) makes `livekit.keys`, LiveKit's API key and secret
   as `key: secret` (a secret, gitignored, never in chat), and `livekit.yaml`: signalling on `127.0.0.1:7880`, media on
   TCP 7881 and UDP 7882, `use_external_ip: true` (LiveKit finds the public address by STUN). Files already there are kept.
@@ -127,8 +130,9 @@ server runs as before and talk goes by the clip path only.
   ptt-server, and so that a crash in it doesn't take messaging down; the two meet only at LiveKit's room API and its
   tokens. To go back, run it with the old version number.
 - **The router and firewall**: the server maps UDP 7882 and TCP 7881 with the same numbers outside (package
-  `portmap`, `Exact`), since LiveKit tells the phones its own port numbers. On Windows, allow them in Windows
-  Defender Firewall for livekit-server.exe as for ptt-server.
+  `portmap`, `Exact`), since LiveKit tells the phones its own port numbers. On Windows, `ptt-server service install`
+  (or `ptt-server service firewall`, the rules alone) adds the Windows Defender Firewall rule "Push-to-talk
+  LiveKit" for livekit-server.exe on those two ports.
 
 ## The Windows service
 
@@ -136,8 +140,10 @@ On Windows, in an administrator's console in the server folder:
 
 ```bat
 ptt-server service install     :: the PttServer service, started at boot, restarted if it stops on an error,
-                               :: and a firewall rule for the TCP port in config.json
-ptt-server service start | stop | uninstall
+                               :: and firewall rules: the TCP port in config.json for ptt-server, and
+                               :: with "livekit", TCP 7881 and UDP 7882 for livekit-server.exe
+ptt-server service firewall    :: only those firewall rules (for a server started some other way)
+ptt-server service start | stop | uninstall    :: uninstall removes the rules too
 ```
 
 The service runs from the program's folder and writes its log to `server.log` there (at most 20 MB, then

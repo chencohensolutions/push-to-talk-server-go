@@ -124,15 +124,14 @@ func PairRoom(a, b string) string {
 // CallRoom names a call's room: each call has its own, with a fresh media key in its encrypted invite.
 func CallRoom(call string) string { return "c-" + call }
 
-// MaxCallParticipants is the most devices in one video call (the plan's first build: 8).
-const MaxCallParticipants = 8
-
 // Client calls LiveKit's room API.
 type Client struct {
 	Keys Keys
 	// LiveKit's HTTP address, on loopback (http://127.0.0.1:7880).
 	URL  string
 	HTTP *http.Client
+	// MaxCall is the most devices in one call's room (config.json livekit.max_call_devices).
+	MaxCall int
 }
 
 func (c *Client) call(ctx context.Context, method string, grant Grant, in, out any) error {

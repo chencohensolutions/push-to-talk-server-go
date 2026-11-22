@@ -198,7 +198,7 @@ func TestNoLiveKitNoLiveTalk(t *testing.T) {
 	}
 }
 
-// Phase 6 from the server's side: a call has its own room, made with a cap of 8, bound to its conversation; blocking
+// Phase 6 from the server's side: a call has its own room, made with a cap of livekit.max_call_devices (32), bound to its conversation; blocking
 // takes the other side out of it.
 func TestCallTokens(t *testing.T) {
 	env, fake := newLiveEnv(t)
@@ -228,7 +228,7 @@ func TestCallTokens(t *testing.T) {
 	fake.mu.Lock()
 	created := append([]string{}, fake.created...)
 	fake.mu.Unlock()
-	if len(created) != 1 || created[0] != livekit.CallRoom(id)+" 8" {
+	if len(created) != 1 || created[0] != livekit.CallRoom(id)+" 32" {
 		t.Fatalf("the call's room: %v", created)
 	}
 	if room, code := call(dana, "hen"); code != "" || room != livekit.CallRoom(id) {

@@ -1929,7 +1929,7 @@ extend type Mutation {
   A token to join call's own LiveKit room (phase 6, video calls), in the conversation with peer or group, after the
   same checks; call is 32 hex digits the caller's phone made and sent in its encrypted call invite, with the call's
   fresh media key. The first callToken binds the id to its conversation (INVALID for another one). The room takes at
-  most 8 devices. LIVE_OFF without LiveKit.
+  most livekit.max_call_devices from config.json (32 by default). LIVE_OFF without LiveKit.
   """
   callToken(call: ID!, peer: String, group: ID): TalkToken!
 }

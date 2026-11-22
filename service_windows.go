@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
@@ -20,7 +21,7 @@ import (
 // at boot, before anyone logs in, and again if it stops on an error.
 const serviceName = "PttServer"
 
-const serviceUsage = `usage: ptt-server service install|uninstall|start|stop   (as administrator)`
+const serviceUsage = `usage: ptt-server service install|uninstall|start|stop|firewall   (as administrator)`
 
 // runAsService runs the server as the Windows service when Windows started it as one, and reports whether it did.
 // Services start in System32, so it first changes to the program's folder, where config.json and everything it
@@ -86,6 +87,9 @@ func (serverService) Execute(args []string, requests <-chan svc.ChangeRequest, s
 func runServiceCommand(args []string) error {
 	if len(args) != 1 {
 		return errors.New(serviceUsage)
+	}
+	if args[0] == "firewall" { // the rules alone, for a server not run as the service
+		return allowThroughFirewall()
 	}
 	m, err := mgr.Connect()
 	if err != nil {
@@ -181,11 +185,15 @@ func stopService(s *mgr.Service) {
 	}
 }
 
-// firewallRule names the Windows Firewall rule that lets devices reach the server's port.
-const firewallRule = "Push-to-talk server"
+// firewallRule names the Windows Firewall rule that lets devices reach the server's port; liveKitRule the two that let
+// phones' media reach LiveKit (TCP and UDP).
+const (
+	firewallRule = "Push-to-talk server"
+	liveKitRule  = "Push-to-talk LiveKit"
+)
 
-// allowThroughFirewall lets devices on the network reach the port in config.json (beside this program), replacing
-// the rule an earlier install made.
+// allowThroughFirewall lets devices on the network reach the port in config.json (beside this program) and, with
+// "livekit" there, LiveKit's media ports for livekit-server, replacing the rules an earlier install made.
 func allowThroughFirewall() error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -201,9 +209,31 @@ func allowThroughFirewall() error {
 	if err != nil {
 		return fmt.Errorf("firewall rule: %v: %s", err, out)
 	}
+	fmt.Printf("Windows Firewall: %q lets devices reach TCP %s\n", firewallRule, config.Port)
+	if !config.LiveKitOn() {
+		return nil
+	}
+	program, err := liveKitProgram(config)
+	if err != nil {
+		fmt.Printf("Windows Firewall: no rule for LiveKit (%v)\n", err)
+		return nil
+	}
+	for _, p := range []struct {
+		proto string
+		port  int
+	}{{"TCP", config.LiveKit.TCPPort}, {"UDP", config.LiveKit.UDPPort}} {
+		out, err := exec.Command("netsh", "advfirewall", "firewall", "add", "rule", "name="+liveKitRule, "dir=in",
+			"action=allow", "protocol="+p.proto, "localport="+strconv.Itoa(p.port), "program="+program).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("LiveKit's firewall rule: %v: %s", err, out)
+		}
+	}
+	fmt.Printf("Windows Firewall: %q lets phones' media reach %s on TCP %d and UDP %d\n", liveKitRule, program,
+		config.LiveKit.TCPPort, config.LiveKit.UDPPort)
 	return nil
 }
 
 func removeFirewallRule() {
 	exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name="+firewallRule).Run()
+	exec.Command("netsh", "advfirewall", "firewall", "delete", "rule", "name="+liveKitRule).Run()
 }
