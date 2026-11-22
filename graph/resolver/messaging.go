@@ -92,3 +92,10 @@ func (r *Resolver) prekeyCount(d store.Device) (*model.PrekeyCount, error) {
 	}
 	return &model.PrekeyCount{OneTimePrekeys: ec, OneTimeKyberPrekeys: kyber, RefillBelow: relay.RefillBelow}, nil
 }
+
+const (
+	// maxPushToken is the longest FCM registration token registerPush takes (they are about 160 characters).
+	maxPushToken = 4096
+	// maxPresenceUsers is the most users one presence query answers for.
+	maxPresenceUsers = 500
+)

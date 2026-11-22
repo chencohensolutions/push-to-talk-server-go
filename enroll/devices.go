@@ -32,8 +32,9 @@ type Device struct {
 	// The device's number among the user's devices, 1 to MaxDeviceNumber: libsignal's device id and the device part
 	// of a LiveKit identity (docs/authentication.md, "Device numbers"). A renewed certificate keeps it.
 	DeviceNumber int `json:"device_number"`
-	// Reserved for phase 3 (FCM): the device's registration token, and whether it shows notifications (the server
-	// sends high-priority pushes only to devices that do). Nothing sets them yet.
+	// The device's FCM registration token (registerPush), and whether it shows notifications: the server sends
+	// high-priority pushes only to devices that do (docs/messaging.md, "Push"). A renewed certificate keeps them;
+	// revoking clears them, and a token FCM answers as gone is dropped.
 	FCMToken             string `json:"fcm_token,omitempty"`
 	NotificationsEnabled bool   `json:"notifications_enabled,omitempty"`
 }
@@ -205,6 +206,7 @@ func (r *Registry) Revoke(serial string, at time.Time) (Device, error) {
 		if r.devices[i].RevokedAt == nil {
 			previous := r.devices[i]
 			r.devices[i].RevokedAt = &at
+			r.devices[i].FCMToken, r.devices[i].NotificationsEnabled = "", false
 			if err := r.save(); err != nil {
 				r.devices[i] = previous
 				return Device{}, err
@@ -256,6 +258,7 @@ func (r *Registry) revokeWhere(at time.Time, match func(Device) bool) error {
 	for i := range r.devices {
 		if match(r.devices[i]) && r.devices[i].RevokedAt == nil {
 			r.devices[i].RevokedAt = &at
+			r.devices[i].FCMToken, r.devices[i].NotificationsEnabled = "", false
 			changed = true
 		}
 	}
@@ -305,6 +308,82 @@ func (r *Registry) UseRenewal(serial string, at time.Time) (string, error) {
 		return "", err
 	}
 	return from, nil
+}
+
+// SetPush records the FCM token of device number of user (every certificate of it not revoked: a renewal in flight
+// too), and whether it shows notifications; an empty token removes it. Another device that had the same token loses
+// it: a token is one app install, so that device is gone or was enrolled again.
+func (r *Registry) SetPush(user string, number int, token string, notifications bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	previous := append([]Device(nil), r.devices...)
+	found := false
+	for i := range r.devices {
+		d := &r.devices[i]
+		switch {
+		case d.User == user && d.DeviceNumber == number:
+			if d.RevokedAt != nil || r.isRevokedLocked(d.Serial) {
+				continue
+			}
+			found = true
+			d.FCMToken, d.NotificationsEnabled = token, notifications && token != ""
+		case token != "" && d.FCMToken == token:
+			d.FCMToken, d.NotificationsEnabled = "", false
+		}
+	}
+	if !found {
+		return ErrDeviceNotFound
+	}
+	if err := r.save(); err != nil {
+		r.devices = previous
+		return err
+	}
+	return nil
+}
+
+// DropPushToken removes token from the device that has it, after FCM answered that it is gone. It reports whether a
+// device had it.
+func (r *Registry) DropPushToken(token string) (bool, error) {
+	if token == "" {
+		return false, nil
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	previous := append([]Device(nil), r.devices...)
+	dropped := false
+	for i := range r.devices {
+		if r.devices[i].FCMToken == token {
+			r.devices[i].FCMToken, r.devices[i].NotificationsEnabled = "", false
+			dropped = true
+		}
+	}
+	if !dropped {
+		return false, nil
+	}
+	if err := r.save(); err != nil {
+		r.devices = previous
+		return false, err
+	}
+	return true, nil
+}
+
+// PushTarget is the certificate of device number of user that pushes go to: not revoked, not expired at now, with
+// an FCM token; the newest one when a renewal is in flight.
+func (r *Registry) PushTarget(user string, number int, now time.Time) (Device, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	var best Device
+	found := false
+	for _, d := range r.devices {
+		if d.User != user || d.DeviceNumber != number || d.FCMToken == "" || d.RevokedAt != nil ||
+			r.isRevokedLocked(d.Serial) || !now.Before(d.ExpiresAt) {
+			continue
+		}
+		if !found || d.RegisteredAt.After(best.RegisteredAt) {
+			best, found = d, true
+		}
+	}
+	return best, found
 }
 
 func (r *Registry) IsRevoked(serial string) bool {

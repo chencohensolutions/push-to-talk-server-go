@@ -46,3 +46,9 @@ const (
 	// CodeInvalidEmail: createInvite with something that isn't one plain email address.
 	CodeInvalidEmail = "INVALID_EMAIL"
 )
+
+// Codes of the push and presence fields (push.graphql).
+const (
+	// CodeInvalidToken: registerPush with a token that can't be an FCM registration token.
+	CodeInvalidToken = "INVALID_TOKEN"
+)

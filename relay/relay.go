@@ -20,6 +20,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/contacts"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
 	pb "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1"
+	"github.com/chencohensolutions/push-to-talk-server-go/push"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
 	"google.golang.org/protobuf/proto"
 )
@@ -47,14 +48,20 @@ type Relay struct {
 	QueueTTL time.Duration
 	Now      func() time.Time
 
+	// Wakes devices without a /ws through FCM (docs/messaging.md, "Push"); nil sends no pushes.
+	Push *push.Pusher
+
 	mu    sync.Mutex
 	conns map[store.Device]*conn
+	// The users with a device connected now, and when the others were last (Presence), since the server started.
+	online   map[string]bool
+	lastSeen map[string]time.Time
 }
 
 // New is a relay over these stores.
 func New(users *auth.Users, registry *enroll.Registry, st *store.Store, book *contacts.Book, queueTTL time.Duration, now func() time.Time) *Relay {
 	return &Relay{Users: users, Registry: registry, Store: st, Book: book, QueueTTL: queueTTL, Now: now,
-		conns: map[store.Device]*conn{}}
+		conns: map[store.Device]*conn{}, online: map[string]bool{}, lastSeen: map[string]time.Time{}}
 }
 
 // Refusal is why the relay won't route between two users, named as SendResult.Status and the GraphQL error codes.
@@ -170,8 +177,9 @@ func newID() string {
 	return hex.EncodeToString(raw)
 }
 
-// Send routes one Send from device from, and answers what became of it.
-func (r *Relay) Send(from store.Device, send *pb.Send) *pb.SendResult {
+// route checks and queues one Send from device from (Send, which also wakes the recipients), and answers what became
+// of it.
+func (r *Relay) route(from store.Device, send *pb.Send) *pb.SendResult {
 	result := &pb.SendResult{ClientId: send.GetClientId()}
 	refuse := func(status pb.SendResult_Status, format string, args ...any) *pb.SendResult {
 		result.Status = status
@@ -371,6 +379,7 @@ func (r *Relay) Announce(kind pb.Envelope_Type, about string, payload []byte, to
 				continue
 			}
 			r.wake(d)
+			r.pushQueued(d, push.Sync)
 		}
 	}
 }
@@ -392,6 +401,7 @@ func (r *Relay) Revoked(user string) {
 	}
 	r.mu.Unlock()
 	forget := func(d store.Device) {
+		r.Push.Forget(d)
 		if err := r.Store.ForgetKeys(d); err != nil {
 			log.Printf("Forgetting the keys of device %d of %s: %v", d.Number, d.User, err)
 		}

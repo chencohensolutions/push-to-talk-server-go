@@ -50,10 +50,24 @@ type AppConfig struct {
 	// still starts the server (UnusedKeys says so in the log).
 	SMTP  json.RawMessage `json:"smtp,omitempty"`
 	Gmail json.RawMessage `json:"gmail,omitempty"`
+	// Waking phones through Firebase Cloud Messaging (docs/messaging.md, "Push"). Without it the server sends no
+	// pushes: phones receive only while connected.
+	FCM *FCMConfig `json:"fcm,omitempty"`
 	// Loopback-only listener for the admin GraphQL API (default 127.0.0.1:8082).
 	AdminAddr string `json:"admin_addr"`
 	// Token for the admin API, rewritten on every server start (default admin.token).
 	AdminTokenFile string `json:"admin_token_file"`
+}
+
+// FCMConfig is how the server reaches FCM's HTTP v1 API (docs/install.md, "Push").
+type FCMConfig struct {
+	// The Firebase project's service-account key, JSON, as the Firebase console downloads it (Project settings ›
+	// Service accounts › Generate new private key). A secret: it can send pushes to every phone of the app.
+	ServiceAccountFile string `json:"service_account_file"`
+	// The Firebase project id; default the service account's project_id.
+	ProjectID string `json:"project_id,omitempty"`
+	// FCM's address, default https://fcm.googleapis.com; another one for tests.
+	Endpoint string `json:"endpoint,omitempty"`
 }
 
 const (
@@ -73,6 +87,9 @@ func (c AppConfig) DiscoveryOn() bool { return c.Discovery == nil || *c.Discover
 
 // InvitesOn says whether users may invite friends: on unless "invites": false.
 func (c AppConfig) InvitesOn() bool { return c.Invites == nil || *c.Invites }
+
+// PushOn says whether config.json names an FCM service account.
+func (c AppConfig) PushOn() bool { return c.FCM != nil && c.FCM.ServiceAccountFile != "" }
 
 // PortMappingOn says whether the server asks the router to forward its port: on unless "port_mapping": false.
 func (c AppConfig) PortMappingOn() bool { return c.PortMapping == nil || *c.PortMapping }

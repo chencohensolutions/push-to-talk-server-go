@@ -34,6 +34,9 @@ type User struct {
 	DisplayName string `json:"display_name,omitempty"`
 	// Who invited the user, when they joined by an invite.
 	InvitedBy string `json:"invited_by,omitempty"`
+	// The user hides their presence (online now, last seen) from their contacts, and so sees nobody's
+	// (setPresenceVisible; docs/messaging.md, "Presence").
+	PresenceHidden bool `json:"presence_hidden,omitempty"`
 }
 
 // ErrUserExists and ErrUnknownUser are what Add and Remove refuse.
@@ -303,6 +306,27 @@ func (u *Users) SetIdentityKey(name string, key []byte, replace bool, at time.Ti
 		return true, nil
 	}
 	return false, fmt.Errorf("%w: %s", ErrUnknownUser, name)
+}
+
+// SetPresenceHidden hides or shows user's presence to their contacts.
+func (u *Users) SetPresenceHidden(name string, hidden bool) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for i := range u.users {
+		if u.users[i].Name != name {
+			continue
+		}
+		if u.users[i].PresenceHidden == hidden {
+			return nil
+		}
+		u.users[i].PresenceHidden = hidden
+		if err := u.save(); err != nil {
+			u.users[i].PresenceHidden = !hidden
+			return err
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: %s", ErrUnknownUser, name)
 }
 
 // save writes the file through a temp file and rename. Callers hold mu.

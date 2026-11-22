@@ -23,17 +23,18 @@ The docs describe what is built, and must be kept in step with the code in the s
   (salt `ptt-server/v1`), how a phone reconnects, and port mapping (package `portmap`, TCP and UDP).
 - [docs/messaging.md](docs/messaging.md): identity keys and prekeys (`uploadPrekeys`, `prekeyBundles`,
   `replaceIdentityKey`), pairing tokens and `pairs.json` (`confirmPair`, `unpair`, `block`, `contacts`), the `/ws`
-  protocol (`proto/ptt.proto`) with its Send rules (NOT_PAIRED, STALE_DEVICES, BLOCKED), the queue in `ptt.db`,
-  linking (PROVISIONING) and what revocation does to a socket.
-- [docs/install.md](docs/install.md): `ptt-server setup`, the Windows service, ports, versions, and what Journal has
-  that this server intentionally leaves out (media, search, faces, copies, peers and swaps, indexes, ONNX, vips, jxl,
-  bundle downloads, installer, releases, self-update).
+  protocol (`proto/ptt.proto`) with its Send rules (NOT_PAIRED, STALE_DEVICES, BLOCKED), push (`registerPush`,
+  `push_kind`, the FCM data message, priorities, debounce), presence (`presence`, the `Presence` frame,
+  `setPresenceVisible`), the queue in `ptt.db`, linking (PROVISIONING) and what revocation does to a socket.
+- [docs/install.md](docs/install.md): `ptt-server setup`, the `fcm` setting and its service-account key, the Windows
+  service, ports, versions, and what Journal has that this server intentionally leaves out (media, search, faces,
+  copies, peers and swaps, indexes, ONNX, vips, jxl, bundle downloads, installer, releases, self-update).
 
 **Phases.** Phase 1: enroll and find the server. Phase 2 (built too): identity keys and prekeys, `/ws` with the
 message queue, pairing, linking a phone, invites (one link and its passcode, sent from the inviter's phone, that
-enroll a friend and pair them; the server sends no email). Phase 3 FCM (the registry already reserves `fcm_token` and
-`notifications_enabled`); 4 groups; 5a clips and floor control; 5b LiveKit (`/rtc`, `talkToken`, UDP 7882 and TCP
-7881 in `serverPorts`).
+enroll a friend and pair them; the server sends no email). Phase 3, server side built: `registerPush` (`fcm_token`
+and `notifications_enabled` in the registry), the FCM sender (package `push`), `Send.push_kind`, presence. Then 4
+groups; 5a clips and floor control; 5b LiveKit (`/rtc`, `talkToken`, UDP 7882 and TCP 7881 in `serverPorts`).
 
 **Platforms.** The owner's server is a Windows PC, development happens on a Mac, and the server should run on
 Windows, macOS and Linux: no cgo, Windows-safe file names, per-OS files (`*_windows.go`, `*_other.go`). CI runs
@@ -66,10 +67,10 @@ bin/protoc --plugin=protoc-gen-go=bin/protoc-gen-go --go_out=. \
 
 - The admin commands read `config.json` and `admin.token` in the current folder (or beside the program), so run them
   from the server folder.
-- `config.json`, `certs/`, `users.json`, `devices.json`, `devices.revoked.json`, `pairs.json`, `invites.json`, `ptt.db` and
-  `admin.token` are gitignored local state. `config.example.json` shows the shape. A second server for testing runs
-  from its own folder with its own `port` and `admin_addr`, and `"port_mapping": false` so it leaves the router to
-  the real one (docs/install.md).
+- `config.json`, `certs/`, `users.json`, `devices.json`, `devices.revoked.json`, `pairs.json`, `invites.json`,
+  `ptt.db`, `admin.token` and the FCM service-account key (`*-firebase-adminsdk-*.json`) are gitignored local state.
+  `config.example.json` shows the shape. A second server for testing runs from its own folder with its own `port`
+  and `admin_addr`, and `"port_mapping": false` so it leaves the router to the real one (docs/install.md).
 - **After changing the public schema or `proto/ptt.proto`**, the client must get the copy: in `../push-to-talk-kmp`
   sync the `.graphqls` files from `graph/schema/` and the `.proto` file, and commit them there.
 - The DHT record format is shared with the client: `TestASealedRecordFixtureOpens` in `discovery/` holds a fixture
@@ -109,8 +110,11 @@ fields); introspection is blocked too. Resolvers get the user with `auth.FromCon
   (`acceptInvite`); both get a pairing token of the inviter. The server sends no mail: the inviter's phone sends the
   link and passcode (`smtp` and `gmail` in an old config.json are taken and ignored).
 - `contacts`: `pairs.json` (pairs, pairings waiting for both confirmations, blocks) and the pairing tokens (memory).
-- `relay`: who may reach whom, the Send checks (`Send`), the active devices, `/ws` (`ServeHTTP`,
-  github.com/coder/websocket), `Revoked` (closes sockets, drops keys and queues) and the hourly `Sweep`.
+- `relay`: who may reach whom, the Send checks (`route`; `Send` routes, then pushes), the active devices, `/ws`
+  (`ServeHTTP`, github.com/coder/websocket), presence (`presence.go`: online users, last seen, the Presence frames),
+  `Revoked` (closes sockets, drops keys and queues) and the hourly `Sweep`.
+- `push`: FCM's HTTP v1 API (`fcm.go`: the service account, the RS256 JWT sign-in, standard library only) and the
+  `Pusher` (the kinds, priorities and TTLs, the per-device debounce, retries, dropping gone tokens).
 - `proto`: `ptt.proto` and its generated Go code in `proto/pttv1` (google.golang.org/protobuf).
 - `version`: `version/VERSION`.
 
@@ -120,7 +124,8 @@ fields); introspection is blocked too. Resolvers get the user with `auth.FromCon
   on loopback with their own CA and files, and the helpers (`addUser`, `enrollmentCode`, `device`, `graphql`) go
   through the same calls a phone and the commands make. New features get a test there, not only unit tests.
   `serve_messaging_test.go` adds `phone`, `uploadKeys`, `socket` (a device's `/ws`, frames kept until asked for)
-  and `pair` (the QR code flow).
+  and `pair` (the QR code flow); `serve_push_test.go` adds `fakeFCM` (Google's token endpoint and FCM, checking the
+  JWT) and `newPushEnv`.
 - The server never holds plaintext or a private key: what a device sends is ciphertext, and keys are public halves
   checked for size only. Anything new that routes must go through `relay.Relay.Send`'s rules.
 - Every security property Journal has stays: rate limits, hashed codes, deny by default, `enrolled_only`, the revoked

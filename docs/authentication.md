@@ -53,6 +53,8 @@ Removed user hen and revoked 1 of its devices
 - `users.json` also keeps each user's public identity key (`identity_key`), set by the first device's
   `uploadPrekeys` ([messaging.md](messaging.md)). `user remove` drops it with the user, and the user's pairs, blocks,
   prekeys and queued envelopes go too.
+- `presence_hidden` is set when the user hides their presence from contacts (`setPresenceVisible`;
+  [messaging.md](messaging.md), "Presence").
 
 ## Access rules
 
@@ -215,8 +217,9 @@ Every enrolled device gets a small **device number**, 1 to 127, unique among its
 
 Every enrolled certificate is appended to `devices_file` (default `devices.json`; `enroll/devices.go`, written
 atomically): serial, user, device name, device number, key protection, registration and expiry dates, the revocation
-date and `renewed_from`. Two fields are reserved for phase 3 and nothing sets them yet: `fcm_token` and
-`notifications_enabled`. A device's public prekeys are in `ptt.db`, not here ([messaging.md](messaging.md)).
+date and `renewed_from`, and the device's push registration: `fcm_token` and `notifications_enabled`, set by
+`registerPush` ([messaging.md](messaging.md), "Push"), kept by a renewed certificate, cleared when the device is
+revoked, and dropped when FCM says the token is gone. A device's public prekeys are in `ptt.db`, not here.
 
 ```
 $ ptt-server devices

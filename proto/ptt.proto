@@ -25,6 +25,9 @@ message Frame {
     Pong pong = 6;
     // Server to device: every envelope queued when the device connected has been sent; what follows is live.
     QueueEmpty queue_empty = 7;
+    // Server to device: a contact came online or went offline (docs/messaging.md, "Presence"). Live only: never
+    // queued, never pushed.
+    Presence presence = 8;
   }
 }
 
@@ -79,6 +82,29 @@ message Send {
   // Chosen by the device and given back in the SendResult.
   string client_id = 1;
   repeated Envelope envelopes = 2;
+  // What a wake-up for this Send is, chosen by the sending phone (the server can't read the ciphertext): which FCM
+  // push a recipient device without an open /ws gets (docs/messaging.md, "Push"). Unset is PUSH_SYNC. The sender's
+  // own other devices always get PUSH_SYNC at most: what their user sent needs no notification.
+  PushKind push_kind = 3;
+}
+
+// The kinds of wake-up a Send asks for. The FCM data message carries only the kind's name ("message", "sync",
+// "talk", "call"), nothing else.
+enum PushKind {
+  // Taken as PUSH_SYNC.
+  PUSH_KIND_UNSPECIFIED = 0;
+  // Something to fetch that shows no notification: receipts, contact and group changes, a muted chat, key messages.
+  // Normal priority, kept by FCM for a day.
+  PUSH_SYNC = 1;
+  // A message the user is notified of. High priority to devices that registered notifications as on (registerPush),
+  // normal otherwise.
+  PUSH_MESSAGE = 2;
+  // No wake-up at all: typing, and anything stale by the time a phone would wake up for it.
+  PUSH_NONE = 3;
+  // A talk burst (phase 5a): high priority (notifications on), kept 30 seconds.
+  PUSH_TALK = 4;
+  // A ringing call (phase 5b): high priority (notifications on), kept 30 seconds.
+  PUSH_CALL = 5;
 }
 
 message SendResult {
@@ -132,3 +158,13 @@ message Pong {
 }
 
 message QueueEmpty {}
+
+// A contact's presence, sent when the first of its devices connects to /ws (online) or the last one disconnects
+// (offline). Only between paired users neither of whom blocked the other, and only when both show their presence
+// (setPresenceVisible).
+message Presence {
+  string user = 1;
+  bool online = 2;
+  // When offline: when the user was last connected, milliseconds since 1970 (UTC), rounded down to 5 minutes.
+  int64 last_seen = 3;
+}
