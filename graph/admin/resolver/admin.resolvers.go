@@ -75,6 +75,14 @@ func (r *mutationResolver) RevokeDevice(ctx context.Context, serial string) (*en
 	return &device, nil
 }
 
+// RestartLiveKit is the resolver for the restartLiveKit field.
+func (r *mutationResolver) RestartLiveKit(ctx context.Context) (bool, error) {
+	if r.LiveKitRestart == nil {
+		return false, nil
+	}
+	return r.LiveKitRestart(), nil
+}
+
 // Users is the resolver for the users field.
 func (r *queryResolver) Users(ctx context.Context) ([]*model.User, error) {
 	active := map[string]int{}

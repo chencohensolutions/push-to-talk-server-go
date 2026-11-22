@@ -20,6 +20,8 @@ type Resolver struct {
 	// Revoked is called after a device of user was revoked, or user removed, so it takes effect at once: its /ws
 	// connections close and its keys and queue go (relay.Relay.Revoked). Nil does nothing.
 	Revoked func(user string)
+	// LiveKitRestart restarts the livekit-server this server runs, and says whether it runs one. Nil: none.
+	LiveKitRestart func() bool
 }
 
 func (r *Resolver) revoked(user string) {

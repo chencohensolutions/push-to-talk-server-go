@@ -249,20 +249,38 @@ func (c *Client) RemoveEverywhere(ctx context.Context, gone func(identity string
 }
 
 // Run keeps livekit-server (binary, with its config file) running until ctx ends, starting it again after it exits:
-// at once the first time, then after a pause that grows to a minute. The keys go to it in LIVEKIT_KEYS, not through
+// at once the first time, then after a pause that grows to a minute. A value on restart stops it and starts it again
+// at once (after `ptt-server livekit update` put a new program there). The keys go to it in LIVEKIT_KEYS, not through
 // key_file: on Windows LiveKit refuses any key file, since Go reports every file there as readable by others.
-func Run(ctx context.Context, binary, configFile string, keys Keys) {
+func Run(ctx context.Context, binary, configFile string, keys Keys, restart <-chan struct{}) {
 	wait := time.Second
 	for {
 		started := time.Now()
-		cmd := exec.CommandContext(ctx, binary, "--config", configFile)
+		once, stop := context.WithCancel(ctx)
+		restarted := make(chan bool, 1)
+		go func() {
+			select {
+			case <-restart:
+				restarted <- true
+				stop()
+			case <-once.Done():
+				restarted <- false
+			}
+		}()
+		cmd := exec.CommandContext(once, binary, "--config", configFile)
 		cmd.Stdout = logWriter{}
 		cmd.Stderr = logWriter{}
 		cmd.Env = append(os.Environ(), "LIVEKIT_KEYS="+keys.Key+": "+keys.Secret)
 		log.Printf("LiveKit: starting %s --config %s", binary, configFile)
 		err := cmd.Run()
+		stop()
 		if ctx.Err() != nil {
 			return
+		}
+		if <-restarted {
+			log.Printf("LiveKit: restarting (a new program)")
+			wait = time.Second
+			continue
 		}
 		log.Printf("LiveKit: exited: %v", err)
 		if time.Since(started) > 5*time.Minute {
@@ -271,6 +289,10 @@ func Run(ctx context.Context, binary, configFile string, keys Keys) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-restart:
+			log.Printf("LiveKit: restarting (a new program)")
+			wait = time.Second
+			continue
 		case <-time.After(wait):
 		}
 		wait = min(2*wait, time.Minute)

@@ -62,6 +62,7 @@ type ComplexityRoot struct {
 		AddUser              func(childComplexity int, name string) int
 		CreateEnrollmentCode func(childComplexity int, user string) int
 		RemoveUser           func(childComplexity int, name string) int
+		RestartLiveKit       func(childComplexity int) int
 		RevokeDevice         func(childComplexity int, serial string) int
 	}
 
@@ -90,6 +91,7 @@ type MutationResolver interface {
 	RemoveUser(ctx context.Context, name string) (*model.RemovedUser, error)
 	CreateEnrollmentCode(ctx context.Context, user string) (*model.EnrollmentCode, error)
 	RevokeDevice(ctx context.Context, serial string) (*enroll.Device, error)
+	RestartLiveKit(ctx context.Context) (bool, error)
 }
 type QueryResolver interface {
 	Users(ctx context.Context) ([]*model.User, error)
@@ -223,6 +225,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RemoveUser(childComplexity, args["name"].(string)), true
+	case "Mutation.restartLiveKit":
+		if e.ComplexityRoot.Mutation.RestartLiveKit == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Mutation.RestartLiveKit(childComplexity), true
 	case "Mutation.revokeDevice":
 		if e.ComplexityRoot.Mutation.RevokeDevice == nil {
 			break
@@ -369,7 +377,7 @@ func newExecutionContext(
 
 var sources = []*ast.Source{
 	{Name: "../schema/admin.graphql", Input: `# Admin API, served only on the loopback admin listener (admin_addr) and used by the
-# ` + "`" + `ptt-server user add | user remove | users | enroll-code | devices | revoke` + "`" + ` commands. See docs/authentication.md.
+# ` + "`" + `ptt-server user add | user remove | users | enroll-code | devices | revoke | livekit update` + "`" + ` commands. See docs/authentication.md.
 
 scalar Time
 
@@ -389,6 +397,11 @@ type Mutation {
   createEnrollmentCode(user: String!): EnrollmentCode!
   "Revokes an enrolled device's certificate (and its renewals); the server rejects it from then on."
   revokeDevice(serial: String!): Device!
+  """
+  Stops livekit-server and starts it again at once, so a new program (` + "`" + `ptt-server livekit update` + "`" + `) runs. False when
+  this server doesn't run LiveKit itself (no "livekit" in config.json, or its binary is "none").
+  """
+  restartLiveKit: Boolean!
 }
 
 type User {
@@ -1229,6 +1242,29 @@ func (ec *executionContext) fieldContext_Mutation_revokeDevice(ctx context.Conte
 		return fc, err
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_restartLiveKit(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_restartLiveKit(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Mutation().RestartLiveKit(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_restartLiveKit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Mutation", field, true, true, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _Query_users(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2763,6 +2799,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "revokeDevice":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_revokeDevice(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "restartLiveKit":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_restartLiveKit(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++

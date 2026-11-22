@@ -28,6 +28,8 @@ const usage = `usage:
                                       ptt-server setup --help)
   ptt-server service install|uninstall|start|stop
                                       the Windows service that starts the server at boot (as administrator)
+  ptt-server livekit update [version] put LiveKit's latest release (or that version) beside ptt-server, checked
+                                      against its checksums, and have the running server restart LiveKit
 
 The commands but setup, service, id and discovery talk to the running server's admin API.
 `
@@ -70,6 +72,8 @@ func main() {
 	}
 	run := runAdminCommand
 	switch os.Args[1] {
+	case "livekit":
+		run = liveKitCommand
 	case "id", "discovery":
 		run = func(config auth.AppConfig, command string, args []string) error {
 			if len(args) > 0 {
