@@ -347,7 +347,7 @@ can be played only by the people who were in it.
 - **A Track blob** (`blobs.Track`) is records (as a clip: a 4-byte big-endian length, then the record) of: 8 bytes
   of big-endian microseconds since the recording began, 1 byte of flags (1 = a key frame), then the frame as the
   sender encrypted it. Its meta names the call, the participant (`user.device`), the media (audio/video) and codec
-  (`audio/opus`, `video/VP8`, `video/H264`). The phones send call audio as RED (RFC 2198: each packet carries the
+  (`audio/opus`, `video/VP8`, `video/H264`, `video/H265`). The phones send call audio as RED (RFC 2198: each packet carries the
   Opus frame and a copy of the ones before), made before LiveKit's frame encryption, so its headers are encrypted
   and LiveKit won't strip it for a subscriber that can't take it. The recorder offers `audio/red` first and keeps
   each payload whole as an `audio/red` track; a phone decrypts each frame, then takes its primary block, the last
