@@ -71,13 +71,13 @@ func TestANewAppReleaseIsPushedToThePhones(t *testing.T) {
 		t.Fatalf("before the releases are read: %s %v", r.Data, r.Errors)
 	}
 	ctx := context.Background()
-	if err := env.appReleases.Check(ctx); err == nil {
+	if _, err := env.appReleases.Check(ctx, false); err == nil {
 		t.Fatal("no release yet: want an error")
 	}
 
 	sum1 := "aa000000000000000000000000000000000000000000000000000000000000aa"
 	releases.publish("1.0.2", sum1)
-	if err := env.appReleases.Check(ctx); err != nil {
+	if _, err := env.appReleases.Check(ctx, false); err != nil {
 		t.Fatal(err)
 	}
 	fcm.none(t, 100*time.Millisecond)
@@ -93,12 +93,12 @@ func TestANewAppReleaseIsPushedToThePhones(t *testing.T) {
 	}
 
 	// The same release again: nothing is pushed. A new one: both phones are told, quietly.
-	if err := env.appReleases.Check(ctx); err != nil {
+	if _, err := env.appReleases.Check(ctx, false); err != nil {
 		t.Fatal(err)
 	}
 	fcm.none(t, 100*time.Millisecond)
 	releases.publish("1.0.3", "bb000000000000000000000000000000000000000000000000000000000000bb")
-	if err := env.appReleases.Check(ctx); err != nil {
+	if _, err := env.appReleases.Check(ctx, false); err != nil {
 		t.Fatal(err)
 	}
 	tokens := map[string]bool{}
@@ -115,6 +115,36 @@ func TestANewAppReleaseIsPushedToThePhones(t *testing.T) {
 	fcm.none(t, 100*time.Millisecond)
 	if r := env.graphql(t, hen.client, `{ appRelease { version } }`, nil); string(r.Data["appRelease"]) != `{"version":"1.0.3"}` {
 		t.Fatalf("appRelease after 1.0.3: %s", r.Data)
+	}
+
+	// The admin's `ptt-server app-update`: nothing new, nothing pushed; with --push, every phone is told again.
+	check := func(push bool) (out struct {
+		Tag    string
+		New    bool
+		Pushed int
+	}) {
+		var data struct{ CheckAppRelease json.RawMessage }
+		if err := adminQuery(env.adminConfig, `mutation($p: Boolean!) { checkAppRelease(push: $p) { tag new pushed } }`,
+			map[string]any{"p": push}, &data); err != nil {
+			t.Fatal(err)
+		}
+		json.Unmarshal(data.CheckAppRelease, &out)
+		return out
+	}
+	if c := check(false); c.Tag != "v1.0.3" || c.New || c.Pushed != 0 {
+		t.Fatalf("app-update: %+v", c)
+	}
+	fcm.none(t, 100*time.Millisecond)
+	if c := check(true); c.Tag != "v1.0.3" || c.New || c.Pushed != 2 {
+		t.Fatalf("app-update --push: %+v", c)
+	}
+	for range 2 {
+		if m := fcm.next(t); m.Data["kind"] != "app_update" {
+			t.Fatalf("the pushed again: %+v", m)
+		}
+	}
+	if err := appUpdateCommand(env.adminConfig, false); err != nil {
+		t.Fatal(err)
 	}
 
 	// A restart remembers 1.0.3, so it isn't pushed again.

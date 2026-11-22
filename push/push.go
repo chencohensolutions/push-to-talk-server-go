@@ -194,10 +194,11 @@ const AppUpdateTTL = 7 * 24 * time.Hour
 
 // AppUpdate tells every device with a push token that a new release of the app is out (package apprelease): a
 // normal-priority "app_update" push, kept a week, sent to connected devices too (the app takes it while open as
-// well). The phone then reads appRelease and offers the update. The pushes go one after another, in the background.
-func (p *Pusher) AppUpdate() {
+// well). The phone then reads appRelease and offers the update. The pushes go one after another, in the background;
+// AppUpdate answers how many devices they go to.
+func (p *Pusher) AppUpdate() int {
 	if !p.On() {
-		return
+		return 0
 	}
 	now := p.Now()
 	seen := map[store.Device]bool{}
@@ -228,6 +229,7 @@ func (p *Pusher) AppUpdate() {
 		}
 		log.Printf("Push: told %d devices about the app update", len(targets))
 	}()
+	return len(targets)
 }
 
 // Forget drops what the pusher keeps for d (a revoked device).

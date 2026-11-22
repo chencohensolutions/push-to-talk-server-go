@@ -221,8 +221,8 @@ func openServer(config auth.AppConfig) (*server, error) {
 	}
 	if config.AppReleasesOn() {
 		pusher := s.relay.Push
-		s.appReleases, err = apprelease.Open(config.AppReleases, config.AppReleaseFile, func(apprelease.Release) {
-			pusher.AppUpdate()
+		s.appReleases, err = apprelease.Open(config.AppReleases, config.AppReleaseFile, func(apprelease.Release) int {
+			return pusher.AppUpdate()
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to open the app release: %w", err)

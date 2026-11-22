@@ -58,6 +58,7 @@ go run . user add <name> | user remove <name> | users              # admin comma
 go run . enroll-code <user> | devices [user] | revoke <serial>
 go run . id | discovery                           # this server's id; check the DHT and the router from here
 go run . livekit update [version]                 # fetch LiveKit's release, check it, swap it in, restart it
+go run . app-update [--push]                      # read the app's release now; push app_update if new (or always)
 ```
 
 After editing `proto/ptt.proto`, regenerate `proto/pttv1/ptt.pb.go` (committed). protoc comes from Maven Central,
@@ -130,7 +131,7 @@ fields); introspection is blocked too. Resolvers get the user with `auth.FromCon
   `Pusher` (the kinds, priorities and TTLs, the per-device debounce, retries, dropping gone tokens).
 - `proto`: `ptt.proto` and its generated Go code in `proto/pttv1` (google.golang.org/protobuf).
 - `apprelease`: follows the app's GitHub releases hourly (`app_releases`, `app-release.json`), answers `appRelease`
-  and has the `Pusher` send `app_update` to every phone for a new one (docs/install.md, "App updates").
+  and has the `Pusher` send `app_update` to every phone for a new one (or on `ptt-server app-update --push`) (docs/install.md, "App updates").
 - `version`: `version/VERSION`.
 
 ## Conventions

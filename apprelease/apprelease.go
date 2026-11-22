@@ -59,15 +59,16 @@ type Watcher struct {
 	HTTP *http.Client
 	// File keeps the latest release seen (app-release.json), so a restart doesn't announce it again.
 	File string
-	// Announce is called with a release the server hadn't seen (not the first one it ever sees).
-	Announce func(Release)
+	// Announce is called with a release the server hadn't seen (not the first one it ever sees), and answers how many
+	// devices it tells.
+	Announce func(Release) int
 
 	mu     sync.RWMutex
 	latest *Release
 }
 
 // Open is a watcher of repo that keeps what it saw in file.
-func Open(repo, file string, announce func(Release)) (*Watcher, error) {
+func Open(repo, file string, announce func(Release) int) (*Watcher, error) {
 	w := &Watcher{Repo: repo, API: API, File: file, Announce: announce}
 	data, err := os.ReadFile(file)
 	switch {
@@ -103,7 +104,7 @@ func (w *Watcher) Run(ctx context.Context) {
 	ticker := time.NewTicker(Every)
 	defer ticker.Stop()
 	for {
-		if err := w.Check(ctx); err != nil {
+		if _, err := w.Check(ctx, false); err != nil {
 			log.Printf("App releases: %v", err)
 		}
 		select {
@@ -114,33 +115,51 @@ func (w *Watcher) Run(ctx context.Context) {
 	}
 }
 
-// Check reads the latest release once, keeps it, and announces it when it is new. A release without an APK and its
-// line in SHA256SUMS is skipped (it may still be uploading), and tried again next time.
-func (w *Watcher) Check(ctx context.Context) error {
+// Result is what one read of the releases found.
+type Result struct {
+	Release Release
+	// New: the server hadn't seen this release before.
+	New bool
+	// Told is how many devices were pushed app_update (0 when nothing was announced).
+	Told int
+}
+
+// Check reads the latest release once, keeps it, and announces it when it is new (but not the first one a server
+// ever sees: phones that need it find it when the app opens). With force (`ptt-server app-update --push`) it is
+// announced either way. A release without an APK and its line in SHA256SUMS is skipped (it may still be uploading),
+// and tried again next time.
+func (w *Watcher) Check(ctx context.Context, force bool) (Result, error) {
 	r, err := w.fetch(ctx)
 	if err != nil {
-		return err
+		return Result{}, err
 	}
 	w.mu.Lock()
 	previous := w.latest
-	if previous != nil && previous.Tag == r.Tag && previous.SHA256 == r.SHA256 {
-		w.mu.Unlock()
-		return nil
+	result := Result{Release: r, New: previous == nil || previous.Tag != r.Tag || previous.SHA256 != r.SHA256}
+	if result.New {
+		w.latest = &r
 	}
-	w.latest = &r
 	w.mu.Unlock()
-	if err := w.save(r); err != nil {
-		return err
+	if result.New {
+		if err := w.save(r); err != nil {
+			return result, err
+		}
 	}
-	if previous == nil {
+	switch {
+	case force:
+		log.Printf("App releases: %s, telling the phones (asked by the admin)", r.Tag)
+	case !result.New:
+		return result, nil
+	case previous == nil:
 		log.Printf("App releases: the latest is %s (%s)", r.Tag, r.APKName)
-		return nil // the first one seen: phones that need it find it when the app opens
+		return result, nil
+	default:
+		log.Printf("App releases: %s is out (was %s): telling the phones", r.Tag, previous.Tag)
 	}
-	log.Printf("App releases: %s is out (was %s): telling the phones", r.Tag, previous.Tag)
 	if w.Announce != nil {
-		w.Announce(r)
+		result.Told = w.Announce(r)
 	}
-	return nil
+	return result, nil
 }
 
 func (w *Watcher) save(r Release) error {

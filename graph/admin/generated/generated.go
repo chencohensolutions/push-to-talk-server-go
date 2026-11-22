@@ -39,6 +39,13 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	AppReleaseCheck struct {
+		New     func(childComplexity int) int
+		Pushed  func(childComplexity int) int
+		Tag     func(childComplexity int) int
+		Version func(childComplexity int) int
+	}
+
 	Device struct {
 		DeviceNumber  func(childComplexity int) int
 		ExpiresAt     func(childComplexity int) int
@@ -60,6 +67,7 @@ type ComplexityRoot struct {
 
 	Mutation struct {
 		AddUser              func(childComplexity int, name string) int
+		CheckAppRelease      func(childComplexity int, push bool) int
 		CreateEnrollmentCode func(childComplexity int, user string) int
 		RemoveUser           func(childComplexity int, name string) int
 		RestartLiveKit       func(childComplexity int) int
@@ -92,6 +100,7 @@ type MutationResolver interface {
 	CreateEnrollmentCode(ctx context.Context, user string) (*model.EnrollmentCode, error)
 	RevokeDevice(ctx context.Context, serial string) (*enroll.Device, error)
 	RestartLiveKit(ctx context.Context) (bool, error)
+	CheckAppRelease(ctx context.Context, push bool) (*model.AppReleaseCheck, error)
 }
 type QueryResolver interface {
 	Users(ctx context.Context) ([]*model.User, error)
@@ -111,6 +120,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	ec := newExecutionContext(nil, e, nil)
 	_ = ec
 	switch typeName + "." + field {
+
+	case "AppReleaseCheck.new":
+		if e.ComplexityRoot.AppReleaseCheck.New == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AppReleaseCheck.New(childComplexity), true
+	case "AppReleaseCheck.pushed":
+		if e.ComplexityRoot.AppReleaseCheck.Pushed == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AppReleaseCheck.Pushed(childComplexity), true
+	case "AppReleaseCheck.tag":
+		if e.ComplexityRoot.AppReleaseCheck.Tag == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AppReleaseCheck.Tag(childComplexity), true
+	case "AppReleaseCheck.version":
+		if e.ComplexityRoot.AppReleaseCheck.Version == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AppReleaseCheck.Version(childComplexity), true
 
 	case "Device.deviceNumber":
 		if e.ComplexityRoot.Device.DeviceNumber == nil {
@@ -203,6 +237,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.AddUser(childComplexity, args["name"].(string)), true
+	case "Mutation.checkAppRelease":
+		if e.ComplexityRoot.Mutation.CheckAppRelease == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_checkAppRelease_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.CheckAppRelease(childComplexity, args["push"].(bool)), true
 	case "Mutation.createEnrollmentCode":
 		if e.ComplexityRoot.Mutation.CreateEnrollmentCode == nil {
 			break
@@ -377,7 +422,7 @@ func newExecutionContext(
 
 var sources = []*ast.Source{
 	{Name: "../schema/admin.graphql", Input: `# Admin API, served only on the loopback admin listener (admin_addr) and used by the
-# ` + "`" + `ptt-server user add | user remove | users | enroll-code | devices | revoke | livekit update` + "`" + ` commands. See docs/authentication.md.
+# ` + "`" + `ptt-server user add | user remove | users | enroll-code | devices | revoke | livekit update | app-update` + "`" + ` commands. See docs/authentication.md.
 
 scalar Time
 
@@ -402,6 +447,22 @@ type Mutation {
   this server doesn't run LiveKit itself (no "livekit" in config.json, or its binary is "none").
   """
   restartLiveKit: Boolean!
+  """
+  Reads the app's latest GitHub release now (` + "`" + `ptt-server app-update` + "`" + `), instead of waiting for the hourly read. A
+  release the server hadn't seen is pushed to every phone as app_update; with push, the release is pushed either way
+  (` + "`" + `ptt-server app-update --push` + "`" + `). Fails when config.json's app_releases is "none" or GitHub can't be read.
+  """
+  checkAppRelease(push: Boolean! = false): AppReleaseCheck!
+}
+
+"What checkAppRelease found."
+type AppReleaseCheck {
+  tag: String!
+  version: String!
+  "The server hadn't seen this release before."
+  new: Boolean!
+  "How many devices were pushed app_update (devices with an FCM token); 0 when nothing was sent."
+  pushed: Int!
 }
 
 type User {
@@ -444,6 +505,20 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // childFields_* functions provide shared child field context lookups.
 // Each function is generated once per unique object type, deduplicating the
 // switch statements that were previously inlined in every fieldContext_* function.
+
+func (ec *executionContext) childFields_AppReleaseCheck(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "tag":
+		return ec.fieldContext_AppReleaseCheck_tag(ctx, field)
+	case "version":
+		return ec.fieldContext_AppReleaseCheck_version(ctx, field)
+	case "new":
+		return ec.fieldContext_AppReleaseCheck_new(ctx, field)
+	case "pushed":
+		return ec.fieldContext_AppReleaseCheck_pushed(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type AppReleaseCheck", field.Name)
+}
 
 func (ec *executionContext) childFields_Device(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
@@ -635,6 +710,20 @@ func (ec *executionContext) field_Mutation_addUser_args(ctx context.Context, raw
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_checkAppRelease_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "push",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["push"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_createEnrollmentCode_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -768,6 +857,98 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _AppReleaseCheck_tag(ctx context.Context, field graphql.CollectedField, obj *model.AppReleaseCheck) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AppReleaseCheck_tag(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Tag, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_AppReleaseCheck_tag(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AppReleaseCheck", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _AppReleaseCheck_version(ctx context.Context, field graphql.CollectedField, obj *model.AppReleaseCheck) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AppReleaseCheck_version(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Version, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_AppReleaseCheck_version(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AppReleaseCheck", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _AppReleaseCheck_new(ctx context.Context, field graphql.CollectedField, obj *model.AppReleaseCheck) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AppReleaseCheck_new(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.New, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_AppReleaseCheck_new(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AppReleaseCheck", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _AppReleaseCheck_pushed(ctx context.Context, field graphql.CollectedField, obj *model.AppReleaseCheck) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AppReleaseCheck_pushed(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Pushed, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_AppReleaseCheck_pushed(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AppReleaseCheck", field, false, false, errors.New("field of type Int does not have child fields"))
+}
 
 func (ec *executionContext) _Device_serial(ctx context.Context, field graphql.CollectedField, obj *enroll.Device) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
@@ -1265,6 +1446,50 @@ func (ec *executionContext) _Mutation_restartLiveKit(ctx context.Context, field 
 }
 func (ec *executionContext) fieldContext_Mutation_restartLiveKit(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Mutation", field, true, true, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Mutation_checkAppRelease(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_checkAppRelease(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().CheckAppRelease(ctx, fc.Args["push"].(bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.AppReleaseCheck) graphql.Marshaler {
+			return ec.marshalNAppReleaseCheck2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋadminᚋmodelᚐAppReleaseCheck(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_checkAppRelease(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_AppReleaseCheck(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_checkAppRelease_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
 }
 
 func (ec *executionContext) _Query_users(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -2601,6 +2826,60 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 
 // region    **************************** object.gotpl ****************************
 
+var appReleaseCheckImplementors = []string{"AppReleaseCheck"}
+
+func (ec *executionContext) _AppReleaseCheck(ctx context.Context, sel ast.SelectionSet, obj *model.AppReleaseCheck) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, appReleaseCheckImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AppReleaseCheck")
+		case "tag":
+			out.Values[i] = ec._AppReleaseCheck_tag(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "version":
+			out.Values[i] = ec._AppReleaseCheck_version(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "new":
+			out.Values[i] = ec._AppReleaseCheck_new(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pushed":
+			out.Values[i] = ec._AppReleaseCheck_pushed(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var deviceImplementors = []string{"Device"}
 
 func (ec *executionContext) _Device(ctx context.Context, sel ast.SelectionSet, obj *enroll.Device) graphql.Marshaler {
@@ -2806,6 +3085,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "restartLiveKit":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_restartLiveKit(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "checkAppRelease":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_checkAppRelease(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -3354,6 +3640,20 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 // endregion **************************** object.gotpl ****************************
 
 // region    ***************************** type.gotpl *****************************
+
+func (ec *executionContext) marshalNAppReleaseCheck2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋadminᚋmodelᚐAppReleaseCheck(ctx context.Context, sel ast.SelectionSet, v model.AppReleaseCheck) graphql.Marshaler {
+	return ec._AppReleaseCheck(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAppReleaseCheck2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋadminᚋmodelᚐAppReleaseCheck(ctx context.Context, sel ast.SelectionSet, v *model.AppReleaseCheck) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._AppReleaseCheck(ctx, sel, v)
+}
 
 func (ec *executionContext) unmarshalNBoolean2bool(ctx context.Context, v any) (bool, error) {
 	res, err := graphql.UnmarshalBoolean(v)
