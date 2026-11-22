@@ -189,3 +189,43 @@ func TestWriteKeepsREDPayloadsWhole(t *testing.T) {
 		t.Fatalf("meta: %+v", m.Track)
 	}
 }
+
+func TestWriteH265(t *testing.T) {
+	store, _ := blobs.Open(t.TempDir(), time.Now)
+	started := time.Now()
+	r := &Recorder{Blobs: store, Now: func() time.Time { return started }}
+	// Frames as LiveKit's H.265 encryption leaves them: Annex B NAL units whose two-byte headers are clear. The first
+	// is a key frame (VPS, then an IDR slice, type 19), the others trailing slices (type 1).
+	nal := func(typ byte, n int) []byte {
+		b := []byte{0, 0, 0, 1, typ << 1, 1}
+		for i := range n {
+			b = append(b, byte(i*13+int(typ)))
+		}
+		return b
+	}
+	frames := [][]byte{append(nal(32, 20), nal(19, 3000)...), nal(1, 900), nal(1, 1200), nal(1, 40)}
+	pk := rtp.NewPacketizer(1200, 116, 0x99, &codecs.H265Payloader{}, rtp.NewFixedSequencer(10), 90000)
+	var list []*rtp.Packet
+	for i, f := range frames {
+		for _, p := range pk.Packetize(f, 3000) {
+			p.Timestamp = uint32(1000 + 3000*i)
+			list = append(list, p)
+		}
+	}
+	id, err := r.Write("c4", Conversation{Owner: "hen", Peer: "dana"}, started, &packets{list}, "video/H265", 90000, "hen.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := readRecords(t, store, id)
+	if len(got) < 3 {
+		t.Fatalf("%d records", len(got))
+	}
+	for i, rec := range got[:3] {
+		if rec.key != (i == 0) || !bytes.Contains(rec.frame, frames[i][4:]) {
+			t.Fatalf("record %d: key %v, %d bytes", i, rec.key, len(rec.frame))
+		}
+	}
+	if m, _ := store.Get(id); m.Track.Media != "video" || m.Track.Codec != "video/H265" {
+		t.Fatalf("meta: %+v", m.Track)
+	}
+}

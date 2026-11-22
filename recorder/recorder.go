@@ -352,8 +352,21 @@ func depacketizer(mime string) (rtp.Depacketizer, func(frame []byte) bool, error
 			}
 			return false
 		}, nil
+	case strings.ToLower(webrtc.MimeTypeH265):
+		// Annex B NAL units, their two-byte headers clear (LiveKit's H.265 frame encryption): a random access point
+		// (types 16 to 21) or a video parameter set (32).
+		return &codecs.H265Depacketizer{}, func(f []byte) bool {
+			for i := 0; i+3 < len(f); i++ {
+				if f[i] == 0 && f[i+1] == 0 && f[i+2] == 1 {
+					if t := f[i+3] >> 1 & 0x3f; (t >= 16 && t <= 21) || t == 32 {
+						return true
+					}
+				}
+			}
+			return false
+		}, nil
 	}
-	return nil, nil, fmt.Errorf("the recorder keeps Opus, VP8 and H.264, not %s", mime)
+	return nil, nil, fmt.Errorf("the recorder keeps Opus, VP8, H.264 and H.265, not %s", mime)
 }
 
 // mimeRED is audio/red, lower case. The phones send their audio as RED (Opus with a redundant copy of the frames
@@ -366,7 +379,8 @@ const mimeRED = "audio/red"
 // codecsToTake are the codecs the recorder offers LiveKit: RED first, so encrypted RED audio is sent as it is.
 var codecsToTake = []lkproto.Codec{{Mime: mimeRED}, {Mime: webrtc.MimeTypeOpus}, {Mime: webrtc.MimeTypeVP8},
 	{Mime: webrtc.MimeTypeH264, FmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f"},
-	{Mime: webrtc.MimeTypeH264, FmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640032"}}
+	{Mime: webrtc.MimeTypeH264, FmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=640032"},
+	{Mime: webrtc.MimeTypeH265}}
 
 // keep writes one participant's track to a new Track blob until it ends.
 func (r *Recorder) keep(rec *recording, track RTPReader, mime string, clockRate uint32, identity string) {
