@@ -27,6 +27,74 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// The kinds of wake-up a Send asks for. The FCM data message carries only the kind's name ("message", "sync",
+// "talk", "call"), nothing else.
+type PushKind int32
+
+const (
+	// Taken as PUSH_SYNC.
+	PushKind_PUSH_KIND_UNSPECIFIED PushKind = 0
+	// Something to fetch that shows no notification: receipts, contact and group changes, a muted chat, key messages.
+	// Normal priority, kept by FCM for a day.
+	PushKind_PUSH_SYNC PushKind = 1
+	// A message the user is notified of. High priority to devices that registered notifications as on (registerPush),
+	// normal otherwise.
+	PushKind_PUSH_MESSAGE PushKind = 2
+	// No wake-up at all: typing, and anything stale by the time a phone would wake up for it.
+	PushKind_PUSH_NONE PushKind = 3
+	// A talk burst (phase 5a): high priority (notifications on), kept 30 seconds.
+	PushKind_PUSH_TALK PushKind = 4
+	// A ringing call (phase 5b): high priority (notifications on), kept 30 seconds.
+	PushKind_PUSH_CALL PushKind = 5
+)
+
+// Enum value maps for PushKind.
+var (
+	PushKind_name = map[int32]string{
+		0: "PUSH_KIND_UNSPECIFIED",
+		1: "PUSH_SYNC",
+		2: "PUSH_MESSAGE",
+		3: "PUSH_NONE",
+		4: "PUSH_TALK",
+		5: "PUSH_CALL",
+	}
+	PushKind_value = map[string]int32{
+		"PUSH_KIND_UNSPECIFIED": 0,
+		"PUSH_SYNC":             1,
+		"PUSH_MESSAGE":          2,
+		"PUSH_NONE":             3,
+		"PUSH_TALK":             4,
+		"PUSH_CALL":             5,
+	}
+)
+
+func (x PushKind) Enum() *PushKind {
+	p := new(PushKind)
+	*p = x
+	return p
+}
+
+func (x PushKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PushKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_ptt_proto_enumTypes[0].Descriptor()
+}
+
+func (PushKind) Type() protoreflect.EnumType {
+	return &file_proto_ptt_proto_enumTypes[0]
+}
+
+func (x PushKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PushKind.Descriptor instead.
+func (PushKind) EnumDescriptor() ([]byte, []int) {
+	return file_proto_ptt_proto_rawDescGZIP(), []int{0}
+}
+
 type Envelope_Type int32
 
 const (
@@ -80,11 +148,11 @@ func (x Envelope_Type) String() string {
 }
 
 func (Envelope_Type) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_ptt_proto_enumTypes[0].Descriptor()
+	return file_proto_ptt_proto_enumTypes[1].Descriptor()
 }
 
 func (Envelope_Type) Type() protoreflect.EnumType {
-	return &file_proto_ptt_proto_enumTypes[0]
+	return &file_proto_ptt_proto_enumTypes[1]
 }
 
 func (x Envelope_Type) Number() protoreflect.EnumNumber {
@@ -157,11 +225,11 @@ func (x SendResult_Status) String() string {
 }
 
 func (SendResult_Status) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_ptt_proto_enumTypes[1].Descriptor()
+	return file_proto_ptt_proto_enumTypes[2].Descriptor()
 }
 
 func (SendResult_Status) Type() protoreflect.EnumType {
-	return &file_proto_ptt_proto_enumTypes[1]
+	return &file_proto_ptt_proto_enumTypes[2]
 }
 
 func (x SendResult_Status) Number() protoreflect.EnumNumber {
@@ -184,6 +252,7 @@ type Frame struct {
 	//	*Frame_Ping
 	//	*Frame_Pong
 	//	*Frame_QueueEmpty
+	//	*Frame_Presence
 	Kind          isFrame_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -289,6 +358,15 @@ func (x *Frame) GetQueueEmpty() *QueueEmpty {
 	return nil
 }
 
+func (x *Frame) GetPresence() *Presence {
+	if x != nil {
+		if x, ok := x.Kind.(*Frame_Presence); ok {
+			return x.Presence
+		}
+	}
+	return nil
+}
+
 type isFrame_Kind interface {
 	isFrame_Kind()
 }
@@ -328,6 +406,12 @@ type Frame_QueueEmpty struct {
 	QueueEmpty *QueueEmpty `protobuf:"bytes,7,opt,name=queue_empty,json=queueEmpty,proto3,oneof"`
 }
 
+type Frame_Presence struct {
+	// Server to device: a contact came online or went offline (docs/messaging.md, "Presence"). Live only: never
+	// queued, never pushed.
+	Presence *Presence `protobuf:"bytes,8,opt,name=presence,proto3,oneof"`
+}
+
 func (*Frame_Envelope) isFrame_Kind() {}
 
 func (*Frame_Ack) isFrame_Kind() {}
@@ -341,6 +425,8 @@ func (*Frame_Ping) isFrame_Kind() {}
 func (*Frame_Pong) isFrame_Kind() {}
 
 func (*Frame_QueueEmpty) isFrame_Kind() {}
+
+func (*Frame_Presence) isFrame_Kind() {}
 
 type Envelope struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -517,8 +603,12 @@ func (x *Ack) GetIds() []string {
 type Send struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Chosen by the device and given back in the SendResult.
-	ClientId      string      `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	Envelopes     []*Envelope `protobuf:"bytes,2,rep,name=envelopes,proto3" json:"envelopes,omitempty"`
+	ClientId  string      `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	Envelopes []*Envelope `protobuf:"bytes,2,rep,name=envelopes,proto3" json:"envelopes,omitempty"`
+	// What a wake-up for this Send is, chosen by the sending phone (the server can't read the ciphertext): which FCM
+	// push a recipient device without an open /ws gets (docs/messaging.md, "Push"). Unset is PUSH_SYNC. The sender's
+	// own other devices always get PUSH_SYNC at most: what their user sent needs no notification.
+	PushKind      PushKind `protobuf:"varint,3,opt,name=push_kind,json=pushKind,proto3,enum=ptt.v1.PushKind" json:"push_kind,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -565,6 +655,13 @@ func (x *Send) GetEnvelopes() []*Envelope {
 		return x.Envelopes
 	}
 	return nil
+}
+
+func (x *Send) GetPushKind() PushKind {
+	if x != nil {
+		return x.PushKind
+	}
+	return PushKind_PUSH_KIND_UNSPECIFIED
 }
 
 type SendResult struct {
@@ -873,11 +970,75 @@ func (*QueueEmpty) Descriptor() ([]byte, []int) {
 	return file_proto_ptt_proto_rawDescGZIP(), []int{9}
 }
 
+// A contact's presence, sent when the first of its devices connects to /ws (online) or the last one disconnects
+// (offline). Only between paired users neither of whom blocked the other, and only when both show their presence
+// (setPresenceVisible).
+type Presence struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	User   string                 `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	Online bool                   `protobuf:"varint,2,opt,name=online,proto3" json:"online,omitempty"`
+	// When offline: when the user was last connected, milliseconds since 1970 (UTC), rounded down to 5 minutes.
+	LastSeen      int64 `protobuf:"varint,3,opt,name=last_seen,json=lastSeen,proto3" json:"last_seen,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Presence) Reset() {
+	*x = Presence{}
+	mi := &file_proto_ptt_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Presence) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Presence) ProtoMessage() {}
+
+func (x *Presence) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ptt_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Presence.ProtoReflect.Descriptor instead.
+func (*Presence) Descriptor() ([]byte, []int) {
+	return file_proto_ptt_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *Presence) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *Presence) GetOnline() bool {
+	if x != nil {
+		return x.Online
+	}
+	return false
+}
+
+func (x *Presence) GetLastSeen() int64 {
+	if x != nil {
+		return x.LastSeen
+	}
+	return 0
+}
+
 var File_proto_ptt_proto protoreflect.FileDescriptor
 
 const file_proto_ptt_proto_rawDesc = "" +
 	"\n" +
-	"\x0fproto/ptt.proto\x12\x06ptt.v1\"\xba\x02\n" +
+	"\x0fproto/ptt.proto\x12\x06ptt.v1\"\xea\x02\n" +
 	"\x05Frame\x12.\n" +
 	"\benvelope\x18\x01 \x01(\v2\x10.ptt.v1.EnvelopeH\x00R\benvelope\x12\x1f\n" +
 	"\x03ack\x18\x02 \x01(\v2\v.ptt.v1.AckH\x00R\x03ack\x12\"\n" +
@@ -887,7 +1048,8 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\x04ping\x18\x05 \x01(\v2\f.ptt.v1.PingH\x00R\x04ping\x12\"\n" +
 	"\x04pong\x18\x06 \x01(\v2\f.ptt.v1.PongH\x00R\x04pong\x125\n" +
 	"\vqueue_empty\x18\a \x01(\v2\x12.ptt.v1.QueueEmptyH\x00R\n" +
-	"queueEmptyB\x06\n" +
+	"queueEmpty\x12.\n" +
+	"\bpresence\x18\b \x01(\v2\x10.ptt.v1.PresenceH\x00R\bpresenceB\x06\n" +
 	"\x04kind\"\x99\x04\n" +
 	"\bEnvelope\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -914,10 +1076,11 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\n" +
 	"\x06PAIRED\x10\x06\"\x17\n" +
 	"\x03Ack\x12\x10\n" +
-	"\x03ids\x18\x01 \x03(\tR\x03ids\"S\n" +
+	"\x03ids\x18\x01 \x03(\tR\x03ids\"\x82\x01\n" +
 	"\x04Send\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12.\n" +
-	"\tenvelopes\x18\x02 \x03(\v2\x10.ptt.v1.EnvelopeR\tenvelopes\"\xe5\x02\n" +
+	"\tenvelopes\x18\x02 \x03(\v2\x10.ptt.v1.EnvelopeR\tenvelopes\x12-\n" +
+	"\tpush_kind\x18\x03 \x01(\x0e2\x10.ptt.v1.PushKindR\bpushKind\"\xe5\x02\n" +
 	"\n" +
 	"SendResult\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x121\n" +
@@ -948,7 +1111,18 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\x04Pong\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\"\f\n" +
 	"\n" +
-	"QueueEmptyBHZFgithub.com/chencohensolutions/push-to-talk-server-go/proto/pttv1;pttv1b\x06proto3"
+	"QueueEmpty\"S\n" +
+	"\bPresence\x12\x12\n" +
+	"\x04user\x18\x01 \x01(\tR\x04user\x12\x16\n" +
+	"\x06online\x18\x02 \x01(\bR\x06online\x12\x1b\n" +
+	"\tlast_seen\x18\x03 \x01(\x03R\blastSeen*s\n" +
+	"\bPushKind\x12\x19\n" +
+	"\x15PUSH_KIND_UNSPECIFIED\x10\x00\x12\r\n" +
+	"\tPUSH_SYNC\x10\x01\x12\x10\n" +
+	"\fPUSH_MESSAGE\x10\x02\x12\r\n" +
+	"\tPUSH_NONE\x10\x03\x12\r\n" +
+	"\tPUSH_TALK\x10\x04\x12\r\n" +
+	"\tPUSH_CALL\x10\x05BHZFgithub.com/chencohensolutions/push-to-talk-server-go/proto/pttv1;pttv1b\x06proto3"
 
 var (
 	file_proto_ptt_proto_rawDescOnce sync.Once
@@ -962,40 +1136,44 @@ func file_proto_ptt_proto_rawDescGZIP() []byte {
 	return file_proto_ptt_proto_rawDescData
 }
 
-var file_proto_ptt_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_proto_ptt_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_proto_ptt_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
+var file_proto_ptt_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_proto_ptt_proto_goTypes = []any{
-	(Envelope_Type)(0),     // 0: ptt.v1.Envelope.Type
-	(SendResult_Status)(0), // 1: ptt.v1.SendResult.Status
-	(*Frame)(nil),          // 2: ptt.v1.Frame
-	(*Envelope)(nil),       // 3: ptt.v1.Envelope
-	(*Ack)(nil),            // 4: ptt.v1.Ack
-	(*Send)(nil),           // 5: ptt.v1.Send
-	(*SendResult)(nil),     // 6: ptt.v1.SendResult
-	(*UserDevices)(nil),    // 7: ptt.v1.UserDevices
-	(*ActiveDevice)(nil),   // 8: ptt.v1.ActiveDevice
-	(*Ping)(nil),           // 9: ptt.v1.Ping
-	(*Pong)(nil),           // 10: ptt.v1.Pong
-	(*QueueEmpty)(nil),     // 11: ptt.v1.QueueEmpty
+	(PushKind)(0),          // 0: ptt.v1.PushKind
+	(Envelope_Type)(0),     // 1: ptt.v1.Envelope.Type
+	(SendResult_Status)(0), // 2: ptt.v1.SendResult.Status
+	(*Frame)(nil),          // 3: ptt.v1.Frame
+	(*Envelope)(nil),       // 4: ptt.v1.Envelope
+	(*Ack)(nil),            // 5: ptt.v1.Ack
+	(*Send)(nil),           // 6: ptt.v1.Send
+	(*SendResult)(nil),     // 7: ptt.v1.SendResult
+	(*UserDevices)(nil),    // 8: ptt.v1.UserDevices
+	(*ActiveDevice)(nil),   // 9: ptt.v1.ActiveDevice
+	(*Ping)(nil),           // 10: ptt.v1.Ping
+	(*Pong)(nil),           // 11: ptt.v1.Pong
+	(*QueueEmpty)(nil),     // 12: ptt.v1.QueueEmpty
+	(*Presence)(nil),       // 13: ptt.v1.Presence
 }
 var file_proto_ptt_proto_depIdxs = []int32{
-	3,  // 0: ptt.v1.Frame.envelope:type_name -> ptt.v1.Envelope
-	4,  // 1: ptt.v1.Frame.ack:type_name -> ptt.v1.Ack
-	5,  // 2: ptt.v1.Frame.send:type_name -> ptt.v1.Send
-	6,  // 3: ptt.v1.Frame.send_result:type_name -> ptt.v1.SendResult
-	9,  // 4: ptt.v1.Frame.ping:type_name -> ptt.v1.Ping
-	10, // 5: ptt.v1.Frame.pong:type_name -> ptt.v1.Pong
-	11, // 6: ptt.v1.Frame.queue_empty:type_name -> ptt.v1.QueueEmpty
-	0,  // 7: ptt.v1.Envelope.type:type_name -> ptt.v1.Envelope.Type
-	3,  // 8: ptt.v1.Send.envelopes:type_name -> ptt.v1.Envelope
-	1,  // 9: ptt.v1.SendResult.status:type_name -> ptt.v1.SendResult.Status
-	7,  // 10: ptt.v1.SendResult.devices:type_name -> ptt.v1.UserDevices
-	8,  // 11: ptt.v1.UserDevices.devices:type_name -> ptt.v1.ActiveDevice
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	4,  // 0: ptt.v1.Frame.envelope:type_name -> ptt.v1.Envelope
+	5,  // 1: ptt.v1.Frame.ack:type_name -> ptt.v1.Ack
+	6,  // 2: ptt.v1.Frame.send:type_name -> ptt.v1.Send
+	7,  // 3: ptt.v1.Frame.send_result:type_name -> ptt.v1.SendResult
+	10, // 4: ptt.v1.Frame.ping:type_name -> ptt.v1.Ping
+	11, // 5: ptt.v1.Frame.pong:type_name -> ptt.v1.Pong
+	12, // 6: ptt.v1.Frame.queue_empty:type_name -> ptt.v1.QueueEmpty
+	13, // 7: ptt.v1.Frame.presence:type_name -> ptt.v1.Presence
+	1,  // 8: ptt.v1.Envelope.type:type_name -> ptt.v1.Envelope.Type
+	4,  // 9: ptt.v1.Send.envelopes:type_name -> ptt.v1.Envelope
+	0,  // 10: ptt.v1.Send.push_kind:type_name -> ptt.v1.PushKind
+	2,  // 11: ptt.v1.SendResult.status:type_name -> ptt.v1.SendResult.Status
+	8,  // 12: ptt.v1.SendResult.devices:type_name -> ptt.v1.UserDevices
+	9,  // 13: ptt.v1.UserDevices.devices:type_name -> ptt.v1.ActiveDevice
+	14, // [14:14] is the sub-list for method output_type
+	14, // [14:14] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_proto_ptt_proto_init() }
@@ -1011,14 +1189,15 @@ func file_proto_ptt_proto_init() {
 		(*Frame_Ping)(nil),
 		(*Frame_Pong)(nil),
 		(*Frame_QueueEmpty)(nil),
+		(*Frame_Presence)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_ptt_proto_rawDesc), len(file_proto_ptt_proto_rawDesc)),
-			NumEnums:      2,
-			NumMessages:   10,
+			NumEnums:      3,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

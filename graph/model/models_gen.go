@@ -176,6 +176,12 @@ type Me struct {
 	Email *string `json:"email,omitempty"`
 	// The user's identity key, base64; null until a device of the user uploaded it (uploadPrekeys).
 	IdentityKey *string `json:"identityKey,omitempty"`
+	// The user shows their presence to contacts (setPresenceVisible).
+	PresenceVisible bool `json:"presenceVisible"`
+	// The calling device has an FCM token registered (registerPush).
+	PushRegistered bool `json:"pushRegistered"`
+	// The calling device registered notifications as on.
+	NotificationsEnabled bool `json:"notificationsEnabled"`
 }
 
 type Mutation struct {
@@ -234,6 +240,14 @@ type PrekeyInput struct {
 	PublicKey string `json:"publicKey"`
 }
 
+type Presence struct {
+	User string `json:"user"`
+	// A device of the user has /ws open now.
+	Online bool `json:"online"`
+	// When offline: when the user was last connected, rounded down to 5 minutes; null when unknown (not since the server started) or hidden.
+	LastSeen *time.Time `json:"lastSeen,omitempty"`
+}
+
 type Query struct {
 }
 
@@ -267,6 +281,8 @@ type ServerInfo struct {
 	DeviceNumber int `json:"deviceNumber"`
 	// How to find this server when its address changes; null when the server can't read its own key.
 	Discovery *ServerDiscovery `json:"discovery,omitempty"`
+	// The server can wake phones through FCM (config.json has an fcm service account). Without it, a phone receives only while connected.
+	Push bool `json:"push"`
 }
 
 type SignedPrekey struct {

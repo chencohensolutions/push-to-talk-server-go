@@ -106,10 +106,11 @@ without one, `403` for a certificate outside the registry. Every message is bina
 |---|---|---|
 | `Envelope` | server → device | `id sender_user sender_device recipient_user recipient_device type ciphertext server_timestamp` |
 | `Ack { ids }` | device → server | the envelopes are stored on the phone; the server deletes them from the queue |
-| `Send { client_id envelopes }` | device → server | one message, one envelope per device |
+| `Send { client_id envelopes push_kind }` | device → server | one message, one envelope per device; `push_kind` is the wake-up it is worth ("Push" below) |
 | `SendResult { client_id status envelope_ids devices detail }` | server → device | `ACCEPTED`, or why not |
 | `Ping { id }` / `Pong { id }` | either way | answered with the same id |
 | `QueueEmpty` | server → device | everything queued at connect was sent; what follows is live |
+| `Presence { user online last_seen }` | server → device | a contact came online or went offline ("Presence" below) |
 
 Envelope types: `PREKEY_MESSAGE`, `MESSAGE`, `SENDER_KEY_MESSAGE` (libsignal's), `PROVISIONING` (linking), and two
 the server makes, `IDENTITY_KEY_CHANGED` and `PAIRED`.
@@ -146,6 +147,84 @@ and Sends that still name it are refused `STALE_DEVICES`. A removed user's pairs
 and `block` apply to the next Send. A sweep at start and every hour does the same for devices whose certificate was
 revoked or expired otherwise.
 
+## Push (FCM)
+
+From phase 3 a phone holds no socket in the background: a data-only FCM message wakes it, it connects to `/ws` and
+takes its queue. The push carries **only the kind of wake-up**: no ids, no names, no sizes, no content. The server
+sends it through FCM's HTTP v1 API with a service account (`fcm` in config.json, docs/install.md); without one the
+server runs with no push, says so once in the log, and `serverInfo.push` is false.
+
+**Registering.** `registerPush(token, notificationsEnabled)` → `true` stores the calling device's FCM registration
+token and whether it shows notifications in the device registry (`fcm_token`, `notifications_enabled` in
+`devices.json`; a renewed certificate keeps them). A phone calls it after enrolling, whenever FCM gives it a new
+token, and whenever notifications are turned on or off (by the user, or the system's permission). A null or empty
+token removes the registration. A token another device had is taken from it (a reinstalled app on the same phone).
+`INVALID_TOKEN` for a token over 4096 characters, or with spaces or control characters. `me.pushRegistered` and
+`me.notificationsEnabled` say what the server holds for the calling device. Revoking a device (`revoke`, `user
+remove`) clears its token at once, and a token FCM answers as gone (`404` / `UNREGISTERED`, or `403`
+`SENDER_ID_MISMATCH`) is dropped from the registry: the phone registers again when it next starts.
+
+**When a push is sent.** When an envelope is queued for a device that is enrolled, has a token, and has no open
+`/ws`. A connected device gets the envelope on its socket and no push. The kind comes from the Send:
+
+| `Send.push_kind` | For the recipient's devices | For the sender's own other devices |
+|---|---|---|
+| unset, `PUSH_SYNC` | `sync` | `sync` |
+| `PUSH_MESSAGE` | `message` | `sync` |
+| `PUSH_NONE` | nothing | nothing |
+| `PUSH_TALK`, `PUSH_CALL` (phases 5a and 5b) | `talk`, `call` | `sync` |
+
+The server can't read the ciphertext, so the sending phone says what it is: `PUSH_MESSAGE` for a message the
+recipient is notified of (text, a voice message, a message in a chat that isn't muted), `PUSH_SYNC` for what must
+reach a sleeping phone but shows nothing (delivery and read receipts, contact and group changes, a muted chat, key
+messages, the PAIRED and pair-request flow), and `PUSH_NONE` for what is stale by the time a phone wakes up
+(typing). A Send that leaves it unset is `sync`. The envelopes the server makes (`PAIRED`, `IDENTITY_KEY_CHANGED`)
+push `sync`; Presence frames are never queued and never push.
+
+**What FCM gets.** One message per device:
+
+```json
+{ "message": {
+    "token": "<the device's FCM token>",
+    "data": { "kind": "message" },
+    "android": { "priority": "HIGH", "collapse_key": "message" } } }
+```
+
+| kind | `android.priority` | `android.ttl` | `collapse_key` |
+|---|---|---|---|
+| `message` | `HIGH` when the device registered notifications as on, `NORMAL` otherwise | FCM's default (4 weeks) | `message` |
+| `sync` | `NORMAL` | `86400s` | `sync` |
+| `talk` | `HIGH` (notifications on), `NORMAL` otherwise | `30s` | `talk` |
+| `call` | `HIGH` (notifications on), `NORMAL` otherwise | `30s` | `call` |
+
+`data.kind` is the only key in `data`, so the app reads it in `onMessageReceived` and connects. FCM lowers the
+priority of an app whose high-priority pushes don't end in a notification, which is why the server sends `HIGH` only
+to devices that said they show notifications, and only for kinds that show something; the app still checks
+`RemoteMessage.getPriority()`.
+
+**Debounce.** A burst of envelopes gives one push per device: the first is sent at once, and for the next 3 seconds
+further envelopes for the device only mark that another push is due; at the end of the window one push of the most
+urgent kind marked (`call` > `talk` > `message` > `sync`) is sent, unless the device connected meanwhile. FCM's
+collapse keys do the rest on the phone's side: ten pending `message` wake-ups are one. A push that fails with `429`
+or a `5xx` is tried twice more, a few seconds apart; other failures are logged and dropped (the envelope stays
+queued, and the next push or the next connection gets it).
+
+## Presence
+
+A small "who is connected" signal, only between contacts (paired, neither blocked the other):
+
+- **`presence(users)`** → `[{ user online lastSeen }]`: `online` when a device of the user has `/ws` open now;
+  otherwise `lastSeen` is when the user's last device disconnected, rounded down to 5 minutes, or null when the
+  server hasn't seen the user since it started (it is kept in memory only). Names that aren't contacts of the caller
+  are left out of the answer, without an error, so it tells nothing about who exists.
+- **The `Presence` frame** on `/ws` (`Frame.presence`: `user online last_seen`): sent live to the connected devices
+  of every contact when the user's first device connects (`online: true`) or its last one disconnects (`online:
+  false` and `last_seen`). Never queued, never pushed: a phone that was offline asks `presence` when it opens its
+  chats.
+- **`setPresenceVisible(visible)`** → the setting (`presence_hidden` in `users.json`; `me.presenceVisible`). Hiding
+  works both ways: a user who hides theirs is shown to everyone as offline with no `lastSeen`, gets no Presence
+  frames, and sees every contact the same way.
+
 ## The queue
 
 `ptt.db` (`database_file`), SQLite through `modernc.org/sqlite` (pure Go, no cgo), one row per (recipient device,
@@ -156,5 +235,7 @@ database runs in WAL mode; the server writes the log back into `ptt.db` when it 
 ## What the server sees
 
 Who is paired with whom and who blocked whom, who sends to whom and when, how big each envelope is, the type of each
-(a pair request is told apart by its token), the public keys, and the IP addresses. Never the content: text,
-receipts, typing, sync messages and key messages are all ciphertext of the same kinds.
+(a pair request is told apart by its token), the push kind the sender chose (message, sync, none), the public keys,
+each device's FCM token, when each user is connected, and the IP addresses. Google sees that a device was woken, when,
+and the kind (`message` or `sync`), nothing else. Never the content: text, receipts, typing, sync messages and key
+messages are all ciphertext of the same kinds.

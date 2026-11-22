@@ -113,12 +113,15 @@ type ComplexityRoot struct {
 	}
 
 	Me struct {
-		DeviceName   func(childComplexity int) int
-		DeviceNumber func(childComplexity int) int
-		DisplayName  func(childComplexity int) int
-		Email        func(childComplexity int) int
-		IdentityKey  func(childComplexity int) int
-		User         func(childComplexity int) int
+		DeviceName           func(childComplexity int) int
+		DeviceNumber         func(childComplexity int) int
+		DisplayName          func(childComplexity int) int
+		Email                func(childComplexity int) int
+		IdentityKey          func(childComplexity int) int
+		NotificationsEnabled func(childComplexity int) int
+		PresenceVisible      func(childComplexity int) int
+		PushRegistered       func(childComplexity int) int
+		User                 func(childComplexity int) int
 	}
 
 	Mutation struct {
@@ -130,8 +133,10 @@ type ComplexityRoot struct {
 		EnrollDevice       func(childComplexity int, input model.EnrollDeviceInput) int
 		EnrollWithInvite   func(childComplexity int, input model.InviteEnrollInput) int
 		PairingToken       func(childComplexity int) int
+		RegisterPush       func(childComplexity int, token *string, notificationsEnabled bool) int
 		RenewCertificate   func(childComplexity int, csr string, keyProtection model.KeyProtection) int
 		ReplaceIdentityKey func(childComplexity int, identityKey string) int
+		SetPresenceVisible func(childComplexity int, visible bool) int
 		Unblock            func(childComplexity int, user string) int
 		Unpair             func(childComplexity int, user string) int
 		UploadPrekeys      func(childComplexity int, input model.UploadPrekeysInput) int
@@ -175,6 +180,12 @@ type ComplexityRoot struct {
 		RefillBelow         func(childComplexity int) int
 	}
 
+	Presence struct {
+		LastSeen func(childComplexity int) int
+		Online   func(childComplexity int) int
+		User     func(childComplexity int) int
+	}
+
 	Query struct {
 		Blocked           func(childComplexity int) int
 		Contacts          func(childComplexity int) int
@@ -185,6 +196,7 @@ type ComplexityRoot struct {
 		Me                func(childComplexity int) int
 		PrekeyBundles     func(childComplexity int, user string, routingToken *string) int
 		PrekeyCount       func(childComplexity int) int
+		Presence          func(childComplexity int, users []string) int
 		ServerInfo        func(childComplexity int) int
 	}
 
@@ -200,6 +212,7 @@ type ComplexityRoot struct {
 		CaCertificate     func(childComplexity int) int
 		DeviceNumber      func(childComplexity int) int
 		Discovery         func(childComplexity int) int
+		Push              func(childComplexity int) int
 		RenewCertificates func(childComplexity int) int
 		Version           func(childComplexity int) int
 	}
@@ -225,6 +238,8 @@ type MutationResolver interface {
 	Unpair(ctx context.Context, user string) (bool, error)
 	Block(ctx context.Context, user string) (bool, error)
 	Unblock(ctx context.Context, user string) (bool, error)
+	RegisterPush(ctx context.Context, token *string, notificationsEnabled bool) (bool, error)
+	SetPresenceVisible(ctx context.Context, visible bool) (bool, error)
 }
 type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
@@ -237,6 +252,7 @@ type QueryResolver interface {
 	Contacts(ctx context.Context) ([]*model.Contact, error)
 	Blocked(ctx context.Context) ([]string, error)
 	Devices(ctx context.Context) ([]*model.OwnDevice, error)
+	Presence(ctx context.Context, users []string) ([]*model.Presence, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -523,6 +539,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Me.IdentityKey(childComplexity), true
+	case "Me.notificationsEnabled":
+		if e.ComplexityRoot.Me.NotificationsEnabled == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Me.NotificationsEnabled(childComplexity), true
+	case "Me.presenceVisible":
+		if e.ComplexityRoot.Me.PresenceVisible == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Me.PresenceVisible(childComplexity), true
+	case "Me.pushRegistered":
+		if e.ComplexityRoot.Me.PushRegistered == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Me.PushRegistered(childComplexity), true
 	case "Me.user":
 		if e.ComplexityRoot.Me.User == nil {
 			break
@@ -613,6 +647,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.PairingToken(childComplexity), true
+	case "Mutation.registerPush":
+		if e.ComplexityRoot.Mutation.RegisterPush == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_registerPush_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.RegisterPush(childComplexity, args["token"].(*string), args["notificationsEnabled"].(bool)), true
 	case "Mutation.renewCertificate":
 		if e.ComplexityRoot.Mutation.RenewCertificate == nil {
 			break
@@ -635,6 +680,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.ReplaceIdentityKey(childComplexity, args["identityKey"].(string)), true
+	case "Mutation.setPresenceVisible":
+		if e.ComplexityRoot.Mutation.SetPresenceVisible == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setPresenceVisible_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetPresenceVisible(childComplexity, args["visible"].(bool)), true
 	case "Mutation.unblock":
 		if e.ComplexityRoot.Mutation.Unblock == nil {
 			break
@@ -795,6 +851,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.PrekeyCount.RefillBelow(childComplexity), true
 
+	case "Presence.lastSeen":
+		if e.ComplexityRoot.Presence.LastSeen == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Presence.LastSeen(childComplexity), true
+	case "Presence.online":
+		if e.ComplexityRoot.Presence.Online == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Presence.Online(childComplexity), true
+	case "Presence.user":
+		if e.ComplexityRoot.Presence.User == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Presence.User(childComplexity), true
+
 	case "Query.blocked":
 		if e.ComplexityRoot.Query.Blocked == nil {
 			break
@@ -865,6 +940,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.PrekeyCount(childComplexity), true
+	case "Query.presence":
+		if e.ComplexityRoot.Query.Presence == nil {
+			break
+		}
+
+		args, err := ec.field_Query_presence_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.Presence(childComplexity, args["users"].([]string)), true
 	case "Query.serverInfo":
 		if e.ComplexityRoot.Query.ServerInfo == nil {
 			break
@@ -921,6 +1007,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Discovery(childComplexity), true
+	case "ServerInfo.push":
+		if e.ComplexityRoot.ServerInfo.Push == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.Push(childComplexity), true
 	case "ServerInfo.renewCertificates":
 		if e.ComplexityRoot.ServerInfo.RenewCertificates == nil {
 			break
@@ -1363,6 +1455,60 @@ type OwnDevice {
   current: Boolean!
 }
 `, BuiltIn: false},
+	{Name: "../schema/push.graphql", Input: `# --- Push and presence (phase 3) ----------------------------------------------------------------------------------
+# See docs/messaging.md, "Push" and "Presence". A device without an open /ws is woken by a data-only FCM message that
+# carries only the kind of wake-up ({"kind": "message"}, "sync", "talk" or "call"); the phone connects and fetches.
+#
+# Errors a device acts on carry a code in extensions.code: NOT_ENROLLED, INVALID_TOKEN.
+
+extend type Mutation {
+  """
+  Registers the calling device's FCM registration token, and whether the device shows notifications: the server
+  sends high-priority pushes only to devices that do (FCM lowers the priority of an app whose high-priority pushes
+  show nothing). Call it after enrolling, whenever FCM gives a new token, and whenever the user or the system turns
+  notifications on or off. A null or empty token removes the registration: no more pushes. A token another device
+  had registered is taken from it. INVALID_TOKEN for a token over 4096 characters or with spaces or control
+  characters. True when stored.
+  """
+  registerPush(token: String, notificationsEnabled: Boolean!): Boolean!
+  """
+  Shows or hides the caller's user's presence (online now, last seen) from its contacts. Hidden works both ways: a
+  user who hides theirs sees nobody's. Visible unless set. Answers the setting now.
+  """
+  setPresenceVisible(visible: Boolean!): Boolean!
+}
+
+extend type Query {
+  """
+  Whether each of users is connected now (any device with an open /ws), and when it was last connected. Only for
+  contacts (paired, neither blocked the other); other names are left out of the answer, without an error. Everyone
+  shows as offline with no lastSeen when the caller or the contact hides their presence.
+  """
+  presence(users: [String!]!): [Presence!]!
+}
+
+extend type Me {
+  "The user shows their presence to contacts (setPresenceVisible)."
+  presenceVisible: Boolean!
+  "The calling device has an FCM token registered (registerPush)."
+  pushRegistered: Boolean!
+  "The calling device registered notifications as on."
+  notificationsEnabled: Boolean!
+}
+
+extend type ServerInfo {
+  "The server can wake phones through FCM (config.json has an fcm service account). Without it, a phone receives only while connected."
+  push: Boolean!
+}
+
+type Presence {
+  user: String!
+  "A device of the user has /ws open now."
+  online: Boolean!
+  "When offline: when the user was last connected, rounded down to 5 minutes; null when unknown (not since the server started) or hidden."
+  lastSeen: Time
+}
+`, BuiltIn: false},
 	{Name: "../schema/schema.graphql", Input: `# --- Authentication -----------------------------------------------------------
 # Every root field requires a client certificate unless it is marked @public (auth/access.go: deny by default).
 # See docs/authentication.md.
@@ -1604,6 +1750,12 @@ func (ec *executionContext) childFields_Me(ctx context.Context, field graphql.Co
 		return ec.fieldContext_Me_email(ctx, field)
 	case "identityKey":
 		return ec.fieldContext_Me_identityKey(ctx, field)
+	case "presenceVisible":
+		return ec.fieldContext_Me_presenceVisible(ctx, field)
+	case "pushRegistered":
+		return ec.fieldContext_Me_pushRegistered(ctx, field)
+	case "notificationsEnabled":
+		return ec.fieldContext_Me_notificationsEnabled(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Me", field.Name)
 }
@@ -1684,6 +1836,18 @@ func (ec *executionContext) childFields_PrekeyCount(ctx context.Context, field g
 	return nil, fmt.Errorf("no field named %q was found under type PrekeyCount", field.Name)
 }
 
+func (ec *executionContext) childFields_Presence(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "user":
+		return ec.fieldContext_Presence_user(ctx, field)
+	case "online":
+		return ec.fieldContext_Presence_online(ctx, field)
+	case "lastSeen":
+		return ec.fieldContext_Presence_lastSeen(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type Presence", field.Name)
+}
+
 func (ec *executionContext) childFields_ServerDiscovery(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "fingerprint":
@@ -1712,6 +1876,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_deviceNumber(ctx, field)
 	case "discovery":
 		return ec.fieldContext_ServerInfo_discovery(ctx, field)
+	case "push":
+		return ec.fieldContext_ServerInfo_push(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ServerInfo", field.Name)
 }
@@ -1942,6 +2108,28 @@ func (ec *executionContext) field_Mutation_enrollWithInvite_args(ctx context.Con
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_registerPush_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "token",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["token"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "notificationsEnabled",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["notificationsEnabled"] = arg1
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_renewCertificate_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -1975,6 +2163,20 @@ func (ec *executionContext) field_Mutation_replaceIdentityKey_args(ctx context.C
 		return nil, err
 	}
 	args["identityKey"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setPresenceVisible_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "visible",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["visible"] = arg0
 	return args, nil
 }
 
@@ -2081,6 +2283,20 @@ func (ec *executionContext) field_Query_prekeyBundles_args(ctx context.Context, 
 		return nil, err
 	}
 	args["routingToken"] = arg1
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_presence_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "users",
+		func(ctx context.Context, v any) ([]string, error) {
+			return ec.unmarshalNString2ᚕstringᚄ(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["users"] = arg0
 	return args, nil
 }
 
@@ -3205,6 +3421,75 @@ func (ec *executionContext) fieldContext_Me_identityKey(_ context.Context, field
 	return graphql.NewScalarFieldContext("Me", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
+func (ec *executionContext) _Me_presenceVisible(ctx context.Context, field graphql.CollectedField, obj *model.Me) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Me_presenceVisible(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PresenceVisible, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Me_presenceVisible(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Me", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Me_pushRegistered(ctx context.Context, field graphql.CollectedField, obj *model.Me) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Me_pushRegistered(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PushRegistered, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Me_pushRegistered(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Me", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Me_notificationsEnabled(ctx context.Context, field graphql.CollectedField, obj *model.Me) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Me_notificationsEnabled(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.NotificationsEnabled, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Me_notificationsEnabled(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Me", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _Mutation_enrollDevice(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -3791,6 +4076,94 @@ func (ec *executionContext) fieldContext_Mutation_unblock(ctx context.Context, f
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_registerPush(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_registerPush(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RegisterPush(ctx, fc.Args["token"].(*string), fc.Args["notificationsEnabled"].(bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_registerPush(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_registerPush_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_setPresenceVisible(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setPresenceVisible(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetPresenceVisible(ctx, fc.Args["visible"].(bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setPresenceVisible(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setPresenceVisible_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _OwnDevice_deviceNumber(ctx context.Context, field graphql.CollectedField, obj *model.OwnDevice) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -4287,6 +4660,75 @@ func (ec *executionContext) fieldContext_PrekeyCount_refillBelow(_ context.Conte
 	return graphql.NewScalarFieldContext("PrekeyCount", field, false, false, errors.New("field of type Int does not have child fields"))
 }
 
+func (ec *executionContext) _Presence_user(ctx context.Context, field graphql.CollectedField, obj *model.Presence) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Presence_user(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.User, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Presence_user(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Presence", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _Presence_online(ctx context.Context, field graphql.CollectedField, obj *model.Presence) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Presence_online(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Online, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Presence_online(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Presence", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _Presence_lastSeen(ctx context.Context, field graphql.CollectedField, obj *model.Presence) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Presence_lastSeen(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LastSeen, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
+			return ec.marshalOTime2ᚖtimeᚐTime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Presence_lastSeen(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Presence", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
 func (ec *executionContext) _Query_enrollmentPreview(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -4660,6 +5102,50 @@ func (ec *executionContext) fieldContext_Query_devices(_ context.Context, field 
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_presence(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_presence(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().Presence(ctx, fc.Args["users"].([]string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.Presence) graphql.Marshaler {
+			return ec.marshalNPresence2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPresenceᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_presence(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_Presence(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_presence_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -4973,6 +5459,29 @@ func (ec *executionContext) fieldContext_ServerInfo_discovery(_ context.Context,
 		},
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _ServerInfo_push(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_push(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Push, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_push(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _SignedPrekey_keyId(ctx context.Context, field graphql.CollectedField, obj *model.SignedPrekey) (ret graphql.Marshaler) {
@@ -7124,6 +7633,21 @@ func (ec *executionContext) _Me(ctx context.Context, sel ast.SelectionSet, obj *
 			out.Values[i] = ec._Me_email(ctx, field, obj)
 		case "identityKey":
 			out.Values[i] = ec._Me_identityKey(ctx, field, obj)
+		case "presenceVisible":
+			out.Values[i] = ec._Me_presenceVisible(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "pushRegistered":
+			out.Values[i] = ec._Me_pushRegistered(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "notificationsEnabled":
+			out.Values[i] = ec._Me_notificationsEnabled(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -7253,6 +7777,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "unblock":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_unblock(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "registerPush":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_registerPush(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "setPresenceVisible":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setPresenceVisible(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -7578,6 +8116,52 @@ func (ec *executionContext) _PrekeyCount(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var presenceImplementors = []string{"Presence"}
+
+func (ec *executionContext) _Presence(ctx context.Context, sel ast.SelectionSet, obj *model.Presence) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, presenceImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Presence")
+		case "user":
+			out.Values[i] = ec._Presence_user(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "online":
+			out.Values[i] = ec._Presence_online(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lastSeen":
+			out.Values[i] = ec._Presence_lastSeen(ctx, field, obj)
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var queryImplementors = []string{"Query"}
 
 func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
@@ -7817,6 +8401,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "presence":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_presence(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "__type":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___type(ctx, field)
@@ -7934,6 +8540,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "discovery":
 			out.Values[i] = ec._ServerInfo_discovery(ctx, field, obj)
+		case "push":
+			out.Values[i] = ec._ServerInfo_push(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -8708,6 +9319,32 @@ func (ec *executionContext) unmarshalNPrekeyInput2ᚖgithubᚗcomᚋchencohensol
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
+func (ec *executionContext) marshalNPresence2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPresenceᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Presence) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNPresence2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPresence(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNPresence2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐPresence(ctx context.Context, sel ast.SelectionSet, v *model.Presence) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Presence(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNServerInfo2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐServerInfo(ctx context.Context, sel ast.SelectionSet, v model.ServerInfo) graphql.Marshaler {
 	return ec._ServerInfo(ctx, sel, &v)
 }
@@ -9073,6 +9710,24 @@ func (ec *executionContext) marshalOString2ᚖstring(ctx context.Context, sel as
 	_ = sel
 	_ = ctx
 	res := graphql.MarshalString(*v)
+	return res
+}
+
+func (ec *executionContext) unmarshalOTime2ᚖtimeᚐTime(ctx context.Context, v any) (*time.Time, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := graphql.UnmarshalTime(v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOTime2ᚖtimeᚐTime(ctx context.Context, sel ast.SelectionSet, v *time.Time) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	_ = sel
+	_ = ctx
+	res := graphql.MarshalTime(*v)
 	return res
 }
 
