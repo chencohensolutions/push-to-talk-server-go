@@ -112,6 +112,11 @@ type ComplexityRoot struct {
 		Signature  func(childComplexity int) int
 	}
 
+	LinkCode struct {
+		Code      func(childComplexity int) int
+		ExpiresAt func(childComplexity int) int
+	}
+
 	Me struct {
 		DeviceName   func(childComplexity int) int
 		DeviceNumber func(childComplexity int) int
@@ -127,6 +132,7 @@ type ComplexityRoot struct {
 		CancelInvite       func(childComplexity int, id string) int
 		ConfirmPair        func(childComplexity int, user string) int
 		CreateInvite       func(childComplexity int, email *string) int
+		CreateLinkCode     func(childComplexity int) int
 		EnrollDevice       func(childComplexity int, input model.EnrollDeviceInput) int
 		EnrollWithInvite   func(childComplexity int, input model.InviteEnrollInput) int
 		PairingToken       func(childComplexity int) int
@@ -213,6 +219,7 @@ type ComplexityRoot struct {
 
 type MutationResolver interface {
 	EnrollDevice(ctx context.Context, input model.EnrollDeviceInput) (model.EnrollDeviceResult, error)
+	CreateLinkCode(ctx context.Context) (*model.LinkCode, error)
 	RenewCertificate(ctx context.Context, csr string, keyProtection model.KeyProtection) (model.EnrollDeviceResult, error)
 	CreateInvite(ctx context.Context, email *string) (*model.CreatedInvite, error)
 	CancelInvite(ctx context.Context, id string) (bool, error)
@@ -493,6 +500,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.KyberPrekey.Signature(childComplexity), true
 
+	case "LinkCode.code":
+		if e.ComplexityRoot.LinkCode.Code == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LinkCode.Code(childComplexity), true
+	case "LinkCode.expiresAt":
+		if e.ComplexityRoot.LinkCode.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.LinkCode.ExpiresAt(childComplexity), true
+
 	case "Me.deviceName":
 		if e.ComplexityRoot.Me.DeviceName == nil {
 			break
@@ -585,6 +605,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.CreateInvite(childComplexity, args["email"].(*string)), true
+	case "Mutation.createLinkCode":
+		if e.ComplexityRoot.Mutation.CreateLinkCode == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Mutation.CreateLinkCode(childComplexity), true
 	case "Mutation.enrollDevice":
 		if e.ComplexityRoot.Mutation.EnrollDevice == nil {
 			break
@@ -1417,6 +1443,12 @@ type Mutation {
   "Trades a one-time enrollment code and a certificate request for a client certificate."
   enrollDevice(input: EnrollDeviceInput!): EnrollDeviceResult! @public
   """
+  A one-time enrollment code for another phone of the caller's user (docs/authentication.md, "Linking a phone"):
+  the same kind of code as ptt-server enroll-code makes, valid 10 minutes. The calling phone shows it in its Link a
+  phone QR code, then sends the new phone its identity key over a PROVISIONING envelope. RATE_LIMITED with 3 waiting.
+  """
+  createLinkCode: LinkCode!
+  """
   Renews the calling device's certificate (serverInfo.renewCertificates): a new certificate for a new key, for the same
   user and device, with the same device number. The old certificate works until the new one is first used, and is
   then revoked. A device renews in the last 30 days of its certificate (expiresAt). NOT_ENROLLED for a certificate
@@ -1483,6 +1515,13 @@ enum EnrollmentRejectedReason {
   RATE_LIMITED
   "renewCertificate: the certificate wasn't issued by enrollment, or is revoked; enroll again."
   NOT_ENROLLED
+}
+
+"A code from createLinkCode."
+type LinkCode {
+  "As enrollDevice takes it (\"K7QM-4XPD\")."
+  code: String!
+  expiresAt: Time!
 }
 `, BuiltIn: false},
 }
@@ -1588,6 +1627,16 @@ func (ec *executionContext) childFields_KyberPrekey(ctx context.Context, field g
 		return ec.fieldContext_KyberPrekey_lastResort(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type KyberPrekey", field.Name)
+}
+
+func (ec *executionContext) childFields_LinkCode(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "code":
+		return ec.fieldContext_LinkCode_code(ctx, field)
+	case "expiresAt":
+		return ec.fieldContext_LinkCode_expiresAt(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type LinkCode", field.Name)
 }
 
 func (ec *executionContext) childFields_Me(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -3067,6 +3116,52 @@ func (ec *executionContext) fieldContext_KyberPrekey_lastResort(_ context.Contex
 	return graphql.NewScalarFieldContext("KyberPrekey", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _LinkCode_code(ctx context.Context, field graphql.CollectedField, obj *model.LinkCode) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_LinkCode_code(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Code, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_LinkCode_code(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("LinkCode", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _LinkCode_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.LinkCode) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_LinkCode_expiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_LinkCode_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("LinkCode", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
 func (ec *executionContext) _Me_user(ctx context.Context, field graphql.CollectedField, obj *model.Me) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -3258,6 +3353,38 @@ func (ec *executionContext) fieldContext_Mutation_enrollDevice(ctx context.Conte
 	if fc.Args, err = ec.field_Mutation_enrollDevice_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_createLinkCode(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_createLinkCode(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Mutation().CreateLinkCode(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.LinkCode) graphql.Marshaler {
+			return ec.marshalNLinkCode2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐLinkCode(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_createLinkCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_LinkCode(ctx, field)
+		},
 	}
 	return fc, nil
 }
@@ -7092,6 +7219,50 @@ func (ec *executionContext) _KyberPrekey(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var linkCodeImplementors = []string{"LinkCode"}
+
+func (ec *executionContext) _LinkCode(ctx context.Context, sel ast.SelectionSet, obj *model.LinkCode) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, linkCodeImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("LinkCode")
+		case "code":
+			out.Values[i] = ec._LinkCode_code(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._LinkCode_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var meImplementors = []string{"Me"}
 
 func (ec *executionContext) _Me(ctx context.Context, sel ast.SelectionSet, obj *model.Me) graphql.Marshaler {
@@ -7169,6 +7340,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "enrollDevice":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_enrollDevice(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createLinkCode":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_createLinkCode(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -8583,6 +8761,20 @@ func (ec *executionContext) marshalNKyberPrekey2ᚖgithubᚗcomᚋchencohensolut
 		return graphql.Null
 	}
 	return ec._KyberPrekey(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNLinkCode2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐLinkCode(ctx context.Context, sel ast.SelectionSet, v model.LinkCode) graphql.Marshaler {
+	return ec._LinkCode(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNLinkCode2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐLinkCode(ctx context.Context, sel ast.SelectionSet, v *model.LinkCode) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._LinkCode(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNMe2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐMe(ctx context.Context, sel ast.SelectionSet, v model.Me) graphql.Marshaler {

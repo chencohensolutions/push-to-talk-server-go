@@ -20,6 +20,8 @@ const (
 type pendingCode struct {
 	User      string
 	ExpiresAt time.Time
+	// Made by a phone of User (createLinkCode), not by the admin.
+	Link bool
 }
 
 // CodeStore holds one-time enrollment codes in memory, keyed by the SHA-256 of the normalized code
@@ -37,6 +39,28 @@ func NewCodeStore(now func() time.Time) *CodeStore {
 // Create returns a new code for user, formatted for display ("K7QM-4XPD").
 func (s *CodeStore) Create(user string) (string, time.Time) {
 	return s.add(pendingCode{User: user, ExpiresAt: s.now().Add(CodeTTL)})
+}
+
+// MaxLinkCodes is how many codes a user's own phones may have waiting at once (CreateLink).
+const MaxLinkCodes = 3
+
+// CreateLink returns a new code for user made by one of its own phones (createLinkCode), to enroll another phone of
+// the same user. ok is false when the user already has MaxLinkCodes of them waiting.
+func (s *CodeStore) CreateLink(user string) (code string, expiresAt time.Time, ok bool) {
+	s.mu.Lock()
+	s.removeExpired()
+	waiting := 0
+	for _, p := range s.codes {
+		if p.User == user && p.Link {
+			waiting++
+		}
+	}
+	s.mu.Unlock()
+	if waiting >= MaxLinkCodes {
+		return "", time.Time{}, false
+	}
+	code, expiresAt = s.add(pendingCode{User: user, ExpiresAt: s.now().Add(CodeTTL), Link: true})
+	return code, expiresAt, true
 }
 
 func (s *CodeStore) add(pending pendingCode) (string, time.Time) {

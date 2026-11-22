@@ -111,6 +111,17 @@ ptt://enroll?code=K7QM-4XPD&server=<url>&fingerprint=<sha256 of the server key>&
   LAN). See [discovery.md](discovery.md).
 - The QR code is drawn white on black whatever the terminal's colors; on Windows use Windows Terminal.
 
+### Linking a phone
+
+A phone makes the code for its user's next phone itself: `createLinkCode` answers the same kind of code as
+`enroll-code` (10 minutes, single use, only for the caller's user), with no admin step. At most **3** of a user's
+link codes wait at once (`RATE_LIMITED`). The phone shows it in its Link a phone QR code (`ptt://link?…`, the
+enrollment link's fields plus the phone's own pairing part; the client's docs/design.md, "Linking a phone"). The
+new phone enrolls with it as usual and gets the next device number; it then has a certificate but no keys, and asks
+the old phone for the user's identity key over `PROVISIONING` envelopes (docs/messaging.md), which the server only
+lets through between two devices of one user. The server never sees the identity key: the two phones seal it with a
+key from the QR code's secret and an X25519 exchange.
+
 ## Invites
 
 An enrolled user invites a friend with one link, `ptt://invite?…`, and a six-digit passcode beside it, that enroll

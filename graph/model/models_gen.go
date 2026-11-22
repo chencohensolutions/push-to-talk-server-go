@@ -163,6 +163,13 @@ type KyberPrekey struct {
 	LastResort bool   `json:"lastResort"`
 }
 
+// A code from createLinkCode.
+type LinkCode struct {
+	// As enrollDevice takes it ("K7QM-4XPD").
+	Code      string    `json:"code"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
 type Me struct {
 	// The user the device's certificate names (CN).
 	User string `json:"user"`

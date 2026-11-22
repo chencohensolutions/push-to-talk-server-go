@@ -52,6 +52,12 @@ type Mutation {
   "Trades a one-time enrollment code and a certificate request for a client certificate."
   enrollDevice(input: EnrollDeviceInput!): EnrollDeviceResult! @public
   """
+  A one-time enrollment code for another phone of the caller's user (docs/authentication.md, "Linking a phone"):
+  the same kind of code as ptt-server enroll-code makes, valid 10 minutes. The calling phone shows it in its Link a
+  phone QR code, then sends the new phone its identity key over a PROVISIONING envelope. RATE_LIMITED with 3 waiting.
+  """
+  createLinkCode: LinkCode!
+  """
   Renews the calling device's certificate (serverInfo.renewCertificates): a new certificate for a new key, for the same
   user and device, with the same device number. The old certificate works until the new one is first used, and is
   then revoked. A device renews in the last 30 days of its certificate (expiresAt). NOT_ENROLLED for a certificate
@@ -118,4 +124,11 @@ enum EnrollmentRejectedReason {
   RATE_LIMITED
   "renewCertificate: the certificate wasn't issued by enrollment, or is revoked; enroll again."
   NOT_ENROLLED
+}
+
+"A code from createLinkCode."
+type LinkCode {
+  "As enrollDevice takes it (\"K7QM-4XPD\")."
+  code: String!
+  expiresAt: Time!
 }

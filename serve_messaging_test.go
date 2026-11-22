@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
@@ -765,6 +767,67 @@ func TestLinkingASecondPhone(t *testing.T) {
 		t.Fatalf("a sync to the linked phone: %v", r)
 	}
 	linkedSocket.envelope(t)
+}
+
+// A phone makes the code for its user's next phone itself (createLinkCode): the new phone enrolls with it as the same
+// user, and before it has keys it can ask the old phone for them with a PROVISIONING envelope. A phone of another
+// user can't link into this one, and only 3 codes wait at once.
+func TestAPhoneMakesTheCodeToLinkAnother(t *testing.T) {
+	env := newTestEnv(t)
+	env.addUsers(t, "hen", "dana")
+	old := env.phone(t, "hen")
+	env.uploadKeys(t, old, ecKey())
+	phoneSocket := env.socket(t, old)
+
+	r := env.graphql(t, old.client, `mutation { createLinkCode { code expiresAt } }`, nil)
+	var link struct{ Code, ExpiresAt string }
+	if err := json.Unmarshal(r.Data["createLinkCode"], &link); err != nil || link.Code == "" || len(r.Errors) > 0 {
+		t.Fatalf("createLinkCode: %s %+v", r.Data["createLinkCode"], r.Errors)
+	}
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	enrolled := env.enroll(t, link.Code, key)
+	if enrolled.Typename != "EnrolledDevice" || enrolled.User != "hen" || enrolled.DeviceNumber != 2 {
+		t.Fatalf("enrolling with the link code: %+v", enrolled)
+	}
+	if again := env.enroll(t, link.Code, key); again.Typename == "EnrolledDevice" {
+		t.Fatalf("a link code worked twice")
+	}
+	der, _ := base64.StdEncoding.DecodeString(enrolled.Certificate)
+	cert := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+	linked := &phone{user: "hen", number: enrolled.DeviceNumber, client: env.client(&cert), cert: cert}
+	linkedSocket := env.socket(t, linked)
+
+	// The new phone has no keys and no sessions: its request goes to the old phone as PROVISIONING, and the answer back.
+	if r := linkedSocket.send(t, pb.Envelope_PROVISIONING, "", dev(old)); r.Status != pb.SendResult_ACCEPTED {
+		t.Fatalf("the new phone's request: %v", r)
+	}
+	if e := phoneSocket.envelope(t); e.Type != pb.Envelope_PROVISIONING || e.SenderDevice != 2 || e.SenderUser != "hen" {
+		t.Fatalf("the old phone got %v", e)
+	}
+	if r := phoneSocket.send(t, pb.Envelope_PROVISIONING, "", dev(linked)); r.Status != pb.SendResult_ACCEPTED {
+		t.Fatalf("the old phone's answer: %v", r)
+	}
+	if e := linkedSocket.envelope(t); e.Type != pb.Envelope_PROVISIONING || e.SenderDevice != 1 {
+		t.Fatalf("the new phone got %v", e)
+	}
+
+	dana := env.phone(t, "dana")
+	danaSocket := env.socket(t, dana)
+	if r := danaSocket.send(t, pb.Envelope_PROVISIONING, "", dev(old)); r.Status != pb.SendResult_INVALID {
+		t.Fatalf("provisioning from another user: %v", r)
+	}
+
+	for i := 0; i < 2; i++ {
+		if r := env.graphql(t, old.client, `mutation { createLinkCode { code } }`, nil); len(r.Errors) > 0 {
+			t.Fatalf("code %d: %+v", i+2, r.Errors)
+		}
+	}
+	if code := errorCode(env.graphql(t, linked.client, `mutation { createLinkCode { code } }`, nil)); code != "" {
+		t.Fatalf("the used code still counted: %s", code)
+	}
+	if code := errorCode(env.graphql(t, old.client, `mutation { createLinkCode { code } }`, nil)); code != "RATE_LIMITED" {
+		t.Fatalf("a fourth waiting code: %q", code)
+	}
 }
 
 // After every phone was lost, the user's new phone replaces the identity key, once the old phones are revoked, and

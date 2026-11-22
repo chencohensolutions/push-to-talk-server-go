@@ -44,6 +44,23 @@ func (r *mutationResolver) EnrollDevice(ctx context.Context, input model.EnrollD
 	return r.enrolledDevice(enrolled), nil
 }
 
+// CreateLinkCode is the resolver for the createLinkCode field.
+func (r *mutationResolver) CreateLinkCode(ctx context.Context) (*model.LinkCode, error) {
+	d, err := r.caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if r.Enrollment == nil {
+		return nil, fmt.Errorf("enrollment isn't set up on this server")
+	}
+	code, expiresAt, ok := r.Enrollment.Codes.CreateLink(d.User)
+	if !ok {
+		return nil, coded(CodeRateLimited, "%d link codes are waiting already: use one, or wait 10 minutes", enroll.MaxLinkCodes)
+	}
+	log.Printf("Link: device %d of %s made a code to link another phone", d.Number, d.User)
+	return &model.LinkCode{Code: code, ExpiresAt: expiresAt}, nil
+}
+
 // RenewCertificate is the resolver for the renewCertificate field.
 func (r *mutationResolver) RenewCertificate(ctx context.Context, csr string, keyProtection model.KeyProtection) (model.EnrollDeviceResult, error) {
 	der, err := base64.StdEncoding.DecodeString(csr)
