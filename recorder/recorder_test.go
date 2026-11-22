@@ -160,3 +160,46 @@ func TestWriteOpus(t *testing.T) {
 		t.Fatal("an AV1 track was taken")
 	}
 }
+
+// The phones send call audio as RED (2026-11-22: LiveKit doesn't strip it from an encrypted track, so calls were kept
+// without sound). The recorder keeps each packet's primary Opus frame, as an Opus track.
+func TestWriteKeepsThePrimaryFrameOfRED(t *testing.T) {
+	store, _ := blobs.Open(t.TempDir(), time.Now)
+	started := time.Now()
+	r := &Recorder{Blobs: store, Now: func() time.Time { return started }}
+	var list []*rtp.Packet
+	for i := range 6 {
+		primary := []byte{byte(i), 0xAA, 0xBB}
+		var payload []byte
+		if i == 0 {
+			payload = append([]byte{111}, primary...) // no redundant block yet: the 1-byte header only
+		} else {
+			previous := []byte{byte(i - 1), 0xAA, 0xBB}
+			// F=1|PT 111, a 14-bit timestamp offset of 960, a 10-bit length; then F=0|PT 111.
+			header := uint32(960)<<10 | uint32(len(previous))
+			payload = append([]byte{0x80 | 111, byte(header >> 16), byte(header >> 8), byte(header), 111}, previous...)
+			payload = append(payload, primary...)
+		}
+		list = append(list, &rtp.Packet{Header: rtp.Header{Version: 2, PayloadType: 63, SequenceNumber: uint16(100 + i),
+			Timestamp: uint32(5000 + 960*i), Marker: true}, Payload: payload})
+	}
+	id, err := r.Write("c3", Conversation{Owner: "hen", Peer: "dana"}, started, &packets{list}, "audio/red", 48000, "hen.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := readRecords(t, store, id)
+	if len(got) < 5 {
+		t.Fatalf("%d records", len(got))
+	}
+	for i, rec := range got[:5] {
+		if !bytes.Equal(rec.frame, []byte{byte(i), 0xAA, 0xBB}) || rec.at != time.Duration(i)*20*time.Millisecond {
+			t.Fatalf("record %d: %+v", i, rec)
+		}
+	}
+	if m, _ := store.Get(id); m.Track.Media != "audio" || m.Track.Codec != "audio/opus" {
+		t.Fatalf("meta: %+v", m.Track)
+	}
+	if _, err := (redPacket{}).Unmarshal([]byte{0x80 | 111, 0, 0}); err == nil {
+		t.Fatal("a cut RED header was taken")
+	}
+}
