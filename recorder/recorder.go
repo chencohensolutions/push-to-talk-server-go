@@ -281,9 +281,9 @@ func newBlobID() string {
 func depacketizer(mime string) (rtp.Depacketizer, func(frame []byte) bool, error) {
 	switch strings.ToLower(mime) {
 	case mimeRED:
-		// Opus inside RED (RFC 2198): the primary block is the frame; the redundant copies of earlier frames are
-		// dropped (the sample builder already orders and fills what arrived).
-		return &redPacket{}, func([]byte) bool { return true }, nil
+		// RED's payload is kept whole: the phone's encoder makes RED before LiveKit's frame encryption, so its
+		// block headers are inside the ciphertext and only the phone, after decrypting, can take the primary frame.
+		return &codecs.OpusPacket{}, func([]byte) bool { return true }, nil
 	case strings.ToLower(webrtc.MimeTypeOpus):
 		return &codecs.OpusPacket{}, func([]byte) bool { return true }, nil
 	case strings.ToLower(webrtc.MimeTypeVP8):
@@ -307,45 +307,10 @@ func depacketizer(mime string) (rtp.Depacketizer, func(frame []byte) bool, error
 
 // mimeRED is audio/red, lower case. The phones send their audio as RED (Opus with a redundant copy of the frames
 // before). LiveKit strips RED for a subscriber that can't take it, but not from an encrypted track ("encrypted
-// source", 2026-11-22: calls kept without sound), so the recorder takes RED and keeps the primary Opus frames.
+// source", 2026-11-22: calls kept without sound), because the RED headers are encrypted too. So the recorder takes
+// RED and keeps each packet's payload as it came, as an audio/red track; the phone decrypts a frame, then takes its
+// primary block (RFC 2198: the last one).
 const mimeRED = "audio/red"
-
-// keptCodec is the codec a track's frames are kept as: RED's frames are Opus.
-func keptCodec(mime string) string {
-	if strings.ToLower(mime) == mimeRED {
-		return webrtc.MimeTypeOpus
-	}
-	return mime
-}
-
-// redPacket depacketizes RFC 2198: headers of 4 bytes (F=1, block PT, timestamp offset, block length) for each
-// redundant block, then 1 byte (F=0, primary PT), then the blocks in that order; the primary is the last.
-type redPacket struct{}
-
-func (redPacket) Unmarshal(payload []byte) ([]byte, error) {
-	i, redundant := 0, 0
-	for {
-		if i >= len(payload) {
-			return nil, errors.New("RED: short header")
-		}
-		if payload[i]&0x80 == 0 {
-			i++
-			break
-		}
-		if i+4 > len(payload) {
-			return nil, errors.New("RED: short header")
-		}
-		redundant += int(binary.BigEndian.Uint16(payload[i+2:i+4]) & 0x3ff)
-		i += 4
-	}
-	if i+redundant > len(payload) {
-		return nil, errors.New("RED: blocks longer than the packet")
-	}
-	return payload[i+redundant:], nil
-}
-
-func (redPacket) IsPartitionHead([]byte) bool       { return true }
-func (redPacket) IsPartitionTail(bool, []byte) bool { return true }
 
 // codecsToTake are the codecs the recorder offers LiveKit: RED first, so encrypted RED audio is sent as it is.
 var codecsToTake = []lkproto.Codec{{Mime: mimeRED}, {Mime: webrtc.MimeTypeOpus}, {Mime: webrtc.MimeTypeVP8},
@@ -380,7 +345,7 @@ func (r *Recorder) Write(call string, conv Conversation, started time.Time, trac
 	id := newBlobID()
 	first := r.now()
 	err = r.Blobs.Create(blobs.Meta{ID: id, Kind: blobs.Track, Owner: conv.Owner, Peer: conv.Peer, Group: conv.Group,
-		Track: &blobs.TrackInfo{Call: call, Identity: identity, Media: media, Codec: keptCodec(mime), Started: first.UTC(),
+		Track: &blobs.TrackInfo{Call: call, Identity: identity, Media: media, Codec: mime, Started: first.UTC(),
 			Recording: started.UTC()}})
 	if err != nil {
 		return "", err
