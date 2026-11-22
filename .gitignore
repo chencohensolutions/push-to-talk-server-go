@@ -52,3 +52,5 @@ gmail.token
 smtp.password
 # The FCM service-account key (docs/install.md, "Push"): a secret
 *-firebase-adminsdk-*.json
+/blobs/*
+!/blobs/*.go

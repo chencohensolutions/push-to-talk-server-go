@@ -39,8 +39,27 @@ type conn struct {
 	serial string
 	ws     *websocket.Conn
 	// wake has a value when the device's queue may hold envelopes this connection hasn't sent.
-	wake   chan struct{}
+	wake chan struct{}
+	// live holds frames that aren't queued (talk, clip segments), written in order by liveWriter.
+	live   chan []byte
 	cancel context.CancelFunc
+}
+
+// liveQueue is how many live frames wait for one connection; past it, a slow device misses them.
+const liveQueue = 512
+
+// liveWriter writes c's live frames until the connection ends.
+func liveWriter(ctx context.Context, c *conn) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case data := <-c.live:
+			if c.write(ctx, data) != nil {
+				return
+			}
+		}
+	}
 }
 
 func (c *conn) close(code websocket.StatusCode, reason string) {
@@ -89,7 +108,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	ctx, cancel := context.WithCancel(req.Context())
 	defer cancel()
 	c := &conn{device: store.Device{User: user.Name, Number: device.DeviceNumber}, serial: device.Serial, ws: ws,
-		wake: make(chan struct{}, 1), cancel: cancel}
+		wake: make(chan struct{}, 1), live: make(chan []byte, liveQueue), cancel: cancel}
 	r.mu.Lock()
 	if old := r.conns[c.device]; old != nil {
 		old.close(closeReplaced, "the device connected again")
@@ -103,6 +122,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 		r.mu.Unlock()
 		r.disconnected(c.device.User)
+		r.talkerGone(c.device)
 	}()
 	// Revoked between identify and here: don't stay.
 	if r.Registry.IsRevoked(device.Serial) {
@@ -114,6 +134,7 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	go r.deliver(ctx, c)
 	go keepAlive(ctx, c)
+	go liveWriter(ctx, c)
 	err = r.read(ctx, c)
 	if status := websocket.CloseStatus(err); status == -1 && !errors.Is(err, context.Canceled) {
 		log.Printf("/ws: device %d of %s: %v", c.device.Number, c.device.User, err)
@@ -225,8 +246,20 @@ func (r *Relay) read(ctx context.Context, c *conn) error {
 				return err
 			}
 		case *pb.Frame_Pong:
+		case *pb.Frame_TalkStart:
+			if err := r.talkStart(ctx, c, f.TalkStart); err != nil {
+				return err
+			}
+		case *pb.Frame_ClipSegment:
+			if err := r.clipSegment(ctx, c, f.ClipSegment); err != nil {
+				return err
+			}
+		case *pb.Frame_TalkEnd:
+			r.talkEnd(c, f.TalkEnd)
+		case *pb.Frame_TalkAck:
+			r.talkAck(c, f.TalkAck)
 		default:
-			c.ws.Close(websocket.StatusPolicyViolation, "a device sends Send, Ack, Ping and Pong")
+			c.ws.Close(websocket.StatusPolicyViolation, "a device sends Send, Ack, Ping, Pong and the talk frames")
 			return nil
 		}
 	}

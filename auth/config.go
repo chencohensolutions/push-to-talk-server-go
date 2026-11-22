@@ -39,6 +39,10 @@ type AppConfig struct {
 	GroupsFile string `json:"groups_file"`
 	// The SQLite database (default ptt.db): the devices' public prekeys and the message queue.
 	DatabaseFile string `json:"database_file"`
+	// The folder of clips and attachments, ciphertext only (default blobs).
+	BlobDir string `json:"blob_dir"`
+	// Days a clip or attachment is kept (default 30).
+	BlobDays int `json:"blob_days"`
 	// Days an envelope waits in the queue for a device that doesn't take it (default 30).
 	QueueDays int `json:"queue_days"`
 	// Let enrolled users invite friends (createInvite): one link and its passcode, sent from the inviter's phone,
@@ -81,6 +85,8 @@ const (
 	DefaultInvitesFile    = "invites.json"
 	DefaultDatabaseFile   = "ptt.db"
 	DefaultQueueDays      = 30
+	DefaultBlobDir        = "blobs"
+	DefaultBlobDays       = 30
 	DefaultAdminAddr      = "127.0.0.1:8082"
 	DefaultAdminTokenFile = "admin.token"
 )
@@ -139,6 +145,12 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.PairsFile == "" {
 		c.PairsFile = DefaultPairsFile
+	}
+	if c.BlobDir == "" {
+		c.BlobDir = DefaultBlobDir
+	}
+	if c.BlobDays == 0 {
+		c.BlobDays = DefaultBlobDays
 	}
 	if c.GroupsFile == "" {
 		c.GroupsFile = DefaultGroupsFile

@@ -260,6 +260,50 @@ A small "who is connected" signal, only between contacts (paired, neither blocke
   works both ways: a user who hides theirs is shown to everyone as offline with no `lastSeen`, gets no Presence
   frames, and sees every contact the same way.
 
+## Talk
+
+Phase 5a, the clip path (2026-11-22). The server referees each conversation's floor and keeps each burst's clip; the
+audio is AES-256-GCM made by the talker's phone with a key that goes end to end in an encrypted "clip start" message
+(an ordinary Send), so the server stores and forwards ciphertext only. Frames on `/ws` (`proto/ptt.proto`):
+
+- **`TalkStart`** `{burst_id, peer | group}`: the phone takes the floor of a one-to-one conversation (a contact, or a
+  fellow group member) or a group (a member). `burst_id` is 32 lowercase hex digits made by the phone; it is the
+  clip's id too. The answer is a `TalkState`: `GRANTED`, `BUSY` (with who holds the floor) or `REFUSED` (`refusal` is
+  `NOT_PAIRED`, `BLOCKED`, `NOT_MEMBER`, `UNKNOWN_USER` or `INVALID`). The same TalkStart again is GRANTED again.
+- Every other active device of the conversation (the other user's, the talker's own other devices; in a group every
+  member's but those blocked either way) gets **`STARTED`**, live only. `peer` is the conversation as that device sees
+  it. A device answers with a **`TalkAck`** when it will play the burst. A device without `/ws` gets a `talk` push at
+  once; a connected one that sends no TalkAck within 0.5 s is pushed too (`Pusher.Urgent`: its connection may be
+  dead without the server knowing yet).
+- **`ClipSegment`** `{burst_id, index, last, ciphertext}` from the talker, in order from 0 with no gaps, 1 byte to
+  16 KB each: the server appends it to the clip and forwards it to the conversation's connected devices. A segment
+  out of order, too large, or from anyone but the talker is answered `REFUSED` (`INVALID`).
+- **`TalkEnd`**, the last segment, 60 seconds, or the talker's connection dropping for 3 seconds ends the floor:
+  every device of the conversation, the talker's too, gets **`ENDED`** with `RELEASED`, `TIMEOUT` or `DROPPED`. After
+  a TalkEnd the clip waits up to 10 seconds for its last segment.
+- Floors and bursts live in memory: a restart lets every floor go (clips already stored stay).
+
+Live frames go out through a queue per connection (512 frames); a device too slow to keep up misses some, and reads
+the clip over `/blob` instead.
+
+## Blobs
+
+Clips, voice messages and attachments are files of ciphertext in the blobs folder (`blob_dir`, default `blobs`; package
+`blobs`), each `<id>.blob` beside `<id>.json` (who made it, for which conversation, its size, whether complete). They
+are deleted `blob_days` (default 30) after they were made, by the hourly sweep. `/blob/<id>`, over mTLS, enrolled
+devices only:
+
+- **GET** by the maker, the other user of its one-to-one conversation, or a member of its group now (blocks apply);
+  anyone else gets 404. A file is read once complete (409 before), from an offset with `Range: bytes=N-` (206). A clip
+  is read while it grows: records (a 4-byte big-endian length, then a `ClipSegment` without its burst id) are sent
+  as they arrive, until its last one, so a late or woken phone plays from the start and catches up. `Blob-Offset`
+  (the size the server has) and `Blob-Complete` are answered.
+- **HEAD**: the same headers, so a broken upload can go on.
+- **PUT** a file (a voice message, an attachment, up to 100 MB) for `?peer=<user>` or `?group=<id>` (the same rule as
+  talking there; 403 otherwise). The first PUT gives `Blob-Total`; each PUT's `Blob-Offset` says where its bytes go
+  and must be the size the server has (409 with the right `Blob-Offset` otherwise). It is complete when it has
+  `Blob-Total` bytes. Only its maker writes it.
+
 ## The queue
 
 `ptt.db` (`database_file`), SQLite through `modernc.org/sqlite` (pure Go, no cgo), one row per (recipient device,

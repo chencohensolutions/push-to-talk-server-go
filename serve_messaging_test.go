@@ -208,6 +208,10 @@ func kindOf(f *pb.Frame) string {
 		return "pong"
 	case *pb.Frame_Presence:
 		return "presence"
+	case *pb.Frame_TalkState:
+		return "talk_state"
+	case *pb.Frame_ClipSegment:
+		return "clip_segment"
 	}
 	return "other"
 }

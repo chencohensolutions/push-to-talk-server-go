@@ -84,6 +84,7 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		DevicesFile:  filepath.Join(dir, "devices.json"),
 		PairsFile:    filepath.Join(dir, "pairs.json"),
 		GroupsFile:   filepath.Join(dir, "groups.json"),
+		BlobDir:      filepath.Join(dir, "blobs"),
 		InvitesFile:  filepath.Join(dir, "invites.json"),
 		DatabaseFile: filepath.Join(dir, "ptt.db"),
 		EnrolledOnly: true,

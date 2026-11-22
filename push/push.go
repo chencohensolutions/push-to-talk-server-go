@@ -139,12 +139,26 @@ func (p *Pusher) flush(d store.Device) {
 	}
 }
 
-// send pushes kind to d's registered token, trying again after a passing failure, and drops a token FCM says is
-// gone.
+// Urgent pushes kind to d now, even when d has /ws open: a talk burst that a connected device didn't acknowledge
+// within half a second (its connection may be dead without the server knowing yet).
+func (p *Pusher) Urgent(d store.Device, kind Kind) {
+	if !p.On() || kind == None {
+		return
+	}
+	go p.push(d, kind)
+}
+
+// send pushes kind to d unless it has /ws open.
 func (p *Pusher) send(d store.Device, kind Kind) {
 	if p.Connected != nil && p.Connected(d) {
 		return
 	}
+	p.push(d, kind)
+}
+
+// push sends kind to d's registered token, trying again after a passing failure, and drops a token FCM says is
+// gone.
+func (p *Pusher) push(d store.Device, kind Kind) {
 	target, ok := p.Registry.PushTarget(d.User, d.Number, p.Now())
 	if !ok {
 		return

@@ -19,6 +19,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
+	"github.com/chencohensolutions/push-to-talk-server-go/blobs"
 	"github.com/chencohensolutions/push-to-talk-server-go/contacts"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/generated"
@@ -136,6 +137,12 @@ func openServer(config auth.AppConfig) (*server, error) {
 	s := &server{config: config, users: users, enrollment: enrollment, book: book, store: st,
 		relay: relay.New(users, enrollment.Registry, st, book, queueTTL, time.Now)}
 	s.relay.Groups = groupBook
+	blobStore, err := blobs.Open(config.BlobDir, time.Now)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open the blobs folder: %w", err)
+	}
+	s.relay.Blobs = blobStore
+	s.relay.BlobTTL = time.Duration(config.BlobDays) * 24 * time.Hour
 	var sender push.Sender
 	if config.PushOn() {
 		fcm, err := push.LoadFCM(config.FCM.ServiceAccountFile, config.FCM.ProjectID, config.FCM.Endpoint)
@@ -226,6 +233,7 @@ func (s *server) newMux() *http.ServeMux {
 			s.newGraphQLServer()))))
 	// The WebSocket for envelopes (docs/messaging.md): only enrolled devices, and no deadline, since it stays open.
 	mux.Handle("/ws", identify(s.config, s.users, s.enrollment.Registry, false, s.relay))
+	mux.Handle("/blob/", identify(s.config, s.users, s.enrollment.Registry, false, http.HandlerFunc(s.relay.ServeBlob)))
 	return mux
 }
 

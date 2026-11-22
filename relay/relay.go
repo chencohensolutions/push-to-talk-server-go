@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
+	"github.com/chencohensolutions/push-to-talk-server-go/blobs"
 	"github.com/chencohensolutions/push-to-talk-server-go/contacts"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
 	"github.com/chencohensolutions/push-to-talk-server-go/groups"
@@ -51,6 +52,11 @@ type Relay struct {
 	QueueTTL time.Duration
 	Now      func() time.Time
 
+	// Clips and attachments (blob_dir).
+	Blobs *blobs.Store
+	// How long a blob is kept (blob_days).
+	BlobTTL time.Duration
+
 	// Wakes devices without a /ws through FCM (docs/messaging.md, "Push"); nil sends no pushes.
 	Push *push.Pusher
 
@@ -59,12 +65,18 @@ type Relay struct {
 	// The users with a device connected now, and when the others were last (Presence), since the server started.
 	online   map[string]bool
 	lastSeen map[string]time.Time
+
+	// Talk: the floor of each conversation held now, and the bursts whose clip is still open, by id.
+	talkMu sync.Mutex
+	floors map[string]*burst
+	bursts map[string]*burst
 }
 
 // New is a relay over these stores.
 func New(users *auth.Users, registry *enroll.Registry, st *store.Store, book *contacts.Book, queueTTL time.Duration, now func() time.Time) *Relay {
 	return &Relay{Users: users, Registry: registry, Store: st, Book: book, QueueTTL: queueTTL, Now: now,
-		conns: map[store.Device]*conn{}, online: map[string]bool{}, lastSeen: map[string]time.Time{}}
+		conns: map[store.Device]*conn{}, online: map[string]bool{}, lastSeen: map[string]time.Time{},
+		floors: map[string]*burst{}, bursts: map[string]*burst{}}
 }
 
 // Refusal is why the relay won't route between two users, named as SendResult.Status and the GraphQL error codes.
@@ -454,6 +466,11 @@ func (r *Relay) Sweep() {
 		log.Printf("Expiring the queue: %v", err)
 	} else if n > 0 {
 		log.Printf("Expired %d envelopes no device took in %v", n, r.QueueTTL)
+	}
+	if r.Blobs != nil && r.BlobTTL > 0 {
+		if n := r.Blobs.Expire(r.Now().Add(-r.BlobTTL)); n > 0 {
+			log.Printf("Deleted %d clips and attachments older than %v", n, r.BlobTTL)
+		}
 	}
 	users, err := r.Store.KeyedUsers()
 	if err != nil {

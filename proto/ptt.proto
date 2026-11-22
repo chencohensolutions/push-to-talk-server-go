@@ -28,6 +28,18 @@ message Frame {
     // Server to device: a contact came online or went offline (docs/messaging.md, "Presence"). Live only: never
     // queued, never pushed.
     Presence presence = 8;
+    // Talk (phase 5a, docs/messaging.md "Talk"). Device to server: take the floor of a conversation for a burst.
+    TalkStart talk_start = 9;
+    // Server to device: the answer to a TalkStart (GRANTED, BUSY, REFUSED), and to the other devices of the
+    // conversation that a burst STARTED or ENDED. Live only: never queued.
+    TalkState talk_state = 10;
+    // Both ways: one encrypted 200 ms piece of a burst's clip. The talker sends them; the server stores them in the
+    // clip (GET /blob/<burst_id>) and forwards them to the conversation's connected devices.
+    ClipSegment clip_segment = 11;
+    // Device to server: the talker let go of the button.
+    TalkEnd talk_end = 12;
+    // Device to server: this device got a STARTED and will play the burst, so it needs no wake-up for it.
+    TalkAck talk_ack = 13;
   }
 }
 
@@ -187,4 +199,73 @@ message Presence {
   bool online = 2;
   // When offline: when the user was last connected, milliseconds since 1970 (UTC), rounded down to 5 minutes.
   int64 last_seen = 3;
+}
+
+// A talker's phone takes the floor of one conversation: a contact (peer) or a group (group), one of the two.
+message TalkStart {
+  // 32 hex digits, made by the phone; the clip's id too, and what the encrypted "clip start" message names.
+  string burst_id = 1;
+  string peer = 2;
+  string group = 3;
+}
+
+message TalkEnd {
+  string burst_id = 1;
+}
+
+message TalkAck {
+  string burst_id = 1;
+}
+
+message TalkState {
+  enum Event {
+    EVENT_UNSPECIFIED = 0;
+    // To the talker: the floor is its own until it lets go, for at most 60 seconds.
+    GRANTED = 1;
+    // To the talker: someone else holds the floor (talker_user, talker_device). Try again when it ends.
+    BUSY = 2;
+    // To the talker: the burst isn't allowed; refusal says why.
+    REFUSED = 3;
+    // To the other devices: a burst began. Answer with a TalkAck to play it from the ClipSegments that follow (or
+    // GET /blob/<burst_id>); a device that doesn't within half a second is woken by FCM.
+    STARTED = 4;
+    // To every device of the conversation, the talker's too: the burst is over (end_reason).
+    ENDED = 5;
+  }
+  enum EndReason {
+    END_REASON_UNSPECIFIED = 0;
+    // The talker let go (TalkEnd, or the last segment).
+    RELEASED = 1;
+    // 60 seconds passed.
+    TIMEOUT = 2;
+    // The talker's connection dropped and didn't come back within 3 seconds.
+    DROPPED = 3;
+  }
+  Event event = 1;
+  string burst_id = 2;
+  // Who holds the floor (STARTED, BUSY, ENDED).
+  string talker_user = 3;
+  uint32 talker_device = 4;
+  // The conversation, as the receiving device sees it: the other user of a one-to-one conversation (for the
+  // talker's own devices, the one it talks to), or the group's id.
+  string peer = 5;
+  string group = 6;
+  EndReason end_reason = 7;
+  // With REFUSED: NOT_PAIRED, BLOCKED, NOT_MEMBER, UNKNOWN_USER or INVALID, with detail.
+  SendResult.Status refusal = 8;
+  string detail = 9;
+  // When the floor was granted, milliseconds since 1970 (UTC).
+  int64 started_at = 10;
+}
+
+// One piece of a clip: AES-256-GCM ciphertext made by the talker's phone with the clip key (its nonce is the index;
+// its authenticated data binds the clip id, the index and the last flag). The server can't open it.
+message ClipSegment {
+  string burst_id = 1;
+  // 0, 1, 2 and so on, with no gaps.
+  uint32 index = 2;
+  // The clip's final segment.
+  bool last = 3;
+  // At most 16 KB.
+  bytes ciphertext = 4;
 }
