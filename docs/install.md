@@ -165,12 +165,14 @@ On macOS and Linux run it with launchd or systemd from the server folder.
 
 ## Versions
 
-`version/VERSION` is the day of the build, `2026.11.21` (`.2`, `.3` for another the same day). `ptt-server version`
-prints it with the build's commit from the Go build info.
+`version/VERSION` is the release's semantic version, `1.0.0` (MAJOR.MINOR.PATCH; the date versions `2026.11.21`
+came before 1.0.0). `ptt-server version` prints it with the build's commit from the Go build info. Releases are the
+GitHub releases `v1.0.0` and on, with ptt-server built for each platform (`CGO_ENABLED=0 go build -trimpath`) and
+their SHA-256 sums.
 
 ## What is not here from Journal
 
 journal-server-go has much this server intentionally leaves out: media storage, uploads and previews, search, faces,
 OCR, the indexes and ONNX Runtime, libvips and libjxl, copies, peers and swaps, bundle downloads, the Windows
-installer, releases and self-update. ptt-server is a delivery service for ciphertext (see the plan), so none of them
-applies; releases and self-update may come back later in their own phase.
+installer and self-update. ptt-server is a delivery service for ciphertext (see the plan), so none of them
+applies; self-update may come back later in its own phase (releases are back: see Versions).
