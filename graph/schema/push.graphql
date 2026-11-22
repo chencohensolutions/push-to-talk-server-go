@@ -1,0 +1,53 @@
+# --- Push and presence (phase 3) ----------------------------------------------------------------------------------
+# See docs/messaging.md, "Push" and "Presence". A device without an open /ws is woken by a data-only FCM message that
+# carries only the kind of wake-up ({"kind": "message"}, "sync", "talk" or "call"); the phone connects and fetches.
+#
+# Errors a device acts on carry a code in extensions.code: NOT_ENROLLED, INVALID_TOKEN.
+
+extend type Mutation {
+  """
+  Registers the calling device's FCM registration token, and whether the device shows notifications: the server
+  sends high-priority pushes only to devices that do (FCM lowers the priority of an app whose high-priority pushes
+  show nothing). Call it after enrolling, whenever FCM gives a new token, and whenever the user or the system turns
+  notifications on or off. A null or empty token removes the registration: no more pushes. A token another device
+  had registered is taken from it. INVALID_TOKEN for a token over 4096 characters or with spaces or control
+  characters. True when stored.
+  """
+  registerPush(token: String, notificationsEnabled: Boolean!): Boolean!
+  """
+  Shows or hides the caller's user's presence (online now, last seen) from its contacts. Hidden works both ways: a
+  user who hides theirs sees nobody's. Visible unless set. Answers the setting now.
+  """
+  setPresenceVisible(visible: Boolean!): Boolean!
+}
+
+extend type Query {
+  """
+  Whether each of users is connected now (any device with an open /ws), and when it was last connected. Only for
+  contacts (paired, neither blocked the other); other names are left out of the answer, without an error. Everyone
+  shows as offline with no lastSeen when the caller or the contact hides their presence.
+  """
+  presence(users: [String!]!): [Presence!]!
+}
+
+extend type Me {
+  "The user shows their presence to contacts (setPresenceVisible)."
+  presenceVisible: Boolean!
+  "The calling device has an FCM token registered (registerPush)."
+  pushRegistered: Boolean!
+  "The calling device registered notifications as on."
+  notificationsEnabled: Boolean!
+}
+
+extend type ServerInfo {
+  "The server can wake phones through FCM (config.json has an fcm service account). Without it, a phone receives only while connected."
+  push: Boolean!
+}
+
+type Presence {
+  user: String!
+  "A device of the user has /ws open now."
+  online: Boolean!
+  "When offline: when the user was last connected, rounded down to 5 minutes; null when unknown (not since the server started) or hidden."
+  lastSeen: Time
+}

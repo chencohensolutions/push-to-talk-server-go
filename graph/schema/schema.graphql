@@ -1,0 +1,134 @@
+# --- Authentication -----------------------------------------------------------
+# Every root field requires a client certificate unless it is marked @public (auth/access.go: deny by default).
+# See docs/authentication.md.
+#
+# Errors a device acts on carry a code in extensions.code: UNAUTHORIZED.
+
+scalar Time
+
+"Root field that clients may call without a client certificate."
+directive @public on FIELD_DEFINITION
+
+type Query {
+  "Which account an enrollment code belongs to. Does not use up the code."
+  enrollmentPreview(code: String!): EnrollmentPreviewResult! @public
+  "What this server is and can do, and the calling device's number."
+  serverInfo: ServerInfo!
+  "The calling device and its user: what an app asks to check it is connected."
+  me: Me!
+}
+
+type ServerInfo {
+  "The API's version: raised when a change needs newer apps."
+  api: Int!
+  "A device can renew its certificate (renewCertificate) before it expires."
+  renewCertificates: Boolean!
+  """
+  The CA that signs this server's certificates (its server certificate and the devices'), PEM. Each server has its own
+  (ptt-server setup makes one), so an app keeps it once enrolled and trusts this server by it from then on, whatever
+  address it is reached at. Null when the server can't read it.
+  """
+  caCertificate: String
+  "The server's version and build: \"2026.11.21 (3f2a9c1 2026-11-21)\", or just the version when built without git."
+  version: String!
+  "The calling device's number among its user's devices, 1 to 127 (Me.deviceNumber); 0 for a certificate made outside enrollment."
+  deviceNumber: Int!
+}
+
+type Me {
+  "The user the device's certificate names (CN)."
+  user: String!
+  "The device's number among the user's devices, 1 to 127: libsignal's device id, and the device in user.device."
+  deviceNumber: Int!
+  "The name the device enrolled with."
+  deviceName: String!
+  "The name the user gave for themselves when they joined by an invite; null otherwise."
+  displayName: String
+  "The email the user joined with by an invite (the one the inviter typed, or for an invite to anyone the one they gave, unverified); null otherwise."
+  email: String
+}
+
+type Mutation {
+  "Trades a one-time enrollment code and a certificate request for a client certificate."
+  enrollDevice(input: EnrollDeviceInput!): EnrollDeviceResult! @public
+  """
+  A one-time enrollment code for another phone of the caller's user (docs/authentication.md, "Linking a phone"):
+  the same kind of code as ptt-server enroll-code makes, valid 10 minutes. The calling phone shows it in its Link a
+  phone QR code, then sends the new phone its identity key over a PROVISIONING envelope. RATE_LIMITED with 3 waiting.
+  """
+  createLinkCode: LinkCode!
+  """
+  Renews the calling device's certificate (serverInfo.renewCertificates): a new certificate for a new key, for the same
+  user and device, with the same device number. The old certificate works until the new one is first used, and is
+  then revoked. A device renews in the last 30 days of its certificate (expiresAt). NOT_ENROLLED for a certificate
+  made outside enrollment, or revoked; RATE_LIMITED more than 60 days before it expires, or after 5 renewals of the
+  same certificate.
+  """
+  renewCertificate(csr: String!, keyProtection: KeyProtection!): EnrollDeviceResult!
+}
+
+input EnrollDeviceInput {
+  "As shown by `ptt-server enroll-code`; case, dashes and spaces are ignored."
+  code: String!
+  "Shown in `ptt-server devices` so the device can be told apart and revoked."
+  deviceName: String!
+  "PKCS#10 certificate request for an EC P-256 key, base64-encoded DER."
+  csr: String!
+  keyProtection: KeyProtection!
+}
+
+"Where the device keeps its private key."
+enum KeyProtection {
+  "Android StrongBox security chip"
+  STRONGBOX
+  "Android Keystore in the trusted execution environment"
+  TEE
+  "Apple Secure Enclave"
+  SECURE_ENCLAVE
+  "Ordinary software key (emulators and simulators)"
+  SOFTWARE
+}
+
+union EnrollmentPreviewResult = EnrollmentPreview | EnrollmentRejected
+
+type EnrollmentPreview {
+  user: String!
+  expiresAt: Time!
+}
+
+union EnrollDeviceResult = EnrolledDevice | EnrollmentRejected
+
+type EnrolledDevice {
+  user: String!
+  deviceName: String!
+  "The device's number among the user's devices, 1 to 127; a renewed certificate keeps it."
+  deviceNumber: Int!
+  "Issued client certificate, base64-encoded DER."
+  certificate: String!
+  serial: String!
+  expiresAt: Time!
+  "The server's CA, PEM, as serverInfo.caCertificate."
+  caCertificate: String
+}
+
+type EnrollmentRejected {
+  reason: EnrollmentRejectedReason!
+}
+
+enum EnrollmentRejectedReason {
+  "Wrong, expired or already used code (or one for a user since removed)."
+  INVALID_CODE
+  "The certificate request is malformed, badly signed or not for an EC P-256 key."
+  INVALID_CSR
+  "Too many wrong codes from this address; wait a minute."
+  RATE_LIMITED
+  "renewCertificate: the certificate wasn't issued by enrollment, or is revoked; enroll again."
+  NOT_ENROLLED
+}
+
+"A code from createLinkCode."
+type LinkCode {
+  "As enrollDevice takes it (\"K7QM-4XPD\")."
+  code: String!
+  expiresAt: Time!
+}

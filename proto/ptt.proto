@@ -1,0 +1,271 @@
+// The frames of /ws (docs/messaging.md). One binary WebSocket message is one Frame. The server only reads the routing
+// fields: what an envelope carries is libsignal ciphertext it can't open.
+//
+// Kept in the server repo and copied to the client (push-to-talk-kmp), like the GraphQL schema: change both together.
+// Generate the Go code with the commands in CLAUDE.md ("Commands").
+syntax = "proto3";
+
+package ptt.v1;
+
+option go_package = "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1;pttv1";
+
+message Frame {
+  oneof kind {
+    // Server to device: one envelope from the device's queue, or a live one. The device answers with an Ack once it
+    // has stored what the envelope carried.
+    Envelope envelope = 1;
+    // Device to server: these envelopes are taken; the server deletes them from the device's queue.
+    Ack ack = 2;
+    // Device to server: one message, encrypted once per recipient device.
+    Send send = 3;
+    // Server to device: what became of a Send.
+    SendResult send_result = 4;
+    // Either way: the other side answers a Ping with a Pong carrying the same id.
+    Ping ping = 5;
+    Pong pong = 6;
+    // Server to device: every envelope queued when the device connected has been sent; what follows is live.
+    QueueEmpty queue_empty = 7;
+    // Server to device: a contact came online or went offline (docs/messaging.md, "Presence"). Live only: never
+    // queued, never pushed.
+    Presence presence = 8;
+    // Talk (phase 5a, docs/messaging.md "Talk"). Device to server: take the floor of a conversation for a burst.
+    TalkStart talk_start = 9;
+    // Server to device: the answer to a TalkStart (GRANTED, BUSY, REFUSED), and to the other devices of the
+    // conversation that a burst STARTED or ENDED. Live only: never queued.
+    TalkState talk_state = 10;
+    // Both ways: one encrypted 200 ms piece of a burst's clip. The talker sends them; the server stores them in the
+    // clip (GET /blob/<burst_id>) and forwards them to the conversation's connected devices.
+    ClipSegment clip_segment = 11;
+    // Device to server: the talker let go of the button.
+    TalkEnd talk_end = 12;
+    // Device to server: this device got a STARTED and will play the burst, so it needs no wake-up for it.
+    TalkAck talk_ack = 13;
+  }
+}
+
+message Envelope {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    // libsignal's PreKeySignalMessage: the first message of a session.
+    PREKEY_MESSAGE = 1;
+    // libsignal's SignalMessage: a message in an open session.
+    MESSAGE = 2;
+    // libsignal's SenderKeyMessage (groups, phase 4).
+    SENDER_KEY_MESSAGE = 3;
+    // Linking a phone: sealed by an existing device to the one-time key a newly enrolled device of the same user shows
+    // in its QR code. Only to one device of the sender's own user, in a Send of its own.
+    PROVISIONING = 4;
+    // Made by the server, never sent by a device: sender_user replaced its identity key (replaceIdentityKey);
+    // ciphertext is the new public identity key, as uploaded. Sent to the devices of every contact.
+    IDENTITY_KEY_CHANGED = 5;
+    // Made by the server: sender_user and the recipient are now paired (both called confirmPair). ciphertext is empty.
+    PAIRED = 6;
+    // Made by the server: sender_user changed the group named in group on the server (created it, invited, accepted,
+    // left, removed someone, deleted it), so the phone fetches the groups query again. ciphertext is empty. It only
+    // says the server's list changed: who is in a group is what the owner's devices said, end to end.
+    GROUP_CHANGED = 7;
+  }
+
+  // Given by the server (32 hex digits); what an Ack names.
+  string id = 1;
+  // Filled in by the server from the sender's certificate; a device leaves them empty in a Send.
+  string sender_user = 2;
+  uint32 sender_device = 3;
+  string recipient_user = 4;
+  uint32 recipient_device = 5;
+  Type type = 6;
+  // At most 256 KB.
+  bytes ciphertext = 7;
+  // When the server took the envelope, milliseconds since 1970 (UTC). Set by the server.
+  int64 server_timestamp = 8;
+  // In a Send only: a pairing token of recipient_user (the pairingToken mutation, from the recipient's QR code), so
+  // the server routes this one message between two users that aren't paired. The server takes it out before delivery.
+  string routing_token = 9;
+  // In a Send only, optional: the registration id the sender's session has for this device (from prekeyBundles).
+  // When it isn't the device's current one, the Send is refused STALE_DEVICES. 0 skips the check.
+  uint32 recipient_registration_id = 10;
+  // Set by the server: the group a SENDER_KEY_MESSAGE was sent to (a group Send), or that a GROUP_CHANGED is about.
+  string group = 11;
+}
+
+message Ack {
+  repeated string ids = 1;
+}
+
+// One message to one other user, or to the sender's own devices only. It holds one envelope for every active device
+// of the recipient and one for every other active device of the sender (so all the sender's phones show what was
+// sent): a device that is missing or that isn't active gets the Send refused STALE_DEVICES. A PROVISIONING envelope
+// goes alone.
+//
+// A group Send (group set) holds one SENDER_KEY_MESSAGE envelope with no recipient, encrypted once with the sender's
+// sender key; the server gives a copy to every active device of every member but the sending device, leaving out
+// members who blocked the sender or whom it blocked. group_devices names those devices as the sender knows them (the
+// ones it gave its sender key to); when they aren't exactly the server's, the Send is refused STALE_DEVICES with every
+// member's devices, so the phone gives its sender key to the new ones (over their pairwise sessions) and sends again.
+message Send {
+  // Chosen by the device and given back in the SendResult.
+  string client_id = 1;
+  repeated Envelope envelopes = 2;
+  // What a wake-up for this Send is, chosen by the sending phone (the server can't read the ciphertext): which FCM
+  // push a recipient device without an open /ws gets (docs/messaging.md, "Push"). Unset is PUSH_SYNC. The sender's
+  // own other devices always get PUSH_SYNC at most: what their user sent needs no notification.
+  PushKind push_kind = 3;
+  // A group Send: the group's id (the groups query). The sender must be a member (NOT_MEMBER otherwise).
+  string group = 4;
+  // In a group Send: the devices the envelope is for, by user, with the registration ids the sender's sessions have
+  // (0 skips that check).
+  repeated UserDevices group_devices = 5;
+}
+
+// The kinds of wake-up a Send asks for. The FCM data message carries only the kind's name ("message", "sync",
+// "talk", "call"), nothing else.
+enum PushKind {
+  // Taken as PUSH_SYNC.
+  PUSH_KIND_UNSPECIFIED = 0;
+  // Something to fetch that shows no notification: receipts, contact and group changes, a muted chat, key messages.
+  // Normal priority, kept by FCM for a day.
+  PUSH_SYNC = 1;
+  // A message the user is notified of. High priority to devices that registered notifications as on (registerPush),
+  // normal otherwise.
+  PUSH_MESSAGE = 2;
+  // No wake-up at all: typing, and anything stale by the time a phone would wake up for it.
+  PUSH_NONE = 3;
+  // A talk burst (phase 5a): high priority (notifications on), kept 30 seconds.
+  PUSH_TALK = 4;
+  // A ringing call (phase 5b): high priority (notifications on), kept 30 seconds.
+  PUSH_CALL = 5;
+}
+
+message SendResult {
+  enum Status {
+    STATUS_UNSPECIFIED = 0;
+    // Queued for every device; envelope_ids are the ids given, in the order of the Send's envelopes.
+    ACCEPTED = 1;
+    // The users aren't paired and no envelope carried a valid routing token of the recipient.
+    NOT_PAIRED = 2;
+    // The envelopes don't cover exactly the active devices (or a registration id changed): devices lists them now.
+    // Fetch the new devices' prekeyBundles and send again.
+    STALE_DEVICES = 3;
+    // The recipient isn't a user of this server (or the provisioning target isn't an enrolled device).
+    UNKNOWN_USER = 4;
+    // One of the two blocked the other.
+    BLOCKED = 5;
+    // The Send is malformed: detail says how (no envelopes, more than one other user, an empty ciphertext, a type a
+    // device can't send, a device twice).
+    INVALID = 6;
+    // An envelope is over 256 KB.
+    TOO_LARGE = 7;
+    // A recipient device's queue is full (it hasn't connected for a long time); nothing was queued.
+    QUEUE_FULL = 8;
+    // A group Send to a group the sender isn't a member of, or that doesn't exist.
+    NOT_MEMBER = 9;
+  }
+
+  string client_id = 1;
+  Status status = 2;
+  repeated string envelope_ids = 3;
+  // With STALE_DEVICES: the active devices of each user the Send addressed (the recipient and the sender; in a group
+  // Send, every member the envelope goes to, the sender's user with its other devices).
+  repeated UserDevices devices = 4;
+  // For the log, in English.
+  string detail = 5;
+}
+
+message UserDevices {
+  string user = 1;
+  repeated ActiveDevice devices = 2;
+}
+
+message ActiveDevice {
+  uint32 device_number = 1;
+  uint32 registration_id = 2;
+}
+
+message Ping {
+  uint64 id = 1;
+}
+
+message Pong {
+  uint64 id = 1;
+}
+
+message QueueEmpty {}
+
+// A contact's presence, sent when the first of its devices connects to /ws (online) or the last one disconnects
+// (offline). Only between paired users neither of whom blocked the other, and only when both show their presence
+// (setPresenceVisible).
+message Presence {
+  string user = 1;
+  bool online = 2;
+  // When offline: when the user was last connected, milliseconds since 1970 (UTC), rounded down to 5 minutes.
+  int64 last_seen = 3;
+}
+
+// A talker's phone takes the floor of one conversation: a contact (peer) or a group (group), one of the two.
+message TalkStart {
+  // 32 hex digits, made by the phone; the clip's id too, and what the encrypted "clip start" message names.
+  string burst_id = 1;
+  string peer = 2;
+  string group = 3;
+}
+
+message TalkEnd {
+  string burst_id = 1;
+}
+
+message TalkAck {
+  string burst_id = 1;
+}
+
+message TalkState {
+  enum Event {
+    EVENT_UNSPECIFIED = 0;
+    // To the talker: the floor is its own until it lets go, for at most 60 seconds.
+    GRANTED = 1;
+    // To the talker: someone else holds the floor (talker_user, talker_device). Try again when it ends.
+    BUSY = 2;
+    // To the talker: the burst isn't allowed; refusal says why.
+    REFUSED = 3;
+    // To the other devices: a burst began. Answer with a TalkAck to play it from the ClipSegments that follow (or
+    // GET /blob/<burst_id>); a device that doesn't within half a second is woken by FCM.
+    STARTED = 4;
+    // To every device of the conversation, the talker's too: the burst is over (end_reason).
+    ENDED = 5;
+  }
+  enum EndReason {
+    END_REASON_UNSPECIFIED = 0;
+    // The talker let go (TalkEnd, or the last segment).
+    RELEASED = 1;
+    // 60 seconds passed.
+    TIMEOUT = 2;
+    // The talker's connection dropped and didn't come back within 3 seconds.
+    DROPPED = 3;
+  }
+  Event event = 1;
+  string burst_id = 2;
+  // Who holds the floor (STARTED, BUSY, ENDED).
+  string talker_user = 3;
+  uint32 talker_device = 4;
+  // The conversation, as the receiving device sees it: the other user of a one-to-one conversation (for the
+  // talker's own devices, the one it talks to), or the group's id.
+  string peer = 5;
+  string group = 6;
+  EndReason end_reason = 7;
+  // With REFUSED: NOT_PAIRED, BLOCKED, NOT_MEMBER, UNKNOWN_USER or INVALID, with detail.
+  SendResult.Status refusal = 8;
+  string detail = 9;
+  // When the floor was granted, milliseconds since 1970 (UTC).
+  int64 started_at = 10;
+}
+
+// One piece of a clip: AES-256-GCM ciphertext made by the talker's phone with the clip key (its nonce is the index;
+// its authenticated data binds the clip id, the index and the last flag). The server can't open it.
+message ClipSegment {
+  string burst_id = 1;
+  // 0, 1, 2 and so on, with no gaps.
+  uint32 index = 2;
+  // The clip's final segment.
+  bool last = 3;
+  // At most 16 KB.
+  bytes ciphertext = 4;
+}

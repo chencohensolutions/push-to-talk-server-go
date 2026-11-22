@@ -1,0 +1,212 @@
+package relay
+
+import (
+	"errors"
+	"io"
+	"log"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/chencohensolutions/push-to-talk-server-go/auth"
+	"github.com/chencohensolutions/push-to-talk-server-go/blobs"
+	"github.com/chencohensolutions/push-to-talk-server-go/store"
+)
+
+// Headers of /blob (docs/messaging.md, "Blobs").
+const (
+	// HeaderTotal: on the first PUT of a file, its whole size. Answered on GET and HEAD.
+	HeaderTotal = "Blob-Total"
+	// HeaderOffset: on a PUT, where its bytes go (the size the server has; 0 for the first). Answered on every PUT,
+	// HEAD and GET as the size the server has now.
+	HeaderOffset = "Blob-Offset"
+	// HeaderComplete: "true" once a file has all its bytes or a clip its last segment.
+	HeaderComplete = "Blob-Complete"
+	// clipFollow is the longest a GET follows a clip that stops growing (its talker gone without a word).
+	clipFollow = MaxBurst + lastSegmentWait
+)
+
+// mayRead says whether user may read blob m: its maker, the other user of its one-to-one conversation, or a member of
+// its group now. Blocks apply.
+func (r *Relay) mayRead(user string, m blobs.Meta) bool {
+	switch {
+	case user == m.Owner:
+		return true
+	case m.Group != "":
+		g, ok := r.Groups.Get(m.Group)
+		return ok && g.Member(user) && !r.Book.Blocked(user, m.Owner)
+	default:
+		return user == m.Peer && !r.Book.Blocked(user, m.Owner)
+	}
+}
+
+func setBlobHeaders(w http.ResponseWriter, m blobs.Meta) {
+	w.Header().Set(HeaderOffset, strconv.FormatInt(m.Size, 10))
+	w.Header().Set(HeaderComplete, strconv.FormatBool(m.Complete))
+	if m.Total > 0 {
+		w.Header().Set(HeaderTotal, strconv.FormatInt(m.Total, 10))
+	}
+}
+
+// ServeBlob is /blob/<id>, behind identify (a certificate is required).
+//
+//   - PUT uploads a file (a voice message, an attachment) for ?peer=<user> or ?group=<id>, resumable: the first PUT
+//     gives Blob-Total, and each PUT's Blob-Offset is where its bytes go.
+//   - HEAD answers how much the server has (Blob-Offset), so a broken upload can go on.
+//   - GET reads a file once it is complete, from a byte offset with "Range: bytes=N-"; a clip is read while it grows:
+//     its records (a 4-byte big-endian length, then a ClipSegment without its burst id) are sent as they arrive
+//     until its last one.
+func (r *Relay) ServeBlob(w http.ResponseWriter, req *http.Request) {
+	user := auth.FromContext(req.Context())
+	device, _ := r.Registry.Find(auth.SerialFromContext(req.Context()))
+	if user == nil || device.DeviceNumber == 0 {
+		http.Error(w, "only an enrolled device", http.StatusForbidden)
+		return
+	}
+	id := strings.TrimPrefix(req.URL.Path, "/blob/")
+	if !blobs.ValidID(id) {
+		http.Error(w, "a blob id is 32 lowercase hex digits", http.StatusNotFound)
+		return
+	}
+	m, exists := r.Blobs.Get(id)
+	switch req.Method {
+	case http.MethodPut:
+		r.putBlob(w, req, store.Device{User: user.Name, Number: device.DeviceNumber}, id, m, exists)
+	case http.MethodGet, http.MethodHead:
+		if !exists || !r.mayRead(user.Name, m) {
+			http.Error(w, "no such blob", http.StatusNotFound)
+			return
+		}
+		setBlobHeaders(w, m)
+		if req.Method == http.MethodHead {
+			return
+		}
+		r.getBlob(w, req, m)
+	default:
+		w.Header().Set("Allow", "GET, HEAD, PUT")
+		http.Error(w, "GET, HEAD or PUT", http.StatusMethodNotAllowed)
+	}
+}
+
+func (r *Relay) putBlob(w http.ResponseWriter, req *http.Request, from store.Device, id string, m blobs.Meta, exists bool) {
+	if !exists {
+		peer, group := req.URL.Query().Get("peer"), req.URL.Query().Get("group")
+		if (peer == "") == (group == "") {
+			http.Error(w, "name ?peer=<user> or ?group=<id>", http.StatusBadRequest)
+			return
+		}
+		if _, status, detail := r.conversation(from, peer, group); status != 0 {
+			http.Error(w, status.String()+": "+detail, http.StatusForbidden)
+			return
+		}
+		total, err := strconv.ParseInt(req.Header.Get(HeaderTotal), 10, 64)
+		if err != nil {
+			http.Error(w, "the first PUT gives "+HeaderTotal, http.StatusBadRequest)
+			return
+		}
+		err = r.Blobs.Create(blobs.Meta{ID: id, Kind: blobs.File, Owner: from.User, Peer: peer, Group: group, Total: total})
+		if errors.Is(err, blobs.ErrTooLarge) {
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
+		if err != nil && !errors.Is(err, blobs.ErrExists) {
+			log.Printf("PUT /blob from %s.%d: %v", from.User, from.Number, err)
+			http.Error(w, "server error", http.StatusInternalServerError)
+			return
+		}
+		m, _ = r.Blobs.Get(id)
+	}
+	if m.Owner != from.User {
+		http.Error(w, "no such blob", http.StatusNotFound)
+		return
+	}
+	offset := int64(0)
+	if text := req.Header.Get(HeaderOffset); text != "" {
+		var err error
+		if offset, err = strconv.ParseInt(text, 10, 64); err != nil || offset < 0 {
+			http.Error(w, HeaderOffset+" is a byte offset", http.StatusBadRequest)
+			return
+		}
+	}
+	size, err := r.Blobs.Write(id, offset, req.Body)
+	m, _ = r.Blobs.Get(id)
+	setBlobHeaders(w, m)
+	switch {
+	case err == nil, errors.Is(err, blobs.ErrComplete) && offset == size:
+		w.WriteHeader(http.StatusOK)
+	case errors.Is(err, blobs.ErrOffset), errors.Is(err, blobs.ErrComplete), errors.Is(err, blobs.ErrBusy):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, blobs.ErrTooLarge):
+		http.Error(w, "more bytes than "+HeaderTotal, http.StatusRequestEntityTooLarge)
+	default:
+		// A broken upload: what arrived is kept, and HEAD says how much.
+		log.Printf("PUT /blob/%s from %s.%d: %v", id, from.User, from.Number, err)
+		http.Error(w, "upload broke off", http.StatusBadRequest)
+	}
+}
+
+func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta) {
+	offset := int64(0)
+	if text, ok := strings.CutPrefix(req.Header.Get("Range"), "bytes="); ok {
+		start, _, _ := strings.Cut(text, "-")
+		n, err := strconv.ParseInt(start, 10, 64)
+		if err != nil || n < 0 || n > m.Size {
+			http.Error(w, "a range is bytes=N- within the blob", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		offset = n
+	}
+	if m.Kind == blobs.File && !m.Complete {
+		http.Error(w, "the upload isn't complete", http.StatusConflict)
+		return
+	}
+	f, err := r.Blobs.OpenData(m.ID)
+	if err != nil {
+		http.Error(w, "no such blob", http.StatusNotFound)
+		return
+	}
+	defer f.Close()
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		http.Error(w, "server error", http.StatusInternalServerError)
+		return
+	}
+	if m.Kind == blobs.File {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", strconv.FormatInt(m.Size-offset, 10))
+		if offset > 0 {
+			w.WriteHeader(http.StatusPartialContent)
+		}
+		io.Copy(w, f)
+		return
+	}
+	// A clip: send what is there, then follow it until its last record.
+	w.Header().Set("Content-Type", "application/vnd.ptt.clip")
+	if offset > 0 {
+		w.WriteHeader(http.StatusPartialContent)
+	}
+	rc := http.NewResponseController(w)
+	deadline := time.After(clipFollow)
+	for {
+		changed := r.Blobs.Changed(m.ID)
+		if _, err := io.Copy(w, f); err != nil {
+			return
+		}
+		rc.Flush()
+		now, ok := r.Blobs.Get(m.ID)
+		if !ok {
+			return
+		}
+		if now.Complete {
+			io.Copy(w, f) // what arrived with the last record
+			return
+		}
+		select {
+		case <-changed:
+		case <-req.Context().Done():
+			return
+		case <-deadline:
+			return
+		}
+	}
+}

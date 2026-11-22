@@ -1,0 +1,38 @@
+# --- Live talk (phase 5b) -----------------------------------------------------------------------------------------
+# See docs/messaging.md, "Live talk". Each conversation has a LiveKit room; ptt-server signs a phone's token after the
+# same checks as talking there, and passes LiveKit's signalling through /rtc on this port (mTLS), so only enrolled
+# devices reach it. Media goes to LiveKit's own ports, encrypted end to end with the talk keys the phones swap.
+#
+# Errors a device acts on carry a code in extensions.code: NOT_ENROLLED, LIVE_OFF, NOT_PAIRED, BLOCKED, NOT_MEMBER,
+# UNKNOWN_USER, INVALID.
+
+extend type Mutation {
+  """
+  A token to join the LiveKit room of the conversation with peer (a contact or fellow group member) or of group (one
+  of the two), for 10 minutes, as identity "user.device". The phone connects LiveKit's client to this server's
+  address with the path /rtc. LIVE_OFF when the server has no LiveKit.
+  """
+  talkToken(peer: String, group: ID): TalkToken!
+  """
+  A token to join call's own LiveKit room (phase 6, video calls), in the conversation with peer or group, after the
+  same checks; call is 32 hex digits the caller's phone made and sent in its encrypted call invite, with the call's
+  fresh media key. The first callToken binds the id to its conversation (INVALID for another one). The room takes at
+  most 8 devices. LIVE_OFF without LiveKit.
+  """
+  callToken(call: ID!, peer: String, group: ID): TalkToken!
+}
+
+extend type ServerInfo {
+  "The server has the live talk path (LiveKit): talkToken works."
+  liveTalk: Boolean!
+}
+
+type TalkToken {
+  "LiveKit's access token."
+  token: String!
+  room: String!
+  identity: String!
+  "The path on this server to give LiveKit's client: /rtc."
+  path: String!
+  expiresAt: Time!
+}

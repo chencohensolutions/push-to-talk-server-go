@@ -1,0 +1,115 @@
+# --- Invites ---------------------------------------------------------------------------------------------------
+# See docs/authentication.md, "Invites". One link (ptt://invite) that enrolls a friend and pairs them with whoever
+# invited them. Every invite has a six-digit passcode that goes beside the link: the inviter's phone sends both to
+# the friend (from its mail app, or any chat app), and the server sends no mail at all. A friend who isn't on this
+# server redeems it with enrollWithInvite, which makes their user and their device's certificate; a friend already
+# enrolled here redeems it with acceptInvite. Both answer a pairing token of the inviter, which the phone uses as one
+# read from the inviter's QR code.
+#
+# Errors a device acts on carry a code in extensions.code: INVITES_OFF, INVALID_EMAIL, RATE_LIMITED.
+
+extend type Query {
+  "The caller's invites that are waiting to be used, newest first."
+  invites: [Invite!]!
+  "Who an invite is from and who it is for, without using it up. A wrong code counts against the address's limit."
+  invitePreview(code: String!): InvitePreviewResult! @public
+}
+
+extend type Mutation {
+  """
+  An invite from the caller's user, working once, for 7 days: its code (for the link) and its passcode (six digits,
+  sent beside the link). The caller's phone sends both to the friend; the server sends nothing. With email, only
+  that address can redeem it. RATE_LIMITED with 5 waiting; INVITES_OFF when the server's owner turned invites off.
+  """
+  createInvite(email: String): CreatedInvite!
+  "Stops the caller's waiting invite id from working. False if there was none."
+  cancelInvite(id: String!): Boolean!
+  """
+  Redeems an invite on a phone that isn't enrolled: checks the passcode (10 wrong ones end the invite) and the email,
+  makes the user and the device's certificate (as enrollDevice), and gives a pairing token of the inviter. The invite
+  is used up only when all of it checked out.
+  """
+  enrollWithInvite(input: InviteEnrollInput!): InviteEnrollResult! @public
+  "Redeems an invite on a phone already enrolled here: a pairing token of the inviter."
+  acceptInvite(code: String!): InviteAcceptResult!
+}
+
+type Invite {
+  "A short id, to cancel it by."
+  id: String!
+  "The address only it may be redeemed with; null for whoever opens it."
+  email: String
+  createdAt: Time!
+  expiresAt: Time!
+}
+
+type CreatedInvite {
+  invite: Invite!
+  "22 characters, base64url: put it in the invite link. Shown only now."
+  code: String!
+  "Six digits, to send beside the link (not in it). Shown only now."
+  passcode: String!
+}
+
+input InviteEnrollInput {
+  "From the invite link."
+  code: String!
+  "The six digits sent with the link; spaces and dashes are ignored."
+  passcode: String!
+  """
+  For an invite with an email: that address (any case), or EMAIL_MISMATCH. For one without: the friend's own email
+  when they give one (not verified: nothing is sent there), or null.
+  """
+  email: String
+  "The friend's own name, as their contacts see it (first and last name, any letters)."
+  displayName: String!
+  "As in EnrollDeviceInput."
+  deviceName: String!
+  csr: String!
+  keyProtection: KeyProtection!
+}
+
+union InvitePreviewResult = InvitePreview | InviteRejected
+union InviteEnrollResult = InviteEnrolled | InviteRejected
+union InviteAcceptResult = InvitePairing | InviteRejected
+
+type InvitePreview {
+  inviter: String!
+  inviterDisplayName: String
+  "The address the invite is for; null for anyone."
+  email: String
+  expiresAt: Time!
+}
+
+type InviteEnrolled {
+  device: EnrolledDevice!
+  pairing: InvitePairing!
+}
+
+type InvitePairing {
+  inviter: String!
+  "A pairing token of the inviter (as pairingToken), for the pair request; null when none could be made: scan their QR code instead."
+  pairingToken: PairingToken
+}
+
+type InviteRejected {
+  reason: InviteRejectedReason!
+}
+
+enum InviteRejectedReason {
+  "Wrong, used, canceled or expired invite."
+  INVALID_CODE
+  INVALID_EMAIL
+  "The invite is for another email address."
+  EMAIL_MISMATCH
+  "Another user has this email: enroll a new phone of theirs with a code from the server's owner instead."
+  EMAIL_TAKEN
+  "The passcode is wrong; after 10 wrong ones the invite stops working."
+  WRONG_PASSCODE
+  "Too many wrong codes from this address: wait a minute."
+  RATE_LIMITED
+  "The certificate request is malformed, badly signed or not for an EC P-256 key."
+  INVALID_CSR
+  "The inviter opened their own invite."
+  OWN_INVITE
+}

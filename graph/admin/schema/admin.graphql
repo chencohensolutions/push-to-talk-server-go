@@ -1,0 +1,56 @@
+# Admin API, served only on the loopback admin listener (admin_addr) and used by the
+# `ptt-server user add | user remove | users | enroll-code | devices | revoke` commands. See docs/authentication.md.
+
+scalar Time
+
+type Query {
+  "The users (users.json), by name."
+  users: [User!]!
+  "Enrolled devices, oldest first; all users when user is omitted."
+  devices(user: String): [Device!]!
+}
+
+type Mutation {
+  "Adds a user to users.json; devices then enroll as it with codes from createEnrollmentCode."
+  addUser(name: String!): User!
+  "Removes a user from users.json and revokes every certificate of its devices."
+  removeUser(name: String!): RemovedUser!
+  "Creates a one-time enrollment code for an existing user."
+  createEnrollmentCode(user: String!): EnrollmentCode!
+  "Revokes an enrolled device's certificate (and its renewals); the server rejects it from then on."
+  revokeDevice(serial: String!): Device!
+}
+
+type User {
+  name: String!
+  addedAt: Time!
+  "Its devices that aren't revoked."
+  devices: Int!
+}
+
+type RemovedUser {
+  name: String!
+  "How many certificates were revoked with it."
+  revokedDevices: Int!
+}
+
+type EnrollmentCode {
+  code: String!
+  user: String!
+  expiresAt: Time!
+  "public_url from config.json, if set."
+  serverUrl: String
+}
+
+type Device {
+  serial: String!
+  user: String!
+  name: String!
+  deviceNumber: Int!
+  keyProtection: String!
+  registeredAt: Time!
+  expiresAt: Time!
+  revokedAt: Time
+  "The certificate this one renewed, if any."
+  renewedFrom: String
+}

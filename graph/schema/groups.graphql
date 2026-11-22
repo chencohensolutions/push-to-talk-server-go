@@ -1,0 +1,47 @@
+# --- Groups (phase 4) ---------------------------------------------------------------------------------------------
+# See docs/messaging.md, "Groups". The server keeps only who is in which group, to route: group messages (a group Send
+# on /ws, one SENDER_KEY_MESSAGE copied to every member device), and prekey bundles and pairwise sends between members
+# who never paired (to hand out sender keys). The group's name and picture, and who its members are as far as the
+# phones are concerned, travel end to end in the owner's group changes; the phones trust those, not this list.
+# Every change gives the devices of everyone concerned a GROUP_CHANGED envelope.
+#
+# Errors a device acts on carry a code in extensions.code: NOT_ENROLLED, NO_GROUP, NOT_OWNER, NOT_MEMBER, NOT_INVITED,
+# OWNER_CANT_LEAVE, GROUP_FULL, TOO_MANY_GROUPS, UNKNOWN_USER, NOT_PAIRED, BLOCKED.
+
+extend type Query {
+  "The groups the caller's user is a member of or invited to, oldest first."
+  groups: [Group!]!
+}
+
+extend type Mutation {
+  "A new group owned by the caller's user, its only member. TOO_MANY_GROUPS past 200 owned."
+  createGroup: Group!
+  """
+  The owner invites user, a contact (paired, neither blocked the other; NOT_PAIRED or BLOCKED otherwise), to the
+  group. The invitation itself (the group's name, the owner's signed change) goes to the user's devices end to end;
+  this only lets them accept. GROUP_FULL past 50 members and invited. Inviting a member again changes nothing.
+  """
+  inviteToGroup(group: ID!, user: String!): Group!
+  "The caller's user, invited, joins the group. NOT_INVITED otherwise."
+  acceptGroupInvite(group: ID!): Group!
+  """
+  The caller's user leaves the group, or declines its invitation. The owner can't (OWNER_CANT_LEAVE): it deletes the
+  group. True when done.
+  """
+  leaveGroup(group: ID!): Boolean!
+  "The owner takes user (a member, or invited) out of the group: nothing of the group reaches them from now on."
+  removeFromGroup(group: ID!, user: String!): Group!
+  "The owner deletes the group. True when done."
+  deleteGroup(group: ID!): Boolean!
+}
+
+type Group {
+  "32 hex digits; what a group Send names."
+  id: ID!
+  owner: String!
+  "The users who accepted, by name, the owner first, in the order they joined."
+  members: [String!]!
+  "The users invited who haven't answered, by name."
+  invited: [String!]!
+  createdAt: Time!
+}

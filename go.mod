@@ -1,0 +1,64 @@
+module github.com/chencohensolutions/push-to-talk-server-go
+
+go 1.26.3
+
+require (
+	github.com/99designs/gqlgen v0.17.90
+	github.com/anacrolix/dht/v2 v2.24.0
+	github.com/anacrolix/log v0.15.2
+	github.com/anacrolix/torrent v1.48.1-0.20230103142631-c20f73d53e9f
+	github.com/coder/websocket v1.8.15
+	github.com/huin/goupnp v1.3.1
+	github.com/jackpal/gateway v1.2.0
+	github.com/jackpal/go-nat-pmp v1.1.0
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
+	github.com/vektah/gqlparser/v2 v2.5.33
+	golang.org/x/crypto v0.58.0
+	golang.org/x/sys v0.49.0
+	golang.org/x/time v0.0.0-20220609170525-579cf78fd858
+	google.golang.org/protobuf v1.36.12
+	modernc.org/sqlite v1.62.0
+)
+
+require (
+	github.com/agnivade/levenshtein v1.2.1 // indirect
+	github.com/alecthomas/atomic v0.1.0-alpha2 // indirect
+	github.com/anacrolix/chansync v0.8.0 // indirect
+	github.com/anacrolix/generics v0.2.0 // indirect
+	github.com/anacrolix/missinggo v1.3.0 // indirect
+	github.com/anacrolix/missinggo/perf v1.0.0 // indirect
+	github.com/anacrolix/missinggo/v2 v2.11.0 // indirect
+	github.com/anacrolix/multiless v0.4.0 // indirect
+	github.com/anacrolix/stm v0.5.0 // indirect
+	github.com/anacrolix/sync v0.5.5-0.20251119100342-d78dd1f686f1 // indirect
+	github.com/benbjohnson/immutable v0.4.1-0.20221220213129-8932b999621d // indirect
+	github.com/bradfitz/iter v0.0.0-20191230175014-e8f45d346db8 // indirect
+	github.com/dustin/go-humanize v1.1.0 // indirect
+	github.com/edsrzf/mmap-go v1.1.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
+	github.com/goccy/go-yaml v1.19.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
+	github.com/gorilla/websocket v1.5.0 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
+	github.com/huandu/xstrings v1.3.2 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
+	github.com/ncruces/go-strftime v1.1.0 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	github.com/rs/dnscache v0.0.0-20211102005908-e0241e321417 // indirect
+	github.com/sosodev/duration v1.4.0 // indirect
+	github.com/urfave/cli/v3 v3.8.0 // indirect
+	golang.org/x/exp v0.0.0-20251113190631-e25ba8c21ef6 // indirect
+	golang.org/x/mod v0.42.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/tools v0.52.0 // indirect
+	modernc.org/libc v1.80.1 // indirect
+	modernc.org/mathutil v1.7.1 // indirect
+	modernc.org/memory v1.12.1 // indirect
+)
+
+tool (
+	github.com/99designs/gqlgen
+	google.golang.org/protobuf/cmd/protoc-gen-go
+)
