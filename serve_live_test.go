@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -405,6 +406,31 @@ func TestACallIsKeptOnlyWhileSomeoneRecordsIt(t *testing.T) {
 		t.Fatalf("recordCall again: %s %s", errorCode(r), r.Data["recordCall"])
 	}
 
+	// dana's phone logs how it shows hen's video (encrypted; the test sends bytes): an events track of hers.
+	const eventMutation = `mutation($c: ID!, $p: String, $e: String!) { logCallEvent(call: $c, peer: $p, event: $e) }`
+	for _, e := range []string{"fill 9:16", "fit"} {
+		if r := env.graphql(t, dana.client, eventMutation, map[string]any{"c": id, "p": "hen",
+			"e": base64.StdEncoding.EncodeToString([]byte(e))}); errorCode(r) != "" || string(r.Data["logCallEvent"]) != "true" {
+			t.Fatalf("logCallEvent: %s %s", errorCode(r), r.Data["logCallEvent"])
+		}
+	}
+	if r := env.graphql(t, dana.client, eventMutation, map[string]any{"c": id, "p": "hen", "e": "not base64!"}); errorCode(r) != "INVALID" {
+		t.Fatalf("logCallEvent with a bad event: %s", errorCode(r))
+	}
+	r = env.graphql(t, dana.client, `query($c: ID!, $p: String) { callRecording(call: $c, peer: $p) { tracks { blob identity kind codec } } }`,
+		map[string]any{"c": id, "p": "hen"})
+	var evs struct {
+		Tracks []struct{ Blob, Identity, Kind, Codec string }
+	}
+	json.Unmarshal(r.Data["callRecording"], &evs)
+	if len(evs.Tracks) != 1 || evs.Tracks[0].Identity != danaID || evs.Tracks[0].Kind != "events" ||
+		evs.Tracks[0].Codec != recorder.EventsCodec {
+		t.Fatalf("the event log in callRecording: %s", r.Data["callRecording"])
+	}
+	if recs := readTrackRecords(t, env.recorder.Blobs, evs.Tracks[0].Blob); len(recs) != 2 || string(recs[0]) != "fill 9:16" || string(recs[1]) != "fit" {
+		t.Fatalf("the event log's records: %q", recs)
+	}
+
 	// A track of the call, as the recorder would write it (its frames stay encrypted; the test writes bytes).
 	blob := burstID()
 	if err := env.recorder.Blobs.Create(blobs.Meta{ID: blob, Kind: blobs.Track, Owner: "hen", Peer: "dana",
@@ -421,7 +447,7 @@ func TestACallIsKeptOnlyWhileSomeoneRecordsIt(t *testing.T) {
 		Tracks    []struct{ Blob, Identity, Kind, Codec string }
 	}
 	json.Unmarshal(r.Data["callRecording"], &got)
-	if !got.Recording || got.By != henID || len(got.Tracks) != 1 || got.Tracks[0].Blob != blob || got.Tracks[0].Identity != henID ||
+	if !got.Recording || got.By != henID || len(got.Tracks) != 2 || got.Tracks[1].Kind != "events" || got.Tracks[0].Blob != blob || got.Tracks[0].Identity != henID ||
 		got.Tracks[0].Kind != "audio" || got.Tracks[0].Codec != "audio/opus" {
 		t.Fatalf("callRecording for hen: %s", r.Data["callRecording"])
 	}
@@ -445,6 +471,11 @@ func TestACallIsKeptOnlyWhileSomeoneRecordsIt(t *testing.T) {
 		m := fake.metadataOf(tok.Room)
 		return len(m) == 2 && m[1] == `{"recording":false}`
 	})
+
+	if r := env.graphql(t, dana.client, eventMutation, map[string]any{"c": id, "p": "hen",
+		"e": base64.StdEncoding.EncodeToString([]byte("late"))}); errorCode(r) != "NOT_RECORDING" {
+		t.Fatalf("logCallEvent after the recording stopped: %s", errorCode(r))
+	}
 
 	// The track reads back over /blob for a reader, and is kept past the blob lifetime.
 	resp, body := env.blobRequest(t, hen, "GET", blob, nil, nil)
@@ -542,4 +573,21 @@ func TestCallsAreForContactsAndKeptCallsForThoseInThem(t *testing.T) {
 	if resp, _ := env.blobRequest(t, eli, "GET", tracks[0], nil, nil); resp.StatusCode != 403 && resp.StatusCode != 404 {
 		t.Fatalf("eli, not in the call, reading a track: %d", resp.StatusCode)
 	}
+}
+
+// readTrackRecords reads a Track blob's records and answers each one's event (after its time and flags).
+func readTrackRecords(t *testing.T, store *blobs.Store, id string) [][]byte {
+	t.Helper()
+	data, err := os.ReadFile(store.Root() + "/" + id + ".blob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out [][]byte
+	for len(data) >= 4 {
+		n := int(binary.BigEndian.Uint32(data))
+		rec := data[4 : 4+n]
+		out = append(out, rec[9:])
+		data = data[4+n:]
+	}
+	return out
 }

@@ -7,6 +7,8 @@ package resolver
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	pb "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1"
+	"github.com/chencohensolutions/push-to-talk-server-go/recorder"
 )
 
 // TalkToken is the resolver for the talkToken field.
@@ -100,6 +103,26 @@ func (r *mutationResolver) StopRecordingCall(ctx context.Context, call string, p
 	s := r.Recorder.Stop(call)
 	log.Printf("Call %s: recording stopped by %s", call, by)
 	return r.callRecording(conv.Owner, call, s), nil
+}
+
+// LogCallEvent is the resolver for the logCallEvent field.
+func (r *mutationResolver) LogCallEvent(ctx context.Context, call string, peer *string, group *string, event string) (bool, error) {
+	data, err := base64.StdEncoding.DecodeString(event)
+	if err != nil || len(data) == 0 || len(data) > recorder.MaxEventBytes {
+		return false, coded(pb.SendResult_INVALID.String(), "an event is 1 to %d bytes of base64", recorder.MaxEventBytes)
+	}
+	_, _, by, err := r.inCall(ctx, call, peer, group)
+	if err != nil {
+		return false, err
+	}
+	if _, err := r.Recorder.AppendEvent(call, by, data); err != nil {
+		if errors.Is(err, recorder.ErrNotRecording) {
+			return false, coded(CodeNotRecording, "this call isn't being kept now")
+		}
+		log.Printf("logCallEvent: call %s, %s: %v", call, by, err)
+		return false, fmt.Errorf("the event wasn't kept")
+	}
+	return true, nil
 }
 
 // CallRecording is the resolver for the callRecording field.
