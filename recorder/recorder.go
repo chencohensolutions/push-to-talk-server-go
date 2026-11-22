@@ -1,5 +1,6 @@
-// Package recorder keeps calls without re-encoding them (2026-11-22, hen: every call, kept forever until a way to
-// delete is decided). From a call's first callToken, ptt-server is in the call's LiveKit room as a hidden participant
+// Package recorder keeps calls without re-encoding them, kept forever until a way to delete is decided. 2026-11-22
+// 18:09 (hen): only while someone in the call records it. From a participant's recordCall until stopRecordingCall (or
+// until the device that started it leaves), ptt-server is in the call's LiveKit room as a hidden participant
 // that sends nothing, takes every participant's audio and video (the best video layer), and writes each stream's
 // frames, as they arrive, into a Track blob. The frames stay encrypted end to end with the call's key, which the
 // server never has. The phones in the call download the tracks and decrypt each frame into one Matroska file, a video
@@ -57,6 +58,9 @@ type Recorder struct {
 	Now   func() time.Time
 	// Join connects to a room (lksdk.ConnectToRoomWithToken when nil); tests replace it.
 	Join func(url, token string, cb *lksdk.RoomCallback) (Room, error)
+	// Changed, when set, is told each time a call's recording starts (once the recorder is in the room) or stops, so
+	// everyone in the call can be shown it (serve.go puts it in the room's metadata). It runs on its own goroutine.
+	Changed func(room string, s Status)
 
 	mu    sync.Mutex
 	calls map[string]*recording
@@ -74,17 +78,30 @@ func (r sdkRoom) RemoteParticipantCount() int { return len(r.GetRemoteParticipan
 
 type recording struct {
 	call    string
+	room    string
+	by      string // the participant (user.device) who started it: the recording stops when it leaves
 	conv    Conversation
 	started time.Time
-	room    Room
+	lkRoom  Room
 	stop    chan struct{}
 	stopped bool
 }
 
-// Status is a call's saving: whether it goes on now and when it began.
+// Status is a call's saving: whether it goes on now, when it began and who started it (user.device).
 type Status struct {
 	Recording bool
 	Started   time.Time
+	By        string
+}
+
+func (rec *recording) status() Status {
+	return Status{Recording: !rec.stopped, Started: rec.started, By: rec.by}
+}
+
+func (r *Recorder) changed(rec *recording, s Status) {
+	if r.Changed != nil {
+		go r.Changed(rec.room, s)
+	}
 }
 
 func (r *Recorder) now() time.Time {
@@ -94,19 +111,19 @@ func (r *Recorder) now() time.Time {
 	return time.Now()
 }
 
-// Start begins keeping call (room is its LiveKit room) for conv, or answers the keeping that goes on already. It
-// returns at once: the join and the recording go on in the background, so a call is never held up or failed by the
+// Start begins keeping call (room is its LiveKit room) for conv, started by the participant by (user.device), or
+// answers the keeping that goes on already. It returns at once: the join and the recording go on in the background, so a call is never held up or failed by the
 // recorder. The error is only for a bad token; a join that fails is logged and the recording is forgotten.
-func (r *Recorder) Start(call, room string, conv Conversation) (Status, error) {
+func (r *Recorder) Start(call, room string, conv Conversation, by string) (Status, error) {
 	r.mu.Lock()
 	if r.calls == nil {
 		r.calls = map[string]*recording{}
 	}
 	if rec, ok := r.calls[call]; ok && !rec.stopped {
 		r.mu.Unlock()
-		return Status{Recording: true, Started: rec.started}, nil
+		return rec.status(), nil
 	}
-	rec := &recording{call: call, conv: conv, started: r.now(), stop: make(chan struct{})}
+	rec := &recording{call: call, room: room, by: by, conv: conv, started: r.now(), stop: make(chan struct{})}
 	r.calls[call] = rec
 	r.mu.Unlock()
 
@@ -116,7 +133,7 @@ func (r *Recorder) Start(call, room string, conv Conversation) (Status, error) {
 		return Status{}, err
 	}
 	go r.join(rec, call, room, token)
-	return Status{Recording: true, Started: rec.started}, nil
+	return rec.status(), nil
 }
 
 // join connects the recorder to the call's room in the background and sets the timers.
@@ -130,8 +147,14 @@ func (r *Recorder) join(rec *recording, call, room, token string) {
 				go r.keep(rec, track, track.Codec().MimeType, track.Codec().ClockRate, rp.Identity())
 			},
 		},
-		OnParticipantDisconnected: func(*lksdk.RemoteParticipant) { r.leaveIfEmpty(rec) },
-		OnDisconnected:            func() { r.Stop(call) },
+		OnParticipantDisconnected: func(rp *lksdk.RemoteParticipant) {
+			if rp.Identity() == rec.by { // whoever recorded left: the call isn't recorded any more
+				r.Stop(call)
+				return
+			}
+			r.leaveIfEmpty(rec)
+		},
+		OnDisconnected: func() { r.Stop(call) },
 	}
 	join := r.Join
 	if join == nil {
@@ -150,13 +173,15 @@ func (r *Recorder) join(rec *recording, call, room, token string) {
 		return
 	}
 	r.mu.Lock()
-	rec.room = lr
+	rec.lkRoom = lr
 	stopped := rec.stopped
+	status := rec.status()
 	r.mu.Unlock()
 	if stopped { // stopped while joining
 		lr.Disconnect()
 		return
 	}
+	r.changed(rec, status)
 	go func() {
 		select {
 		case <-rec.stop:
@@ -171,7 +196,7 @@ func (r *Recorder) join(rec *recording, call, room, token string) {
 			r.Stop(call)
 		}
 	}()
-	log.Printf("Recorder: keeping call %s for %s", call, rec.conv.Owner)
+	log.Printf("Recorder: keeping call %s, recorded by %s", call, rec.by)
 }
 
 func (r *Recorder) forget(rec *recording) {
@@ -185,7 +210,7 @@ func (r *Recorder) forget(rec *recording) {
 // leaveIfEmpty stops the saving once nobody but the recorder is in the room.
 func (r *Recorder) leaveIfEmpty(rec *recording) {
 	r.mu.Lock()
-	room := rec.room
+	room := rec.lkRoom
 	r.mu.Unlock()
 	if room != nil && room.RemoteParticipantCount() == 0 {
 		r.Stop(rec.call)
@@ -199,19 +224,21 @@ func (r *Recorder) Stop(call string) Status {
 	if !ok || rec.stopped {
 		r.mu.Unlock()
 		if ok {
-			return Status{Started: rec.started}
+			return rec.status()
 		}
 		return Status{}
 	}
 	rec.stopped = true
 	close(rec.stop)
-	room := rec.room
+	room := rec.lkRoom
+	status := rec.status()
 	r.mu.Unlock()
 	if room != nil {
 		room.Disconnect()
+		r.changed(rec, status) // told only if it was told it started
 	}
 	log.Printf("Recorder: call %s saved", call)
-	return Status{Started: rec.started}
+	return status
 }
 
 // Status is call's saving now.
@@ -222,7 +249,7 @@ func (r *Recorder) Status(call string) Status {
 	if !ok {
 		return Status{}
 	}
-	return Status{Recording: !rec.stopped, Started: rec.started}
+	return rec.status()
 }
 
 // StopAll ends every saving (the server stopping).
