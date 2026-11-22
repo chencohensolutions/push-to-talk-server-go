@@ -48,6 +48,10 @@ message Envelope {
     IDENTITY_KEY_CHANGED = 5;
     // Made by the server: sender_user and the recipient are now paired (both called confirmPair). ciphertext is empty.
     PAIRED = 6;
+    // Made by the server: sender_user changed the group named in group on the server (created it, invited, accepted,
+    // left, removed someone, deleted it), so the phone fetches the groups query again. ciphertext is empty. It only
+    // says the server's list changed: who is in a group is what the owner's devices said, end to end.
+    GROUP_CHANGED = 7;
   }
 
   // Given by the server (32 hex digits); what an Ack names.
@@ -68,6 +72,8 @@ message Envelope {
   // In a Send only, optional: the registration id the sender's session has for this device (from prekeyBundles).
   // When it isn't the device's current one, the Send is refused STALE_DEVICES. 0 skips the check.
   uint32 recipient_registration_id = 10;
+  // Set by the server: the group a SENDER_KEY_MESSAGE was sent to (a group Send), or that a GROUP_CHANGED is about.
+  string group = 11;
 }
 
 message Ack {
@@ -78,6 +84,12 @@ message Ack {
 // of the recipient and one for every other active device of the sender (so all the sender's phones show what was
 // sent): a device that is missing or that isn't active gets the Send refused STALE_DEVICES. A PROVISIONING envelope
 // goes alone.
+//
+// A group Send (group set) holds one SENDER_KEY_MESSAGE envelope with no recipient, encrypted once with the sender's
+// sender key; the server gives a copy to every active device of every member but the sending device, leaving out
+// members who blocked the sender or whom it blocked. group_devices names those devices as the sender knows them (the
+// ones it gave its sender key to); when they aren't exactly the server's, the Send is refused STALE_DEVICES with every
+// member's devices, so the phone gives its sender key to the new ones (over their pairwise sessions) and sends again.
 message Send {
   // Chosen by the device and given back in the SendResult.
   string client_id = 1;
@@ -86,6 +98,11 @@ message Send {
   // push a recipient device without an open /ws gets (docs/messaging.md, "Push"). Unset is PUSH_SYNC. The sender's
   // own other devices always get PUSH_SYNC at most: what their user sent needs no notification.
   PushKind push_kind = 3;
+  // A group Send: the group's id (the groups query). The sender must be a member (NOT_MEMBER otherwise).
+  string group = 4;
+  // In a group Send: the devices the envelope is for, by user, with the registration ids the sender's sessions have
+  // (0 skips that check).
+  repeated UserDevices group_devices = 5;
 }
 
 // The kinds of wake-up a Send asks for. The FCM data message carries only the kind's name ("message", "sync",
@@ -128,12 +145,15 @@ message SendResult {
     TOO_LARGE = 7;
     // A recipient device's queue is full (it hasn't connected for a long time); nothing was queued.
     QUEUE_FULL = 8;
+    // A group Send to a group the sender isn't a member of, or that doesn't exist.
+    NOT_MEMBER = 9;
   }
 
   string client_id = 1;
   Status status = 2;
   repeated string envelope_ids = 3;
-  // With STALE_DEVICES: the active devices of each user the Send addressed (the recipient and the sender).
+  // With STALE_DEVICES: the active devices of each user the Send addressed (the recipient and the sender; in a group
+  // Send, every member the envelope goes to, the sender's user with its other devices).
   repeated UserDevices devices = 4;
   // For the log, in English.
   string detail = 5;

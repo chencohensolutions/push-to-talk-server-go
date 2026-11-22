@@ -14,8 +14,20 @@ func (r *Relay) Send(from store.Device, send *pb.Send) *pb.SendResult {
 		return result
 	}
 	kind := PushKind(send.GetPushKind())
-	for _, e := range send.GetEnvelopes() {
-		to := store.Device{User: e.GetRecipientUser(), Number: int(e.GetRecipientDevice())}
+	var recipients []store.Device
+	if send.GetGroup() != "" {
+		// Accepted: group_devices is exactly the devices the copies went to.
+		for _, list := range send.GetGroupDevices() {
+			for _, d := range list.GetDevices() {
+				recipients = append(recipients, store.Device{User: list.GetUser(), Number: int(d.GetDeviceNumber())})
+			}
+		}
+	} else {
+		for _, e := range send.GetEnvelopes() {
+			recipients = append(recipients, store.Device{User: e.GetRecipientUser(), Number: int(e.GetRecipientDevice())})
+		}
+	}
+	for _, to := range recipients {
 		k := kind
 		if to.User == from.User {
 			// The sender's own devices show what their user sent: nothing to notify of.

@@ -24,6 +24,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/generated"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/resolver"
+	"github.com/chencohensolutions/push-to-talk-server-go/groups"
 	"github.com/chencohensolutions/push-to-talk-server-go/invite"
 	"github.com/chencohensolutions/push-to-talk-server-go/push"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
@@ -123,6 +124,10 @@ func openServer(config auth.AppConfig) (*server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open the pairs: %w", err)
 	}
+	groupBook, err := groups.Open(config.GroupsFile, time.Now)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open the groups: %w", err)
+	}
 	st, err := store.Open(config.DatabaseFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open the database: %w", err)
@@ -130,6 +135,7 @@ func openServer(config auth.AppConfig) (*server, error) {
 	queueTTL := time.Duration(config.QueueDays) * 24 * time.Hour
 	s := &server{config: config, users: users, enrollment: enrollment, book: book, store: st,
 		relay: relay.New(users, enrollment.Registry, st, book, queueTTL, time.Now)}
+	s.relay.Groups = groupBook
 	var sender push.Sender
 	if config.PushOn() {
 		fcm, err := push.LoadFCM(config.FCM.ServiceAccountFile, config.FCM.ProjectID, config.FCM.Endpoint)

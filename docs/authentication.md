@@ -291,6 +291,7 @@ pinned key) at any address. See the client repo's docs.
   "users_file": "users.json",                   // optional (default)
   "devices_file": "devices.json",               // optional (default)
   "pairs_file": "pairs.json",                   // optional (default): pairs and blocks (messaging.md)
+  "groups_file": "groups.json",                 // optional (default): who is in which group (messaging.md)
   "database_file": "ptt.db",                    // optional (default): prekeys and the message queue
   "queue_days": 30,                             // optional (default): how long an envelope waits for its device
   "admin_addr": "127.0.0.1:8082",               // optional (default), must be loopback

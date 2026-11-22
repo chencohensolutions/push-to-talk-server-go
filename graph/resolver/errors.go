@@ -52,3 +52,21 @@ const (
 	// CodeInvalidToken: registerPush with a token that can't be an FCM registration token.
 	CodeInvalidToken = "INVALID_TOKEN"
 )
+
+// Codes of the group fields (groups.graphql).
+const (
+	// CodeNoGroup: no group has this id, or the caller isn't in it.
+	CodeNoGroup = "NO_GROUP"
+	// CodeNotOwner: a change only the group's owner can make.
+	CodeNotOwner = "NOT_OWNER"
+	// CodeNotMember: leaving, or taking out, a user who isn't in the group.
+	CodeNotMember = "NOT_MEMBER"
+	// CodeNotInvited: acceptGroupInvite without an invitation.
+	CodeNotInvited = "NOT_INVITED"
+	// CodeOwnerCantLeave: the owner leaving, or taking itself out; it deletes the group instead.
+	CodeOwnerCantLeave = "OWNER_CANT_LEAVE"
+	// CodeGroupFull: inviting past 50 members and invited.
+	CodeGroupFull = "GROUP_FULL"
+	// CodeTooManyGroups: creating past 200 groups owned.
+	CodeTooManyGroups = "TOO_MANY_GROUPS"
+)

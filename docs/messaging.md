@@ -95,6 +95,41 @@ Who may reach whom is in `pairs.json` (`pairs_file`; package `contacts`, written
 
 Groups (phase 4) will add "shares a group" to who may reach whom.
 
+## Groups
+
+Phase 4 (2026-11-22). Who is in which group is in `groups.json` (`groups_file`; package `groups`, written through a
+temp file and a rename):
+
+```json
+{ "groups": [{ "id": "3f2a…(32 hex)", "owner": "hen", "members": ["hen", "dana"], "invited": ["noa"],
+               "created_at": "…" }] }
+```
+
+The server uses it **only to route**. The group's name and picture, and who its members are as far as the phones are
+concerned (each with their identity key), go end to end in the owner's group changes, signed by the owner's devices.
+A phone gives its sender key only to members the owner's devices named, so a member added by editing `groups.json`
+alone gets copies of group messages it can't open: no reader is added that way (the app's tests check that side).
+
+- `groups` lists the caller's groups (member or invited). `createGroup` makes one with the caller as owner and only
+  member (at most 200 owned). `inviteToGroup(group, user)`: the owner only (`NOT_OWNER`), and only a contact
+  (`NOT_PAIRED`, `BLOCKED`); at most 50 members and invited (`GROUP_FULL`). `acceptGroupInvite` makes an invited user a
+  member (`NOT_INVITED` otherwise). `leaveGroup` leaves or declines; the owner can't (`OWNER_CANT_LEAVE`) and deletes
+  the group with `deleteGroup` instead. `removeFromGroup(group, user)` is the owner taking a member or invited user
+  out. A group the caller isn't in is `NO_GROUP`, so ids can't be probed.
+- After every change the devices of everyone concerned (members, invited, and whoever just left or was taken out)
+  get a `GROUP_CHANGED` envelope made by the server, with `group` set and no ciphertext; the phone fetches `groups`.
+- Members (accepted, not only invited) may fetch each other's `prekeyBundles` and send to each other pairwise without
+  being paired: that is how sender keys are handed out. Blocks still apply. Taken out, that ends at once.
+- **A group Send** (`Send.group`) holds one `SENDER_KEY_MESSAGE` envelope with no recipient, encrypted once. The
+  server copies it to every active device of every member but the sending device, leaving out members who blocked
+  the sender or whom it blocked, with `Envelope.group` set. `Send.group_devices` must name exactly those devices (the
+  ones the sender gave its sender key to; a registration id of 0 skips that check), or the Send is refused
+  `STALE_DEVICES` with each member's devices (sorted by user, the sender's own user with its other devices): the phone
+  gives its sender key to the new devices over their pairwise sessions and sends again. A sender that isn't a member,
+  or a group that doesn't exist, is `NOT_MEMBER`. `push_kind` applies as for any Send.
+- Removing a user (`user remove`) takes it out of every group and deletes the groups it owned, with `GROUP_CHANGED`
+  to the others.
+
 ## /ws
 
 `GET /ws` upgrades to a WebSocket over the same mTLS port, **over HTTP/1.1** (the server offers HTTP/2 for

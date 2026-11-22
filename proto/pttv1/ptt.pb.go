@@ -113,6 +113,10 @@ const (
 	Envelope_IDENTITY_KEY_CHANGED Envelope_Type = 5
 	// Made by the server: sender_user and the recipient are now paired (both called confirmPair). ciphertext is empty.
 	Envelope_PAIRED Envelope_Type = 6
+	// Made by the server: sender_user changed the group named in group on the server (created it, invited, accepted,
+	// left, removed someone, deleted it), so the phone fetches the groups query again. ciphertext is empty. It only
+	// says the server's list changed: who is in a group is what the owner's devices said, end to end.
+	Envelope_GROUP_CHANGED Envelope_Type = 7
 )
 
 // Enum value maps for Envelope_Type.
@@ -125,6 +129,7 @@ var (
 		4: "PROVISIONING",
 		5: "IDENTITY_KEY_CHANGED",
 		6: "PAIRED",
+		7: "GROUP_CHANGED",
 	}
 	Envelope_Type_value = map[string]int32{
 		"TYPE_UNSPECIFIED":     0,
@@ -134,6 +139,7 @@ var (
 		"PROVISIONING":         4,
 		"IDENTITY_KEY_CHANGED": 5,
 		"PAIRED":               6,
+		"GROUP_CHANGED":        7,
 	}
 )
 
@@ -186,6 +192,8 @@ const (
 	SendResult_TOO_LARGE SendResult_Status = 7
 	// A recipient device's queue is full (it hasn't connected for a long time); nothing was queued.
 	SendResult_QUEUE_FULL SendResult_Status = 8
+	// A group Send to a group the sender isn't a member of, or that doesn't exist.
+	SendResult_NOT_MEMBER SendResult_Status = 9
 )
 
 // Enum value maps for SendResult_Status.
@@ -200,6 +208,7 @@ var (
 		6: "INVALID",
 		7: "TOO_LARGE",
 		8: "QUEUE_FULL",
+		9: "NOT_MEMBER",
 	}
 	SendResult_Status_value = map[string]int32{
 		"STATUS_UNSPECIFIED": 0,
@@ -211,6 +220,7 @@ var (
 		"INVALID":            6,
 		"TOO_LARGE":          7,
 		"QUEUE_FULL":         8,
+		"NOT_MEMBER":         9,
 	}
 )
 
@@ -448,8 +458,10 @@ type Envelope struct {
 	// In a Send only, optional: the registration id the sender's session has for this device (from prekeyBundles).
 	// When it isn't the device's current one, the Send is refused STALE_DEVICES. 0 skips the check.
 	RecipientRegistrationId uint32 `protobuf:"varint,10,opt,name=recipient_registration_id,json=recipientRegistrationId,proto3" json:"recipient_registration_id,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	// Set by the server: the group a SENDER_KEY_MESSAGE was sent to (a group Send), or that a GROUP_CHANGED is about.
+	Group         string `protobuf:"bytes,11,opt,name=group,proto3" json:"group,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Envelope) Reset() {
@@ -552,6 +564,13 @@ func (x *Envelope) GetRecipientRegistrationId() uint32 {
 	return 0
 }
 
+func (x *Envelope) GetGroup() string {
+	if x != nil {
+		return x.Group
+	}
+	return ""
+}
+
 type Ack struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Ids           []string               `protobuf:"bytes,1,rep,name=ids,proto3" json:"ids,omitempty"`
@@ -600,6 +619,12 @@ func (x *Ack) GetIds() []string {
 // of the recipient and one for every other active device of the sender (so all the sender's phones show what was
 // sent): a device that is missing or that isn't active gets the Send refused STALE_DEVICES. A PROVISIONING envelope
 // goes alone.
+//
+// A group Send (group set) holds one SENDER_KEY_MESSAGE envelope with no recipient, encrypted once with the sender's
+// sender key; the server gives a copy to every active device of every member but the sending device, leaving out
+// members who blocked the sender or whom it blocked. group_devices names those devices as the sender knows them (the
+// ones it gave its sender key to); when they aren't exactly the server's, the Send is refused STALE_DEVICES with every
+// member's devices, so the phone gives its sender key to the new ones (over their pairwise sessions) and sends again.
 type Send struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Chosen by the device and given back in the SendResult.
@@ -608,7 +633,12 @@ type Send struct {
 	// What a wake-up for this Send is, chosen by the sending phone (the server can't read the ciphertext): which FCM
 	// push a recipient device without an open /ws gets (docs/messaging.md, "Push"). Unset is PUSH_SYNC. The sender's
 	// own other devices always get PUSH_SYNC at most: what their user sent needs no notification.
-	PushKind      PushKind `protobuf:"varint,3,opt,name=push_kind,json=pushKind,proto3,enum=ptt.v1.PushKind" json:"push_kind,omitempty"`
+	PushKind PushKind `protobuf:"varint,3,opt,name=push_kind,json=pushKind,proto3,enum=ptt.v1.PushKind" json:"push_kind,omitempty"`
+	// A group Send: the group's id (the groups query). The sender must be a member (NOT_MEMBER otherwise).
+	Group string `protobuf:"bytes,4,opt,name=group,proto3" json:"group,omitempty"`
+	// In a group Send: the devices the envelope is for, by user, with the registration ids the sender's sessions have
+	// (0 skips that check).
+	GroupDevices  []*UserDevices `protobuf:"bytes,5,rep,name=group_devices,json=groupDevices,proto3" json:"group_devices,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -664,12 +694,27 @@ func (x *Send) GetPushKind() PushKind {
 	return PushKind_PUSH_KIND_UNSPECIFIED
 }
 
+func (x *Send) GetGroup() string {
+	if x != nil {
+		return x.Group
+	}
+	return ""
+}
+
+func (x *Send) GetGroupDevices() []*UserDevices {
+	if x != nil {
+		return x.GroupDevices
+	}
+	return nil
+}
+
 type SendResult struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	ClientId    string                 `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	Status      SendResult_Status      `protobuf:"varint,2,opt,name=status,proto3,enum=ptt.v1.SendResult_Status" json:"status,omitempty"`
 	EnvelopeIds []string               `protobuf:"bytes,3,rep,name=envelope_ids,json=envelopeIds,proto3" json:"envelope_ids,omitempty"`
-	// With STALE_DEVICES: the active devices of each user the Send addressed (the recipient and the sender).
+	// With STALE_DEVICES: the active devices of each user the Send addressed (the recipient and the sender; in a group
+	// Send, every member the envelope goes to, the sender's user with its other devices).
 	Devices []*UserDevices `protobuf:"bytes,4,rep,name=devices,proto3" json:"devices,omitempty"`
 	// For the log, in English.
 	Detail        string `protobuf:"bytes,5,opt,name=detail,proto3" json:"detail,omitempty"`
@@ -1050,7 +1095,7 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\vqueue_empty\x18\a \x01(\v2\x12.ptt.v1.QueueEmptyH\x00R\n" +
 	"queueEmpty\x12.\n" +
 	"\bpresence\x18\b \x01(\v2\x10.ptt.v1.PresenceH\x00R\bpresenceB\x06\n" +
-	"\x04kind\"\x99\x04\n" +
+	"\x04kind\"\xc2\x04\n" +
 	"\bEnvelope\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
 	"\vsender_user\x18\x02 \x01(\tR\n" +
@@ -1065,7 +1110,8 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\x10server_timestamp\x18\b \x01(\x03R\x0fserverTimestamp\x12#\n" +
 	"\rrouting_token\x18\t \x01(\tR\froutingToken\x12:\n" +
 	"\x19recipient_registration_id\x18\n" +
-	" \x01(\rR\x17recipientRegistrationId\"\x8d\x01\n" +
+	" \x01(\rR\x17recipientRegistrationId\x12\x14\n" +
+	"\x05group\x18\v \x01(\tR\x05group\"\xa0\x01\n" +
 	"\x04Type\x12\x14\n" +
 	"\x10TYPE_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0ePREKEY_MESSAGE\x10\x01\x12\v\n" +
@@ -1074,20 +1120,23 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\fPROVISIONING\x10\x04\x12\x18\n" +
 	"\x14IDENTITY_KEY_CHANGED\x10\x05\x12\n" +
 	"\n" +
-	"\x06PAIRED\x10\x06\"\x17\n" +
+	"\x06PAIRED\x10\x06\x12\x11\n" +
+	"\rGROUP_CHANGED\x10\a\"\x17\n" +
 	"\x03Ack\x12\x10\n" +
-	"\x03ids\x18\x01 \x03(\tR\x03ids\"\x82\x01\n" +
+	"\x03ids\x18\x01 \x03(\tR\x03ids\"\xd2\x01\n" +
 	"\x04Send\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12.\n" +
 	"\tenvelopes\x18\x02 \x03(\v2\x10.ptt.v1.EnvelopeR\tenvelopes\x12-\n" +
-	"\tpush_kind\x18\x03 \x01(\x0e2\x10.ptt.v1.PushKindR\bpushKind\"\xe5\x02\n" +
+	"\tpush_kind\x18\x03 \x01(\x0e2\x10.ptt.v1.PushKindR\bpushKind\x12\x14\n" +
+	"\x05group\x18\x04 \x01(\tR\x05group\x128\n" +
+	"\rgroup_devices\x18\x05 \x03(\v2\x13.ptt.v1.UserDevicesR\fgroupDevices\"\xf5\x02\n" +
 	"\n" +
 	"SendResult\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x121\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x19.ptt.v1.SendResult.StatusR\x06status\x12!\n" +
 	"\fenvelope_ids\x18\x03 \x03(\tR\venvelopeIds\x12-\n" +
 	"\adevices\x18\x04 \x03(\v2\x13.ptt.v1.UserDevicesR\adevices\x12\x16\n" +
-	"\x06detail\x18\x05 \x01(\tR\x06detail\"\x9c\x01\n" +
+	"\x06detail\x18\x05 \x01(\tR\x06detail\"\xac\x01\n" +
 	"\x06Status\x12\x16\n" +
 	"\x12STATUS_UNSPECIFIED\x10\x00\x12\f\n" +
 	"\bACCEPTED\x10\x01\x12\x0e\n" +
@@ -1099,7 +1148,9 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\aINVALID\x10\x06\x12\r\n" +
 	"\tTOO_LARGE\x10\a\x12\x0e\n" +
 	"\n" +
-	"QUEUE_FULL\x10\b\"Q\n" +
+	"QUEUE_FULL\x10\b\x12\x0e\n" +
+	"\n" +
+	"NOT_MEMBER\x10\t\"Q\n" +
 	"\vUserDevices\x12\x12\n" +
 	"\x04user\x18\x01 \x01(\tR\x04user\x12.\n" +
 	"\adevices\x18\x02 \x03(\v2\x14.ptt.v1.ActiveDeviceR\adevices\"\\\n" +
@@ -1166,14 +1217,15 @@ var file_proto_ptt_proto_depIdxs = []int32{
 	1,  // 8: ptt.v1.Envelope.type:type_name -> ptt.v1.Envelope.Type
 	4,  // 9: ptt.v1.Send.envelopes:type_name -> ptt.v1.Envelope
 	0,  // 10: ptt.v1.Send.push_kind:type_name -> ptt.v1.PushKind
-	2,  // 11: ptt.v1.SendResult.status:type_name -> ptt.v1.SendResult.Status
-	8,  // 12: ptt.v1.SendResult.devices:type_name -> ptt.v1.UserDevices
-	9,  // 13: ptt.v1.UserDevices.devices:type_name -> ptt.v1.ActiveDevice
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	8,  // 11: ptt.v1.Send.group_devices:type_name -> ptt.v1.UserDevices
+	2,  // 12: ptt.v1.SendResult.status:type_name -> ptt.v1.SendResult.Status
+	8,  // 13: ptt.v1.SendResult.devices:type_name -> ptt.v1.UserDevices
+	9,  // 14: ptt.v1.UserDevices.devices:type_name -> ptt.v1.ActiveDevice
+	15, // [15:15] is the sub-list for method output_type
+	15, // [15:15] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_proto_ptt_proto_init() }

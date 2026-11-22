@@ -9,6 +9,7 @@
   "users_file": "users.json",
   "devices_file": "devices.json",
   "pairs_file": "pairs.json",
+  "groups_file": "groups.json",
   "database_file": "ptt.db",
   "queue_days": 30,
   "admin_addr": "127.0.0.1:8082",

@@ -21,7 +21,8 @@ The docs describe what is built, and must be kept in step with the code in the s
   registry, revocation, the admin API, the public API.
 - [docs/discovery.md](docs/discovery.md): the server's id and fingerprint, its addresses, the sealed DHT record
   (salt `ptt-server/v1`), how a phone reconnects, and port mapping (package `portmap`, TCP and UDP).
-- [docs/messaging.md](docs/messaging.md): identity keys and prekeys (`uploadPrekeys`, `prekeyBundles`,
+- [docs/messaging.md](docs/messaging.md): groups (`groups.json`, the group mutations, `GROUP_CHANGED`, the group
+  Send), identity keys and prekeys (`uploadPrekeys`, `prekeyBundles`,
   `replaceIdentityKey`), pairing tokens and `pairs.json` (`confirmPair`, `unpair`, `block`, `contacts`), the `/ws`
   protocol (`proto/ptt.proto`) with its Send rules (NOT_PAIRED, STALE_DEVICES, BLOCKED), push (`registerPush`,
   `push_kind`, the FCM data message, priorities, debounce), presence (`presence`, the `Presence` frame,
@@ -33,8 +34,7 @@ The docs describe what is built, and must be kept in step with the code in the s
 **Phases.** Phase 1: enroll and find the server. Phase 2 (built too): identity keys and prekeys, `/ws` with the
 message queue, pairing, linking a phone, invites (one link and its passcode, sent from the inviter's phone, that
 enroll a friend and pair them; the server sends no email). Phase 3, server side built: `registerPush` (`fcm_token`
-and `notifications_enabled` in the registry), the FCM sender (package `push`), `Send.push_kind`, presence. Then 4
-groups; 5a clips and floor control; 5b LiveKit (`/rtc`, `talkToken`, UDP 7882 and TCP 7881 in `serverPorts`).
+and `notifications_enabled` in the registry), the FCM sender (package `push`), `Send.push_kind`, presence. Phase 4, server side built: groups (`groups.json`, routing only; the group Send). Then 5a clips and floor control; 5b LiveKit (`/rtc`, `talkToken`, UDP 7882 and TCP 7881 in `serverPorts`).
 
 **Platforms.** The owner's server is a Windows PC, development happens on a Mac, and the server should run on
 Windows, macOS and Linux: no cgo, Windows-safe file names, per-OS files (`*_windows.go`, `*_other.go`). CI runs
@@ -67,7 +67,7 @@ bin/protoc --plugin=protoc-gen-go=bin/protoc-gen-go --go_out=. \
 
 - The admin commands read `config.json` and `admin.token` in the current folder (or beside the program), so run them
   from the server folder.
-- `config.json`, `certs/`, `users.json`, `devices.json`, `devices.revoked.json`, `pairs.json`, `invites.json`,
+- `config.json`, `certs/`, `users.json`, `devices.json`, `devices.revoked.json`, `pairs.json`, `groups.json`, `invites.json`,
   `ptt.db`, `admin.token` and the FCM service-account key (`*-firebase-adminsdk-*.json`) are gitignored local state.
   `config.example.json` shows the shape. A second server for testing runs from its own folder with its own `port`
   and `admin_addr`, and `"port_mapping": false` so it leaves the router to the real one (docs/install.md).
@@ -109,8 +109,9 @@ fields); introspection is blocked too. Resolvers get the user with `auth.FromCon
   one: a new user named from the email or the display name and enrolled (`enrollWithInvite`), or an enrolled one
   (`acceptInvite`); both get a pairing token of the inviter. The server sends no mail: the inviter's phone sends the
   link and passcode (`smtp` and `gmail` in an old config.json are taken and ignored).
+- `groups`: `groups.json` (owner, members, invited), used only to route; the phones trust the owner's signed changes.
 - `contacts`: `pairs.json` (pairs, pairings waiting for both confirmations, blocks) and the pairing tokens (memory).
-- `relay`: who may reach whom, the Send checks (`route`; `Send` routes, then pushes), the active devices, `/ws`
+- `relay`: who may reach whom, the Send checks (`route`; `Send` routes, then pushes; `groups.go`, the group Send and `GROUP_CHANGED`), the active devices, `/ws`
   (`ServeHTTP`, github.com/coder/websocket), presence (`presence.go`: online users, last seen, the Presence frames),
   `Revoked` (closes sockets, drops keys and queues) and the hourly `Sweep`.
 - `push`: FCM's HTTP v1 API (`fcm.go`: the service account, the RS256 JWT sign-in, standard library only) and the

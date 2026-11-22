@@ -96,6 +96,17 @@ func (EnrollmentRejected) IsEnrollmentPreviewResult() {}
 
 func (EnrollmentRejected) IsEnrollDeviceResult() {}
 
+type Group struct {
+	// 32 hex digits; what a group Send names.
+	ID    string `json:"id"`
+	Owner string `json:"owner"`
+	// The users who accepted, by name, the owner first, in the order they joined.
+	Members []string `json:"members"`
+	// The users invited who haven't answered, by name.
+	Invited   []string  `json:"invited"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 type Invite struct {
 	// A short id, to cancel it by.
 	ID string `json:"id"`

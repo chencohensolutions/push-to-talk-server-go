@@ -19,6 +19,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	"github.com/chencohensolutions/push-to-talk-server-go/contacts"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
+	"github.com/chencohensolutions/push-to-talk-server-go/groups"
 	pb "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1"
 	"github.com/chencohensolutions/push-to-talk-server-go/push"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
@@ -44,6 +45,8 @@ type Relay struct {
 	Registry *enroll.Registry
 	Store    *store.Store
 	Book     *contacts.Book
+	// Who is in which group (groups.json); nil is no groups.
+	Groups *groups.Book
 	// How long an envelope no device acknowledged is kept (queue_days).
 	QueueTTL time.Duration
 	Now      func() time.Time
@@ -125,8 +128,9 @@ func sortedNumbers(m map[int]int) []int {
 	return out
 }
 
-// MayFetchBundles says whether caller may fetch target's prekey bundles: its own user, a contact neither blocked, or
-// with an unused pairing token of target (counted: a token allows a few fetches).
+// MayFetchBundles says whether caller may fetch target's prekey bundles: its own user, a contact or a member of a
+// group caller is in (neither blocked the other), or with an unused pairing token of target (counted: a token allows
+// a few fetches).
 func (r *Relay) MayFetchBundles(caller, target, routingToken string) error {
 	if r.Users.Find(target) == nil {
 		return UnknownUser
@@ -137,7 +141,7 @@ func (r *Relay) MayFetchBundles(caller, target, routingToken string) error {
 	if r.Book.Blocked(caller, target) {
 		return Blocked
 	}
-	if r.Book.Paired(caller, target) {
+	if r.Book.Paired(caller, target) || r.ShareGroup(caller, target) {
 		return nil
 	}
 	if routingToken != "" && r.Book.TokenFetch(routingToken, target) {
@@ -186,6 +190,9 @@ func (r *Relay) route(from store.Device, send *pb.Send) *pb.SendResult {
 		result.Detail = fmt.Sprintf(format, args...)
 		log.Printf("Send from %s.%d refused: %s: %s", from.User, from.Number, status, result.Detail)
 		return result
+	}
+	if send.GetGroup() != "" {
+		return r.routeGroup(from, send, result, refuse)
 	}
 	envelopes := send.GetEnvelopes()
 	if len(envelopes) == 0 {
@@ -247,7 +254,7 @@ func (r *Relay) route(from store.Device, send *pb.Send) *pb.SendResult {
 		if r.Book.Blocked(from.User, other) {
 			return refuse(pb.SendResult_BLOCKED, "%s and %s", from.User, other)
 		}
-		if !r.Book.Paired(from.User, other) {
+		if !r.Book.Paired(from.User, other) && !r.ShareGroup(from.User, other) {
 			// A pair request: every envelope for the recipient carries the same unused token of the recipient.
 			for _, e := range envelopes {
 				if e.GetRecipientUser() != other {
@@ -321,6 +328,11 @@ func (r *Relay) route(from store.Device, send *pb.Send) *pb.SendResult {
 
 // queue stores the envelopes of an accepted Send and wakes the recipients' connections.
 func (r *Relay) queue(from store.Device, envelopes []*pb.Envelope, result *pb.SendResult) *pb.SendResult {
+	return r.queueIn(from, "", envelopes, result)
+}
+
+// queueIn is queue for envelopes of a group Send (group is its id; "" for any other Send).
+func (r *Relay) queueIn(from store.Device, group string, envelopes []*pb.Envelope, result *pb.SendResult) *pb.SendResult {
 	now := r.Now()
 	queued := make([]store.Queued, 0, len(envelopes))
 	for _, e := range envelopes {
@@ -333,6 +345,7 @@ func (r *Relay) queue(from store.Device, envelopes []*pb.Envelope, result *pb.Se
 			Type:            e.GetType(),
 			Ciphertext:      e.GetCiphertext(),
 			ServerTimestamp: now.UnixMilli(),
+			Group:           group,
 		}
 		frame, err := proto.Marshal(&pb.Frame{Kind: &pb.Frame_Envelope{Envelope: out}})
 		if err != nil {
@@ -414,6 +427,7 @@ func (r *Relay) Revoked(user string) {
 		if err := r.Book.RemoveUser(user); err != nil {
 			log.Printf("Forgetting the contacts of %s: %v", user, err)
 		}
+		r.removeFromGroups(user)
 		return
 	}
 	numbers := map[int]bool{}

@@ -35,6 +35,8 @@ type AppConfig struct {
 	EnrolledOnly bool `json:"enrolled_only"`
 	// Pairs and blocks (default pairs.json): who may send to whom (docs/messaging.md).
 	PairsFile string `json:"pairs_file"`
+	// Who is in which group (default groups.json): routing for group messages (docs/messaging.md, "Groups").
+	GroupsFile string `json:"groups_file"`
 	// The SQLite database (default ptt.db): the devices' public prekeys and the message queue.
 	DatabaseFile string `json:"database_file"`
 	// Days an envelope waits in the queue for a device that doesn't take it (default 30).
@@ -75,6 +77,7 @@ const (
 	DefaultUsersFile      = "users.json"
 	DefaultDevicesFile    = "devices.json"
 	DefaultPairsFile      = "pairs.json"
+	DefaultGroupsFile     = "groups.json"
 	DefaultInvitesFile    = "invites.json"
 	DefaultDatabaseFile   = "ptt.db"
 	DefaultQueueDays      = 30
@@ -136,6 +139,9 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.PairsFile == "" {
 		c.PairsFile = DefaultPairsFile
+	}
+	if c.GroupsFile == "" {
+		c.GroupsFile = DefaultGroupsFile
 	}
 	if c.InvitesFile == "" {
 		c.InvitesFile = DefaultInvitesFile
