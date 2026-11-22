@@ -438,7 +438,7 @@ func setupLiveKit(config auth.AppConfig) error {
 		if err != nil {
 			return fmt.Errorf("livekit url %s names no port", l.URL)
 		}
-		if err := writeNew(l.ConfigFile, []byte(livekit.ConfigYAML(port, l.TCPPort, l.UDPPort, l.KeysFile))); err != nil {
+		if err := writeNew(l.ConfigFile, []byte(livekit.ConfigYAML(port, l.TCPPort, l.UDPPort))); err != nil {
 			return err
 		}
 		fmt.Printf("%s: written (signalling on %s, media on UDP %d and TCP %d)\n", l.ConfigFile, l.URL, l.UDPPort, l.TCPPort)

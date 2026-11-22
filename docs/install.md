@@ -108,8 +108,11 @@ server runs as before and talk goes by the clip path only.
   `tcp_port` (7881), `udp_port` (7882).
 - **`ptt-server setup`** (run it again after adding `"livekit"`) makes `livekit.keys`, LiveKit's API key and secret
   as `key: secret` (a secret, gitignored, never in chat), and `livekit.yaml`: signalling on `127.0.0.1:7880`, media on
-  TCP 7881 and UDP 7882, `use_external_ip: true` (LiveKit finds the public address by STUN), `key_file:
-  livekit.keys`. Files already there are kept.
+  TCP 7881 and UDP 7882, `use_external_ip: true` (LiveKit finds the public address by STUN). Files already there are kept.
+  `livekit.yaml` holds no keys: ptt-server gives LiveKit the ones in `livekit.keys` in the `LIVEKIT_KEYS`
+  environment variable when it starts it. (Not `key_file`: on Windows LiveKit refuses any key file, because Go
+  reports every file there as readable by others. A `livekit.yaml` from before 2026-11-22 names `key_file:
+  livekit.keys`; delete that line. If you start LiveKit yourself, set `LIVEKIT_KEYS` to the line in `livekit.keys`.)
 - **The program**: download livekit-server from LiveKit's GitHub releases (1.13.x at the plan's review; there are
   Windows, macOS and Linux builds; it is Go and also builds from source) and put it beside ptt-server. Its log lines
   go into ptt-server's log, prefixed `LiveKit:`.

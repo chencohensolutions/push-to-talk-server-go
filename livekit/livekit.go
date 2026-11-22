@@ -249,14 +249,16 @@ func (c *Client) RemoveEverywhere(ctx context.Context, gone func(identity string
 }
 
 // Run keeps livekit-server (binary, with its config file) running until ctx ends, starting it again after it exits:
-// at once the first time, then after a pause that grows to a minute.
-func Run(ctx context.Context, binary, configFile string) {
+// at once the first time, then after a pause that grows to a minute. The keys go to it in LIVEKIT_KEYS, not through
+// key_file: on Windows LiveKit refuses any key file, since Go reports every file there as readable by others.
+func Run(ctx context.Context, binary, configFile string, keys Keys) {
 	wait := time.Second
 	for {
 		started := time.Now()
 		cmd := exec.CommandContext(ctx, binary, "--config", configFile)
 		cmd.Stdout = logWriter{}
 		cmd.Stderr = logWriter{}
+		cmd.Env = append(os.Environ(), "LIVEKIT_KEYS="+keys.Key+": "+keys.Secret)
 		log.Printf("LiveKit: starting %s --config %s", binary, configFile)
 		err := cmd.Run()
 		if ctx.Err() != nil {
@@ -288,10 +290,12 @@ func (logWriter) Write(p []byte) (int, error) {
 }
 
 // ConfigYAML is the livekit.yaml setup writes: signalling on loopback only (phones reach it through ptt-server's
-// /rtc), media on TCP 7881 and UDP 7882, the public IP found by STUN, the keys in keyFile.
-func ConfigYAML(httpPort, tcpPort, udpPort int, keyFile string) string {
+// /rtc), media on TCP 7881 and UDP 7882, the public IP found by STUN. It holds no keys: ptt-server passes them in
+// LIVEKIT_KEYS when it starts LiveKit (see Run).
+func ConfigYAML(httpPort, tcpPort, udpPort int) string {
 	return fmt.Sprintf(`# LiveKit's config, written by ptt-server setup (docs/install.md, "LiveKit").
 # Phones reach signalling only through ptt-server's /rtc (mTLS); media comes straight here.
+# The API key and secret aren't here: ptt-server passes livekit.keys to LiveKit in LIVEKIT_KEYS.
 port: %d
 bind_addresses:
   - 127.0.0.1
@@ -299,8 +303,7 @@ rtc:
   tcp_port: %d
   udp_port: %d
   use_external_ip: true
-key_file: %s
 logging:
   level: info
-`, httpPort, tcpPort, udpPort, keyFile)
+`, httpPort, tcpPort, udpPort)
 }

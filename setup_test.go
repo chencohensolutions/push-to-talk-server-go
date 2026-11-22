@@ -79,7 +79,7 @@ func TestSetupNewServer(t *testing.T) {
 		t.Fatalf("LiveKit's keys: %v", err)
 	}
 	if yaml, err := os.ReadFile(config.LiveKit.ConfigFile); err != nil || !strings.Contains(string(yaml), "udp_port: 7882") ||
-		!strings.Contains(string(yaml), "key_file: livekit.keys") {
+		strings.Contains(string(yaml), "key_file") {
 		t.Fatalf("livekit.yaml: %s %v", yaml, err)
 	}
 	if ports, _ := serverPorts(config); len(ports) != 3 || !ports[1].Exact || ports[1].Port != 7882 {

@@ -90,7 +90,7 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	}
 	go s.relay.Run(running)
 	if binary := liveKitBinary(config); binary != "" {
-		go livekit.Run(running, binary, config.LiveKit.ConfigFile)
+		go livekit.Run(running, binary, config.LiveKit.ConfigFile, *s.liveKeys)
 	}
 	go serveAdmin(s)
 	go func() {
