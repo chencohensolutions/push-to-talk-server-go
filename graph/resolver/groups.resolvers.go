@@ -92,6 +92,7 @@ func (r *mutationResolver) LeaveGroup(ctx context.Context, group string) (bool, 
 	log.Printf("%s left group %s", d.User, g.ID)
 	r.Relay.AnnounceGroup(g, d, d.User)
 	r.Relay.LeaveRoom(livekit.GroupRoom(g.ID), d.User)
+	r.Relay.LeaveCalls(d.User, "", g.ID)
 	return true, nil
 }
 
@@ -111,6 +112,7 @@ func (r *mutationResolver) RemoveFromGroup(ctx context.Context, group string, us
 	log.Printf("%s took %s out of group %s", d.User, user, g.ID)
 	r.Relay.AnnounceGroup(g, d, user)
 	r.Relay.LeaveRoom(livekit.GroupRoom(g.ID), user)
+	r.Relay.LeaveCalls(user, "", g.ID)
 	return groupModel(g), nil
 }
 
@@ -131,6 +133,7 @@ func (r *mutationResolver) DeleteGroup(ctx context.Context, group string) (bool,
 	r.Relay.AnnounceGroup(groups.Group{ID: g.ID}, d, g.Everyone()...)
 	for _, user := range g.Members {
 		r.Relay.LeaveRoom(livekit.GroupRoom(g.ID), user)
+		r.Relay.LeaveCalls(user, "", g.ID)
 	}
 	return true, nil
 }

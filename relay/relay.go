@@ -73,13 +73,15 @@ type Relay struct {
 	talkMu sync.Mutex
 	floors map[string]*burst
 	bursts map[string]*burst
+	// Calls (phase 6) by id: their rooms and conversations.
+	calls map[string]call
 }
 
 // New is a relay over these stores.
 func New(users *auth.Users, registry *enroll.Registry, st *store.Store, book *contacts.Book, queueTTL time.Duration, now func() time.Time) *Relay {
 	return &Relay{Users: users, Registry: registry, Store: st, Book: book, QueueTTL: queueTTL, Now: now,
 		conns: map[store.Device]*conn{}, online: map[string]bool{}, lastSeen: map[string]time.Time{},
-		floors: map[string]*burst{}, bursts: map[string]*burst{}}
+		floors: map[string]*burst{}, bursts: map[string]*burst{}, calls: map[string]call{}}
 }
 
 // Refusal is why the relay won't route between two users, named as SendResult.Status and the GraphQL error codes.

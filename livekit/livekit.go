@@ -71,6 +71,7 @@ type Grant struct {
 	RoomJoin       bool   `json:"roomJoin,omitempty"`
 	RoomAdmin      bool   `json:"roomAdmin,omitempty"`
 	RoomList       bool   `json:"roomList,omitempty"`
+	RoomCreate     bool   `json:"roomCreate,omitempty"`
 	CanPublish     *bool  `json:"canPublish,omitempty"`
 	CanSubscribe   *bool  `json:"canSubscribe,omitempty"`
 	CanPublishData *bool  `json:"canPublishData,omitempty"`
@@ -119,6 +120,12 @@ func PairRoom(a, b string) string {
 	sum := sha256.Sum256([]byte("ptt-room/v1|" + a + "|" + b))
 	return "u-" + hex.EncodeToString(sum[:16])
 }
+
+// CallRoom names a call's room: each call has its own, with a fresh media key in its encrypted invite.
+func CallRoom(call string) string { return "c-" + call }
+
+// MaxCallParticipants is the most devices in one video call (the plan's first build: 8).
+const MaxCallParticipants = 8
 
 // Client calls LiveKit's room API.
 type Client struct {
@@ -174,6 +181,12 @@ func (c *Client) Remove(ctx context.Context, room, identity string) error {
 		return nil
 	}
 	return err
+}
+
+// CreateRoom makes room (or finds it made) with a cap on its participants and a short life once empty.
+func (c *Client) CreateRoom(ctx context.Context, room string, maxParticipants int) error {
+	return c.call(ctx, "CreateRoom", Grant{RoomCreate: true}, map[string]any{"name": room,
+		"max_participants": maxParticipants, "empty_timeout": 60}, nil)
 }
 
 // Rooms is the names of the rooms open now.

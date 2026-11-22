@@ -305,6 +305,22 @@ LiveKit at once and skips the clip stream.
   every room. Being in the same group's room, two members who blocked each other still share it: their phones
   don't play each other.
 
+## Calls
+
+Phase 6, server side (2026-11-22). A video call is signalled end to end: the caller's phone sends an encrypted call
+invite (an ordinary Send with `push_kind` `PUSH_CALL`, high priority, kept 30 seconds) that carries a new call id and
+the call's fresh media key; answers, hang-ups and "Recording" go the same way. The server adds only the room:
+
+- **`callToken(call, peer | group)`**: `call` is the 32 hex digits the caller's phone made. After the same checks as
+  talking in that conversation, the server makes the call's own LiveKit room, `c-<call id>`, with at most 8 devices
+  and a short life once empty, and signs a token for it as for `talkToken`. The first callToken binds the id to its
+  conversation; one from another conversation is `INVALID`. Calls are remembered in memory for a day.
+- Taken out of the group, unpaired or blocked: out of that conversation's call rooms at once, as from its talk room;
+  revoked or removed: out of every room.
+- **Saving calls** happens on the phones: with Save calls on, a phone records what it shows and plays (it has the
+  key; the server and LiveKit never do), and tells the others in the call so they show the Recording badge. Nothing
+  of a call is stored on the server.
+
 ## Blobs
 
 Clips, voice messages and attachments are files of ciphertext in the blobs folder (`blob_dir`, default `blobs`; package

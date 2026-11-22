@@ -76,3 +76,59 @@ func (r *Relay) leaveRooms(user string, exists bool, enrolled []int) {
 		}
 	}()
 }
+
+// call is a call's room and its conversation, kept in memory so that leaving the conversation leaves its calls too.
+type call struct {
+	room    string
+	group   string
+	pair    string // floorKey of a one-to-one conversation
+	created time.Time
+}
+
+// callTTL is how long a call's conversation is remembered (calls end long before; LiveKit closes an empty room).
+const callTTL = 24 * time.Hour
+
+// CallRoom is the room of call id in the conversation of from with peer or group, after the same checks as talking
+// there. A call id is bound to its conversation by whoever names it first; another conversation can't take it.
+func (r *Relay) CallRoom(from store.Device, id, peer, group string) (string, pb.SendResult_Status, string) {
+	if _, status, detail := r.TalkRoom(from, peer, group); status != 0 {
+		return "", status, detail
+	}
+	key := floorKey(from.User, peer, group)
+	now := r.Now()
+	r.talkMu.Lock()
+	defer r.talkMu.Unlock()
+	for k, c := range r.calls {
+		if now.Sub(c.created) > callTTL {
+			delete(r.calls, k)
+		}
+	}
+	if c, ok := r.calls[id]; ok {
+		if c.group != group || (group == "" && c.pair != key) {
+			return "", pb.SendResult_INVALID, "this call id belongs to another conversation"
+		}
+		return c.room, 0, ""
+	}
+	c := call{room: livekit.CallRoom(id), group: group, created: now}
+	if group == "" {
+		c.pair = key
+	}
+	r.calls[id] = c
+	return c.room, 0, ""
+}
+
+// LeaveCalls takes user's devices out of the calls of group, or of the pair of user and peer.
+func (r *Relay) LeaveCalls(user, peer, group string) {
+	key := floorKey(user, peer, group)
+	r.talkMu.Lock()
+	var rooms []string
+	for _, c := range r.calls {
+		if (group != "" && c.group == group) || (group == "" && c.pair == key) {
+			rooms = append(rooms, c.room)
+		}
+	}
+	r.talkMu.Unlock()
+	for _, room := range rooms {
+		r.LeaveRoom(room, user)
+	}
+}

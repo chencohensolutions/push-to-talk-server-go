@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +29,7 @@ type fakeLiveKit struct {
 	mu      sync.Mutex
 	rtc     []string // paths and queries that reached /rtc
 	removed []string // "room identity"
+	created []string // "room max_participants"
 }
 
 func newFakeLiveKit(t *testing.T) *fakeLiveKit {
@@ -47,6 +49,18 @@ func newFakeLiveKit(t *testing.T) *fakeLiveKit {
 			var in struct{ Room, Identity string }
 			json.NewDecoder(r.Body).Decode(&in)
 			f.removed = append(f.removed, in.Room+" "+in.Identity)
+			io.WriteString(w, "{}")
+		case r.URL.Path == "/twirp/livekit.RoomService/CreateRoom":
+			if !f.validToken(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")) {
+				http.Error(w, `{"code":"unauthenticated"}`, http.StatusUnauthorized)
+				return
+			}
+			var in struct {
+				Name            string
+				MaxParticipants int `json:"max_participants"`
+			}
+			json.NewDecoder(r.Body).Decode(&in)
+			f.created = append(f.created, fmt.Sprintf("%s %d", in.Name, in.MaxParticipants))
 			io.WriteString(w, "{}")
 		default:
 			http.Error(w, `{"code":"not_found"}`, http.StatusNotFound)
@@ -181,5 +195,62 @@ func TestNoLiveKitNoLiveTalk(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode == 200 {
 		t.Fatal("/rtc answered without LiveKit")
+	}
+}
+
+// Phase 6 from the server's side: a call has its own room, made with a cap of 8, bound to its conversation; blocking
+// takes the other side out of it.
+func TestCallTokens(t *testing.T) {
+	env, fake := newLiveEnv(t)
+	env.addUsers(t, "hen", "dana", "eli")
+	hen, dana, eli := env.phone(t, "hen"), env.phone(t, "dana"), env.phone(t, "eli")
+	for _, p := range []*phone{hen, dana, eli} {
+		env.uploadKeys(t, p, ecKey())
+	}
+	henSocket := env.socket(t, hen)
+	env.pair(t, dana, []store.Device{dev(dana)}, hen, henSocket)
+	env.pair(t, eli, []store.Device{dev(eli)}, hen, henSocket)
+
+	const callMutation = `mutation($c: ID!, $p: String, $g: ID) { callToken(call: $c, peer: $p, group: $g) { token room identity } }`
+	id := burstID()
+	call := func(p *phone, peer string) (string, string) {
+		r := env.graphql(t, p.client, callMutation, map[string]any{"c": id, "p": peer})
+		var got struct{ Room, Token string }
+		json.Unmarshal(r.Data["callToken"], &got)
+		if errorCode(r) == "" && !fake.validToken(got.Token) {
+			t.Fatalf("callToken's token doesn't verify: %s", r.Data["callToken"])
+		}
+		return got.Room, errorCode(r)
+	}
+	if room, code := call(hen, "dana"); code != "" || room != livekit.CallRoom(id) {
+		t.Fatalf("callToken: %s %s", room, code)
+	}
+	fake.mu.Lock()
+	created := append([]string{}, fake.created...)
+	fake.mu.Unlock()
+	if len(created) != 1 || created[0] != livekit.CallRoom(id)+" 8" {
+		t.Fatalf("the call's room: %v", created)
+	}
+	if room, code := call(dana, "hen"); code != "" || room != livekit.CallRoom(id) {
+		t.Fatalf("callToken for the one called: %s %s", room, code)
+	}
+	if _, code := call(eli, "hen"); code != "INVALID" {
+		t.Fatalf("the call id from another conversation: %s", code)
+	}
+	if r := env.graphql(t, hen.client, callMutation, map[string]any{"c": "short", "p": "dana"}); errorCode(r) != "INVALID" {
+		t.Fatalf("a bad call id: %s", errorCode(r))
+	}
+	env.mutate(t, dana, "block", "hen")
+	want := livekit.CallRoom(id) + " " + livekit.Identity("hen", hen.number)
+	waitFor(t, func() bool {
+		for _, r := range fake.removals() {
+			if r == want {
+				return true
+			}
+		}
+		return false
+	})
+	if _, code := call(hen, "dana"); code != "BLOCKED" {
+		t.Fatalf("callToken after a block: %s", code)
 	}
 }

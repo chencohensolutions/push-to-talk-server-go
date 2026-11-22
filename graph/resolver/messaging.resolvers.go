@@ -175,6 +175,8 @@ func (r *mutationResolver) Unpair(ctx context.Context, user string) (bool, error
 		if !r.Relay.ShareGroup(d.User, user) {
 			r.Relay.LeaveRoom(livekit.PairRoom(d.User, user), user)
 			r.Relay.LeaveRoom(livekit.PairRoom(d.User, user), d.User)
+			r.Relay.LeaveCalls(user, d.User, "")
+			r.Relay.LeaveCalls(d.User, user, "")
 		}
 	}
 	return had, err
@@ -198,6 +200,8 @@ func (r *mutationResolver) Block(ctx context.Context, user string) (bool, error)
 	log.Printf("%s blocked %s", d.User, user)
 	r.Relay.LeaveRoom(livekit.PairRoom(d.User, user), user)
 	r.Relay.LeaveRoom(livekit.PairRoom(d.User, user), d.User)
+	r.Relay.LeaveCalls(user, d.User, "")
+	r.Relay.LeaveCalls(d.User, user, "")
 	return true, nil
 }
 

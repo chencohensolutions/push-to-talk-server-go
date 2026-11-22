@@ -26,7 +26,7 @@ The docs describe what is built, and must be kept in step with the code in the s
   `replaceIdentityKey`), pairing tokens and `pairs.json` (`confirmPair`, `unpair`, `block`, `contacts`), the `/ws`
   protocol (`proto/ptt.proto`) with its Send rules (NOT_PAIRED, STALE_DEVICES, BLOCKED), push (`registerPush`,
   `push_kind`, the FCM data message, priorities, debounce), presence (`presence`, the `Presence` frame,
-  `setPresenceVisible`), talk (floor control, `TalkStart`/`TalkState`/`ClipSegment`), live talk (`talkToken`, `/rtc`, rooms), blobs (`/blob/<id>`: clips,
+  `setPresenceVisible`), talk (floor control, `TalkStart`/`TalkState`/`ClipSegment`), live talk (`talkToken`, `/rtc`, rooms), calls (`callToken`), blobs (`/blob/<id>`: clips,
   voice messages, attachments), the queue in `ptt.db`, linking (PROVISIONING) and what revocation does to a socket.
 - [docs/install.md](docs/install.md): `ptt-server setup`, LiveKit (`livekit`, its files, the program), the `fcm` setting and its service-account key, the Windows
   service, ports, versions, and what Journal has that this server intentionally leaves out (media, search, faces,
@@ -37,7 +37,8 @@ message queue, pairing, linking a phone, invites (one link and its passcode, sen
 enroll a friend and pair them; the server sends no email). Phase 3, server side built: `registerPush` (`fcm_token`
 and `notifications_enabled` in the registry), the FCM sender (package `push`), `Send.push_kind`, presence. Phase 4, server side built: groups (`groups.json`, routing only; the group Send). Phase 5a, server side built: floor
 control and clips on `/ws`, `/blob`. Phase 5b, server side built: LiveKit beside the server (`livekit` in config.json,
-setup writes `livekit.yaml` and `livekit.keys`), `/rtc`, `talkToken`, UDP 7882 and TCP 7881 in `serverPorts`. Then 6.
+setup writes `livekit.yaml` and `livekit.keys`), `/rtc`, `talkToken`, UDP 7882 and TCP 7881 in `serverPorts`. Phase 6, server side built: `callToken` (a room per call, 8 devices); calls are
+signalled and saved on the phones, end to end.
 
 **Platforms.** The owner's server is a Windows PC, development happens on a Mac, and the server should run on
 Windows, macOS and Linux: no cgo, Windows-safe file names, per-OS files (`*_windows.go`, `*_other.go`). CI runs

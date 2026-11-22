@@ -7,9 +7,13 @@ package resolver
 
 import (
 	"context"
+	"fmt"
+	"log"
 
+	"github.com/chencohensolutions/push-to-talk-server-go/blobs"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
+	pb "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1"
 )
 
 // TalkToken is the resolver for the talkToken field.
@@ -31,6 +35,39 @@ func (r *mutationResolver) TalkToken(ctx context.Context, peer *string, group *s
 	if err != nil {
 		return nil, err
 	}
+	return &model.TalkToken{Token: token, Room: room, Identity: identity, Path: "/rtc",
+		ExpiresAt: now.Add(livekit.TokenTTL)}, nil
+}
+
+// CallToken is the resolver for the callToken field.
+func (r *mutationResolver) CallToken(ctx context.Context, call string, peer *string, group *string) (*model.TalkToken, error) {
+	d, err := r.caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if r.LiveKeys == nil {
+		return nil, coded(CodeLiveOff, "this server has no LiveKit: no calls")
+	}
+	if !blobs.ValidID(call) {
+		return nil, coded(pb.SendResult_INVALID.String(), "a call id is 32 lowercase hex digits")
+	}
+	room, status, detail := r.Relay.CallRoom(d, call, deref(peer), deref(group))
+	if status != 0 {
+		return nil, coded(status.String(), "%s", detail)
+	}
+	if r.Relay.Live != nil {
+		if err := r.Relay.Live.CreateRoom(ctx, room, livekit.MaxCallParticipants); err != nil {
+			log.Printf("callToken: making room %s: %v", room, err)
+			return nil, fmt.Errorf("LiveKit isn't answering")
+		}
+	}
+	now := r.Now()
+	identity := livekit.Identity(d.User, d.Number)
+	token, err := r.LiveKeys.JoinToken(identity, room, now)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Call %s: token for %s", call, identity)
 	return &model.TalkToken{Token: token, Room: room, Identity: identity, Path: "/rtc",
 		ExpiresAt: now.Add(livekit.TokenTTL)}, nil
 }
