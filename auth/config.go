@@ -62,6 +62,12 @@ type AppConfig struct {
 	// The live talk path (phase 5b): a LiveKit server beside this one (docs/install.md, "LiveKit"). Without it,
 	// talkToken answers LIVE_OFF and talk goes by the clip path only.
 	LiveKit *LiveKitConfig `json:"livekit,omitempty"`
+	// The GitHub repository (owner/name) the Talk app is released from, followed hourly so phones are pushed an
+	// "app_update" when a new release is out (docs/install.md, "App updates"). Default
+	// chencohensolutions/push-to-talk-kmp; "none" turns it off.
+	AppReleases string `json:"app_releases,omitempty"`
+	// The latest app release seen (default app-release.json).
+	AppReleaseFile string `json:"app_release_file,omitempty"`
 	// Loopback-only listener for the admin GraphQL API (default 127.0.0.1:8082).
 	AdminAddr string `json:"admin_addr"`
 	// Token for the admin API, rewritten on every server start (default admin.token).
@@ -121,6 +127,8 @@ const (
 	DefaultBlobDir        = "blobs"
 	DefaultBlobDays       = 30
 	DefaultAdminAddr      = "127.0.0.1:8082"
+	DefaultAppReleases    = "chencohensolutions/push-to-talk-kmp"
+	DefaultAppReleaseFile = "app-release.json"
 	DefaultAdminTokenFile = "admin.token"
 )
 
@@ -129,6 +137,9 @@ func (c AppConfig) DiscoveryOn() bool { return c.Discovery == nil || *c.Discover
 
 // InvitesOn says whether users may invite friends: on unless "invites": false.
 func (c AppConfig) InvitesOn() bool { return c.Invites == nil || *c.Invites }
+
+// AppReleasesOn says whether the server follows the app's releases: on unless app_releases is "none".
+func (c AppConfig) AppReleasesOn() bool { return c.AppReleases != "none" }
 
 // PushOn says whether config.json names an FCM service account.
 func (c AppConfig) PushOn() bool { return c.FCM != nil && c.FCM.ServiceAccountFile != "" }
@@ -218,6 +229,12 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.QueueDays <= 0 {
 		c.QueueDays = DefaultQueueDays
+	}
+	if c.AppReleases == "" {
+		c.AppReleases = DefaultAppReleases
+	}
+	if c.AppReleaseFile == "" {
+		c.AppReleaseFile = DefaultAppReleaseFile
 	}
 	if c.AdminAddr == "" {
 		c.AdminAddr = DefaultAdminAddr

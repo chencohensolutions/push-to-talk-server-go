@@ -30,6 +30,22 @@ type InvitePreviewResult interface {
 	IsInvitePreviewResult()
 }
 
+type AppRelease struct {
+	// The release's tag: v1.0.3.
+	Tag string `json:"tag"`
+	// The version in the APK's name: 1.0.3 (versionName).
+	Version string `json:"version"`
+	// The APK's address (GitHub's release download), https.
+	ApkURL string `json:"apkUrl"`
+	// The APK's size in bytes.
+	Size int `json:"size"`
+	// The APK's SHA-256, lowercase hex, from the release's SHA256SUMS.
+	Sha256 string `json:"sha256"`
+	// The release's notes, Markdown; null when it has none.
+	Notes       *string   `json:"notes,omitempty"`
+	PublishedAt time.Time `json:"publishedAt"`
+}
+
 type CallRecording struct {
 	Call string `json:"call"`
 	// The server is keeping the call now.

@@ -234,6 +234,10 @@ push `sync`; Presence frames are never queued and never push.
 | `sync` | `NORMAL` | `86400s` | `sync` |
 | `talk` | `HIGH` (notifications on), `NORMAL` otherwise | `30s` | `talk` |
 | `call` | `HIGH` (notifications on), `NORMAL` otherwise | `30s` | `call` |
+| `app_update` | `NORMAL` | `604800s` (a week) | `app_update` |
+
+`app_update` comes from no Send: the server sends it to every device with a token, connected or not, when it sees a
+new release of the app (docs/install.md, "App updates"). The phone then reads `appRelease` and offers the update.
 
 `data.kind` is the only key in `data`, so the app reads it in `onMessageReceived` and connects. FCM lowers the
 priority of an app whose high-priority pushes don't end in a notification, which is why the server sends `HIGH` only
