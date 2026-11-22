@@ -59,26 +59,14 @@ own `admin_addr`, and with the router left to the real server:
 
 ## Email
 
-Invite codes for invites without an email are sent by the server (docs/authentication.md, "Invites"). To send them
-from your own Gmail address without keeping its password:
+The server sends no email. Invites go from the inviter's phone to the friend's (docs/authentication.md, "Invites"):
+the link and its passcode leave through the phone's own mail app or any chat app, so there is no mail account,
+password or Google grant to set up here.
 
-1. In [Google Cloud console](https://console.cloud.google.com/) pick a project (the app's Firebase project is one),
-   then **APIs & Services → Library → Gmail API → Enable**.
-2. **APIs & Services → OAuth consent screen** (Google Auth Platform): app name "ptt-server", user type **External**,
-   your address as support and developer contact. Under **Audience** add your own address as a test user, then
-   **Publish app** (a grant made while the app is in Testing stops working after 7 days). Google will call it
-   unverified; that is expected for a private app.
-3. **Credentials → Create credentials → OAuth client ID → Desktop app**, then download the JSON into the server
-   folder as `gmail-client.json`.
-4. Add to `config.json`: `"gmail": {"client_file": "gmail-client.json", "from_name": "Talk"}`.
-5. At the server's desktop, in the server folder: `ptt-server mail-login`. A browser opens; sign in, click
-   **Advanced → Go to ptt-server (unsafe)** past the unverified warning, and allow **Send email on your behalf**. It
-   writes `gmail.token` (the address and a refresh token that can send mail and can't read any). Restart the server.
-
-To stop it, remove ptt-server under **Google Account → Security → Your connections to third-party apps** (the
-server then says to run `mail-login` again). `smtp` with an app password works too, for any provider; set one or the
-other. `gmail-client.json`, `gmail.token` and `smtp.password` are secrets of the server folder: keep them out of git
-and chats.
+A server set up before 2026-11-22 may have `smtp` or `gmail` in `config.json`, from when it emailed invite codes. It
+still starts; its log says the key is no longer used. Remove the key, delete `gmail-client.json`, `gmail.token` and
+`smtp.password` from the server folder, and, if `ptt-server mail-login` was run, remove ptt-server under **Google
+Account → Security → Your connections to third-party apps**.
 
 ## The Windows service
 

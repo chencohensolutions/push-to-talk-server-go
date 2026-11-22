@@ -1,7 +1,8 @@
 # --- Invites ---------------------------------------------------------------------------------------------------
 # See docs/authentication.md, "Invites". One link (ptt://invite) that enrolls a friend and pairs them with whoever
-# invited them. A friend who isn't on this server proves an email address with a code sent there (inviteEmailCode),
-# and enrollWithInvite then makes their user, named from the email, and their device's certificate. A friend already
+# invited them. Every invite has a six-digit passcode that goes beside the link: the inviter's phone sends both to
+# the friend (from its mail app, or any chat app), and the server sends no mail at all. A friend who isn't on this
+# server redeems it with enrollWithInvite, which makes their user and their device's certificate; a friend already
 # enrolled here redeems it with acceptInvite. Both answer a pairing token of the inviter, which the phone uses as one
 # read from the inviter's QR code.
 #
@@ -16,22 +17,17 @@ extend type Query {
 
 extend type Mutation {
   """
-  An invite from the caller's user, working once, for 7 days. With email, only that address can redeem it, and the
-  answer has its emailCode: the caller's phone emails it with the link, from the user's own mail app, so the server
-  sends no mail for it. RATE_LIMITED with 5 waiting; INVITES_OFF when the server's owner turned invites off.
+  An invite from the caller's user, working once, for 7 days: its code (for the link) and its passcode (six digits,
+  sent beside the link). The caller's phone sends both to the friend; the server sends nothing. With email, only
+  that address can redeem it. RATE_LIMITED with 5 waiting; INVITES_OFF when the server's owner turned invites off.
   """
   createInvite(email: String): CreatedInvite!
   "Stops the caller's waiting invite id from working. False if there was none."
   cancelInvite(id: String!): Boolean!
   """
-  Sends a six-digit code to email, for enrollWithInvite: a new one each time (the one before stops working), at most
-  5 per invite and 30 seconds apart. The code works for 15 minutes.
-  """
-  inviteEmailCode(code: String!, email: String!): InviteEmailResult! @public
-  """
-  Redeems an invite on a phone that isn't enrolled: with the email and the code sent there, makes the user and the
-  device's certificate (as enrollDevice), and gives a pairing token of the inviter. The invite is used up only when
-  all of it checked out.
+  Redeems an invite on a phone that isn't enrolled: checks the passcode (10 wrong ones end the invite) and the email,
+  makes the user and the device's certificate (as enrollDevice), and gives a pairing token of the inviter. The invite
+  is used up only when all of it checked out.
   """
   enrollWithInvite(input: InviteEnrollInput!): InviteEnrollResult! @public
   "Redeems an invite on a phone already enrolled here: a pairing token of the inviter."
@@ -51,16 +47,20 @@ type CreatedInvite {
   invite: Invite!
   "22 characters, base64url: put it in the invite link. Shown only now."
   code: String!
-  "For an invite with an email: six digits to email there with the link (not in the link). Shown only now."
-  emailCode: String
+  "Six digits, to send beside the link (not in it). Shown only now."
+  passcode: String!
 }
 
 input InviteEnrollInput {
   "From the invite link."
   code: String!
-  email: String!
-  "The six digits sent to email; spaces and dashes are ignored."
-  emailCode: String!
+  "The six digits sent with the link; spaces and dashes are ignored."
+  passcode: String!
+  """
+  For an invite with an email: that address (any case), or EMAIL_MISMATCH. For one without: the friend's own email
+  when they give one (not verified: nothing is sent there), or null.
+  """
+  email: String
   "The friend's own name, as their contacts see it (first and last name, any letters)."
   displayName: String!
   "As in EnrollDeviceInput."
@@ -70,7 +70,6 @@ input InviteEnrollInput {
 }
 
 union InvitePreviewResult = InvitePreview | InviteRejected
-union InviteEmailResult = InviteEmailSent | InviteRejected
 union InviteEnrollResult = InviteEnrolled | InviteRejected
 union InviteAcceptResult = InvitePairing | InviteRejected
 
@@ -79,14 +78,6 @@ type InvitePreview {
   inviterDisplayName: String
   "The address the invite is for; null for anyone."
   email: String
-  expiresAt: Time!
-  "The inviter emailed the code with the link: type it; inviteEmailCode isn't needed (it answers CODE_FROM_INVITER)."
-  codeFromInviter: Boolean!
-}
-
-type InviteEmailSent {
-  email: String!
-  "When the code stops working."
   expiresAt: Time!
 }
 
@@ -113,16 +104,12 @@ enum InviteRejectedReason {
   EMAIL_MISMATCH
   "Another user has this email: enroll a new phone of theirs with a code from the server's owner instead."
   EMAIL_TAKEN
-  "The email code is wrong or expired; after 5 wrong ones, ask for a new one."
-  WRONG_EMAIL_CODE
-  "Too many wrong codes from this address (wait a minute), or too many email codes for this invite."
+  "The passcode is wrong; after 10 wrong ones the invite stops working."
+  WRONG_PASSCODE
+  "Too many wrong codes from this address: wait a minute."
   RATE_LIMITED
   "The certificate request is malformed, badly signed or not for an EC P-256 key."
   INVALID_CSR
   "The inviter opened their own invite."
   OWN_INVITE
-  "The server couldn't send the email; try again later."
-  MAIL_FAILED
-  "The inviter emailed the code with the link: use that one."
-  CODE_FROM_INVITER
 }

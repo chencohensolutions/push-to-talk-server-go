@@ -1,10 +1,10 @@
 // Package invite lets an enrolled user invite a friend with one link (docs/authentication.md, "Invites"). The link
-// holds an invite code: a friend without the app on this server proves an email address with a code sent there,
-// and is then made a user and enrolled in one step; a friend already enrolled here just redeems it. Either way the
-// answer is a pairing token of the inviter, so the friend's phone pairs with them as if it had scanned their QR code.
+// holds an invite code, and a six-digit passcode goes beside it; the inviter's phone sends both, so the server sends
+// no mail. A friend without the app on this server types the passcode and is made a user and enrolled in one step;
+// a friend already enrolled here just redeems the link. Either way the answer is a pairing token of the inviter, so
+// the friend's phone pairs with them as if it had scanned their QR code.
 //
-// The invites wait in invites.json (only the codes' hashes), so a server restart keeps them; the email codes are in
-// memory only, and a restart means asking for a new one.
+// The invites wait in invites.json (only the codes' hashes), so a server restart keeps them.
 package invite
 
 import (
@@ -32,13 +32,6 @@ const (
 	TTL = 7 * 24 * time.Hour
 	// MaxPending is how many unused invites one user may have at once.
 	MaxPending = 5
-	// EmailCodeTTL is how long an email code works.
-	EmailCodeTTL = 15 * time.Minute
-	// emailCodeTries is how many wrong email codes are taken before the code is dropped (and a new one is needed).
-	emailCodeTries = 5
-	// maxEmailSends is how many email codes one invite may send, and resendAfter how long apart.
-	maxEmailSends = 5
-	resendAfter   = 30 * time.Second
 	// usedKept is how long a used or expired invite stays in the file, for `invites` and the log.
 	usedKept = 7 * 24 * time.Hour
 )
@@ -52,14 +45,15 @@ type Invite struct {
 	InvitedBy string `json:"invited_by"`
 	// The email the invite is for, lower case; empty when it is for whoever opens it.
 	Email string `json:"email,omitempty"`
-	// For an invite with an email: the SHA-256 (hex) of "<id>/<six digits>", the code the inviter's phone emails
-	// along with the link, from the inviter's own mail app. The server never sends that email itself.
-	EmailCodeHash string     `json:"email_code_hash,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	ExpiresAt     time.Time  `json:"expires_at"`
-	UsedBy        string     `json:"used_by,omitempty"`
-	UsedAt        *time.Time `json:"used_at,omitempty"`
-	Canceled      bool       `json:"canceled,omitempty"`
+	// The SHA-256 (hex) of "<id>/<six digits>": the passcode the inviter's phone sends beside the link.
+	PasscodeHash string `json:"passcode_hash,omitempty"`
+	// The same, as invites made before 2026-11-22 kept it (only for those with an email); Open moves it over.
+	OldEmailCodeHash string     `json:"email_code_hash,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	ExpiresAt        time.Time  `json:"expires_at"`
+	UsedBy           string     `json:"used_by,omitempty"`
+	UsedAt           *time.Time `json:"used_at,omitempty"`
+	Canceled         bool       `json:"canceled,omitempty"`
 }
 
 // Pending says whether the invite still works at now.
@@ -88,6 +82,12 @@ func Open(path string, now func() time.Time) (*Store, error) {
 	if err := json.Unmarshal(data, &s.invites); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
+	for i := range s.invites {
+		if s.invites[i].PasscodeHash == "" {
+			s.invites[i].PasscodeHash = s.invites[i].OldEmailCodeHash
+		}
+		s.invites[i].OldEmailCodeHash = ""
+	}
 	return s, nil
 }
 
@@ -95,8 +95,8 @@ func Open(path string, now func() time.Time) (*Store, error) {
 var ErrTooMany = fmt.Errorf("at most %d invites at once: cancel one, or wait for one to be used or expire", MaxPending)
 
 // Create makes an invite from by, for email when it isn't empty (lower-cased; NormalizeEmail checks it), and returns
-// it with its code (128 random bits, base64url, 22 characters) and, for an invite with an email, the six-digit email
-// code the inviter's phone sends there.
+// it with its code (128 random bits, base64url, 22 characters) and its passcode (six random digits), which the
+// inviter's phone sends to the friend.
 func (s *Store) Create(by, email string) (Invite, string, string, error) {
 	raw := make([]byte, 16)
 	rand.Read(raw)
@@ -104,13 +104,10 @@ func (s *Store) Create(by, email string) (Invite, string, string, error) {
 	id := make([]byte, 4)
 	rand.Read(id)
 	now := s.now().UTC()
+	passcode := newPasscode()
 	invite := Invite{ID: hex.EncodeToString(id), CodeHash: hashCode(code), InvitedBy: by, Email: email,
 		CreatedAt: now, ExpiresAt: now.Add(TTL)}
-	emailCode := ""
-	if email != "" {
-		emailCode = newEmailCode()
-		invite.EmailCodeHash = hashCode(invite.ID + "/" + emailCode)
-	}
+	invite.PasscodeHash = hashCode(invite.ID + "/" + passcode)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	held := 0
@@ -125,7 +122,7 @@ func (s *Store) Create(by, email string) (Invite, string, string, error) {
 	if err := s.change(func(list *[]Invite) { *list = append(*list, invite) }); err != nil {
 		return Invite{}, "", "", err
 	}
-	return invite, code, emailCode, nil
+	return invite, code, passcode, nil
 }
 
 // Drop stops invite id from working, whoever made it: one guessed at too often.
@@ -166,14 +163,15 @@ func (s *Store) Cancel(by, id string) (bool, error) {
 	return true, s.change(func(list *[]Invite) { (*list)[at].Canceled = true })
 }
 
-// Find is the pending invite with code.
+// Find is the pending invite with code. One without a passcode (made without an email before every invite had one)
+// can't be redeemed, and isn't found.
 func (s *Store) Find(code string) (Invite, bool) {
 	now := s.now()
 	hash := hashCode(strings.TrimSpace(code))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, i := range s.invites {
-		if subtle.ConstantTimeCompare([]byte(i.CodeHash), []byte(hash)) == 1 && i.Pending(now) {
+		if subtle.ConstantTimeCompare([]byte(i.CodeHash), []byte(hash)) == 1 && i.Pending(now) && i.PasscodeHash != "" {
 			return i, true
 		}
 	}
@@ -241,18 +239,8 @@ func NormalizeEmail(email string) (string, error) {
 	return email, nil
 }
 
-// emailCode is the code sent for one invite, in memory.
-type emailCode struct {
-	email     string
-	hash      string
-	expiresAt time.Time
-	wrong     int
-	sentAt    time.Time
-	sends     int
-}
-
-// newEmailCode is six random digits.
-func newEmailCode() string {
+// newPasscode is six random digits.
+func newPasscode() string {
 	n, _ := rand.Int(rand.Reader, big.NewInt(1_000_000))
 	return fmt.Sprintf("%06d", n.Int64())
 }

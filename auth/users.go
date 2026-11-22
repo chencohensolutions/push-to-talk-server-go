@@ -25,8 +25,9 @@ type User struct {
 	IdentityKey []byte `json:"identity_key,omitempty"`
 	// When IdentityKey was last set.
 	IdentityKeySetAt *time.Time `json:"identity_key_set_at,omitempty"`
-	// The email address the user proved they own by a code sent there, lower case; set for a user who joined by an
-	// invite (docs/authentication.md, "Invites"), empty for one added with `user add`. No two users share one.
+	// The email address the user joined with by an invite (docs/authentication.md, "Invites"), lower case: the one the
+	// inviter typed, or for an invite to anyone the one the friend gave, which nobody checked. Empty for one added with
+	// `user add`, or invited without an email. No two users share one.
 	Email string `json:"email,omitempty"`
 	// The name the user gave for themselves (first and last name, any letters); shown to their contacts. Not unique:
 	// the email and the keys tell people apart.
@@ -164,20 +165,24 @@ func (u *Users) nameTaken(name string) bool {
 	return false
 }
 
-// AddInvited adds a user who joined by an invite: with their verified email (lower case; ErrEmailTaken when another
-// user has it), their display name and who invited them. The user name is made from the email's local part, in
-// a–z, 0–9, '.', '-' and '_' only (so it can't look like another in a different script), with a number added when
-// it is taken: dana.cohen@example.com becomes dana.cohen, then dana.cohen2.
+// AddInvited adds a user who joined by an invite: with their email (lower case; ErrEmailTaken when another user has
+// it; empty when they gave none), their display name and who invited them. The user name is made from the email's
+// local part, or without an email from the display name, in a–z, 0–9, '.', '-' and '_' only (so it can't look like
+// another in a different script), with a number added when it is taken: dana.cohen@example.com becomes dana.cohen,
+// then dana.cohen2; "Dana Cohen" without an email becomes dana.cohen too.
 func (u *Users) AddInvited(email, displayName, invitedBy string, at time.Time) (User, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	for _, user := range u.users {
-		if user.Email == email {
+		if email != "" && user.Email == email {
 			return User{}, ErrEmailTaken
 		}
 	}
 	base := NameFromEmail(email)
+	if email == "" {
+		base = NameFromDisplayName(displayName)
+	}
 	name := base
 	for n := 2; u.nameTaken(name); n++ {
 		suffix := fmt.Sprint(n)
@@ -191,6 +196,16 @@ func (u *Users) AddInvited(email, displayName, invitedBy string, at time.Time) (
 func NameFromEmail(email string) string {
 	local, _, _ := strings.Cut(strings.ToLower(email), "@")
 	local, _, _ = strings.Cut(local, "+") // dana+talk@ is dana
+	return nameFrom(local)
+}
+
+// NameFromDisplayName is a user name made from a display name by NameFromEmail's rule, its words joined by '.':
+// "Dana Cohen" is dana.cohen; "user" when no a–z or digit is in it.
+func NameFromDisplayName(displayName string) string {
+	return nameFrom(strings.Join(strings.Fields(strings.ToLower(displayName)), "."))
+}
+
+func nameFrom(local string) string {
 	var b strings.Builder
 	for _, r := range local {
 		switch {

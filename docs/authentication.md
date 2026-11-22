@@ -113,50 +113,60 @@ ptt://enroll?code=K7QM-4XPD&server=<url>&fingerprint=<sha256 of the server key>&
 
 ## Invites
 
-An enrolled user invites a friend with one link, `ptt://invite?…`, that enrolls the friend and pairs them with the
-inviter, so the friend needs no code from the server's owner (package `invite`, `graph/schema/invite.graphql`).
+An enrolled user invites a friend with one link, `ptt://invite?…`, and a six-digit passcode beside it, that enroll
+the friend and pair them with the inviter, so the friend needs no code from the server's owner (package `invite`,
+`graph/schema/invite.graphql`). **The server sends no email**: the inviter's phone sends the link and the passcode,
+from the user's own mail app or any chat app (owner's decision, 2026-11-22: invitations go from client to client).
+So the server holds no mail account or password, and nothing it sends can be spoofed or land in spam.
 
 1. The inviter's phone calls `createInvite(email)`. The server keeps the invite in `invites.json` (`invites_file`):
-   a short `id`, the SHA-256 of its code, who made it, the email it is for (optional, lower case), and when it
-   expires, **7 days** on. The code (128 random bits, base64url) is answered once and goes only into the link. At
-   most 5 invites wait per user; `invites` lists them and `cancelInvite(id)` stops one.
+   a short `id`, the SHA-256 of its code, the SHA-256 of `<id>/<passcode>`, who made it, the email it is for
+   (optional, lower case), and when it expires, **7 days** on. The code (128 random bits, base64url) and the
+   passcode (six random digits) are answered once, and only their hashes are kept. At most 5 invites wait per user;
+   `invites` lists them and `cancelInvite(id)` stops one.
 2. The phone builds the link: the server part as in an enrollment link (`server`, `fingerprint`, `key`, `address`),
    the invite `code`, and the inviter's pairing part (`u`, `k`, `s`: user, identity key, secret, as in the Add contact
-   QR code, without a token). With an email, `e` too.
-3. A friend **not enrolled here** opens it. `invitePreview(code)` says who it is from, and whether the inviter sent
-   the code (`codeFromInviter`). **An invite with an email** carries its code from the start: `createInvite` answers
-   six random digits (`emailCode`, kept hashed with the invite, working as long as it), and the inviter's phone emails
-   them with the link from the user's own mail app, so the server sends no mail and holds no mail password. 10 wrong
-   codes end the invite. **An invite without one:** the friend types their email, and
-   `inviteEmailCode(code, email)` sends six random digits there, valid 15 minutes, a new code each time (the one
-   before stops working), at most 5 per invite and 30 seconds apart. `enrollWithInvite` then takes the email, the
-   digits, the friend's display name and the certificate request: the server checks the invite, that the email is
-   the invite's (when it has one) and nobody else's, and the digits (5 wrong ones drop the code); then it makes the
+   QR code, without a token). With an email, `e` too. The passcode is **not** in the link: it goes beside it, in the
+   same message or, for more safety, by another way (said aloud, another chat). The app then offers **Email the
+   invite** (its mail app, to the email typed) and **Share** (any app); both send the steps, the link and the
+   passcode.
+3. A friend **not enrolled here** opens the link. `invitePreview(code)` says who it is from and the email it is for.
+   The friend types the passcode and their name (and, for an invite without an email, their email if they want), and
+   `enrollWithInvite` takes them with the certificate request. The server checks the invite, then the passcode, then
+   the email: for an invite with one, it must be that address (compared lower case; else `EMAIL_MISMATCH`, also when
+   none is sent); for an invite without one, it is optional. A taken email is `EMAIL_TAKEN`; the email is checked
+   after the passcode, so the link alone doesn't tell whether an address has an account here. Then it makes the
    user and the device's certificate in one step, uses up the invite, and answers the certificate and a **pairing
    token of the inviter**.
 4. A friend **already enrolled here** calls `acceptInvite(code)` with their certificate instead, and gets the
-   pairing token. Their own invite is refused (`OWN_INVITE`), and one for another email than theirs.
+   pairing token; no passcode is asked, since they are a user of this server already and redeeming only pairs them.
+   Their own invite is refused (`OWN_INVITE`), and one for another email than theirs.
 5. The friend's phone pairs with the token as with one read from the inviter's QR code ([messaging.md](messaging.md)):
    bundles with the token, the pair request with the secret `s`, `confirmPair`. The inviter's phone knows the secret
    from step 2, so it accepts the request without a tap, and marks the contact "not verified" until the two compare
    safety numbers: the link may have been forwarded.
 
-**The user.** The email is the unique part of an invited user: no two users share one, compared in lower case. The
-user name is made from the email's local part, in a–z, 0–9, `.`, `-` and `_` only, so it can't pass for another in
-a different script, with a number added when taken (`dana.cohen`, then `dana.cohen2`). `users.json` keeps `email`,
+**Why the passcode isn't in the link.** With it in the link, the link alone would be enough, and anywhere the link
+alone ends up (a forwarded message, a link scanner, a chat backup, a screenshot of the QR code) could redeem it. Kept
+apart, the link alone does nothing, and an inviter who wants to can send the two by different ways. The cost is six
+digits to type. When the friend pastes the whole message into the app, it finds both and fills the passcode in.
+
+**The user.** The email is the unique part of an invited user: no two users share one, compared in lower case. **No
+email is verified any more**: with an email-bound invite, the email is the one the inviter typed (whoever has the link
+and the passcode can redeem it, as anyone they forward the mail to could); with an invite for anyone, it is the one the
+friend typed, or none. So an email shows who the inviter meant, not who holds the phone; the safety number does that.
+The user name is made from the email's local part, or without an email from the display name, in a–z, 0–9, `.`, `-`
+and `_` only, so it can't pass for another in a different script, with a number added when taken (`dana.cohen`,
+then `dana.cohen2`; "Dana Cohen" is `dana.cohen` too). `users.json` keeps `email` (when there is one),
 `display_name` (the friend's first and last name, free text, at most 64 characters, not unique) and `invited_by`;
-`me` and `contacts` answer `displayName`, and `me` the `email`.
+`me` and `contacts` answer `displayName`, and `me` the `email`. A friend who typed someone else's address in an
+invite for anyone takes that address here: `ptt-server user remove` frees it.
 
-**Mail.** Only invites without an email need the server to send mail (an invite with one is emailed by the
-inviter's phone; `inviteEmailCode` answers `CODE_FROM_INVITER` for it). With `gmail` in `config.json` the codes are sent from a Gmail account through the Gmail API, with
-a send-only grant `ptt-server mail-login` keeps in `gmail.token` (no password; docs/install.md, "Email"). With `smtp`
-instead they go over SMTP (STARTTLS on 587, or TLS on 465; an app password in its own file). Without either they are
-written to the server's log, which is enough to try invites at home. The server never sends the invite link: it holds
-the inviter's pairing secret, which only phones see.
-
-**Limits.** Wrong invite codes and wrong email codes count against the client address's limit, as enrollment codes
-do (5 a minute). The email codes are in memory: a restart means asking for a new one. `"invites": false` turns
-invites off (`INVITES_OFF`).
+**Limits.** Wrong invite codes and wrong passcodes count against the client address's limit, as enrollment codes
+do (5 a minute, then `RATE_LIMITED`). 10 wrong passcodes end the invite, from any addresses: a guess has a 1 in
+100,000 chance. The count is in memory, so a restart starts it again (the address limit still holds). Invites made
+before 2026-11-22 for an email keep their code as the passcode; those made for anyone had no code and no longer
+work. `"invites": false` turns invites off (`INVITES_OFF`).
 
 ## Issued certificates
 
@@ -234,7 +244,7 @@ server's admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/adm
 | `enrollmentPreview(code)` | no (`@public`) | the user a code is for, and when it expires |
 | `enrollDevice(input)` | no (`@public`) | the certificate, device number and CA |
 | `renewCertificate(csr, keyProtection)` | yes | a new certificate for the same device |
-| `invitePreview(code)`, `inviteEmailCode(code, email)`, `enrollWithInvite(input)` | no (`@public`) | redeeming an invite on a new phone ([Invites](#invites)) |
+| `invitePreview(code)`, `enrollWithInvite(input)` | no (`@public`) | redeeming an invite on a new phone ([Invites](#invites)) |
 | `createInvite(email)`, `invites`, `cancelInvite(id)`, `acceptInvite(code)` | yes | making invites, and redeeming one on an enrolled phone |
 | `serverInfo` | yes | `api`, `version`, `caCertificate`, `renewCertificates`, the caller's `deviceNumber`, and `discovery { fingerprint id key addresses }` |
 | `me` | yes | `user`, `deviceNumber`, `deviceName`, `identityKey`, `displayName`, `email`: what the app asks to show "connected" |
@@ -273,32 +283,23 @@ pinned key) at any address. See the client repo's docs.
   "port_mapping": true,                         // optional (default): UPnP / NAT-PMP
   "playground": false,                          // optional: serve the GraphQL playground at /
   "invites": true,                              // optional (default): users may invite friends
-  "invites_file": "invites.json",               // optional (default)
-  "smtp": {                                     // optional: send invite codes by email (else they are only logged)
-    "host": "smtp.gmail.com",
-    "port": 587,                                // 587 STARTTLS (default) or 465 TLS
-    "username": "you@gmail.com",
-    "password_file": "smtp.password",           // the (app) password, in its own file
-    "from": "Talk <you@gmail.com>"              // optional: the username when empty
-  },
-  "gmail": {                                    // or, instead of smtp: Gmail's API, no password (mail-login)
-    "client_file": "gmail-client.json",         // the Desktop app OAuth client from Google Cloud
-    "token_file": "gmail.token",                // optional (default): written by ptt-server mail-login
-    "from_name": "Talk"                         // optional: the name beside the address
-  }
+  "invites_file": "invites.json"                // optional (default)
 }
 ```
 
-Unknown keys are refused at start, so a typo (or a Journal `config.json` with its `users`) is caught.
+Unknown keys are refused at start, so a typo (or a Journal `config.json` with its `users`) is caught. The one
+exception is `smtp` and `gmail`, the mail settings of the server before 2026-11-22, when it emailed invite codes: they
+are taken and ignored, and the log says to remove them.
 
 `client_ca_key` is the most sensitive file on the server: anyone holding it can mint certificates for any user. Keep
 it readable only by the account that runs the server.
 
 ## Threat notes
 
-- **Forwarded invite link:** whoever opens it first can redeem it (once, within 7 days). An invite for an email can
-  only be redeemed by someone who reads that mailbox. The inviter's phone shows the new contact as "not verified"
-  until they compare safety numbers, and `cancelInvite` stops a link that went astray.
+- **Forwarded invite:** whoever has the link and its passcode can redeem it first (once, within 7 days), with the
+  email the inviter typed when there is one. The link alone isn't enough (10 wrong passcodes end it). The server
+  proves no email address. The inviter's phone shows the new contact as "not verified" until they compare safety
+  numbers, and `cancelInvite` stops an invite that went astray.
 
 - **Stolen enrollment code:** usable once, for at most 10 minutes, and only for the user it was made for. If a code
   may have leaked, check `ptt-server devices` and revoke any device you don't recognize.

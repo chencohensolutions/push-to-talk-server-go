@@ -84,6 +84,15 @@ func TestConfigDefaultsAndUnknownKeys(t *testing.T) {
 	if _, err := LoadConfig(path); err == nil || !strings.Contains(err.Error(), "users") {
 		t.Fatalf("a Journal config.json: %v", err)
 	}
+	// The mail settings from before 2026-11-22 are taken, unused, so such a config.json still starts the server.
+	if len(config.UnusedKeys()) != 0 {
+		t.Fatalf("unused keys in a new config: %v", config.UnusedKeys())
+	}
+	os.WriteFile(path, []byte(`{"smtp": {"host": "smtp.gmail.com", "port": 587}, "gmail": {"client_file": "gmail-client.json"}}`), 0o644)
+	config, err = LoadConfig(path)
+	if err != nil || strings.Join(config.UnusedKeys(), ",") != "smtp,gmail" {
+		t.Fatalf("an old config.json with mail: %v %v", config.UnusedKeys(), err)
+	}
 }
 
 func TestNamesAreUniqueInAnyCase(t *testing.T) {
@@ -119,5 +128,24 @@ func TestInvitedUsersAreNamedFromTheirEmail(t *testing.T) {
 	}
 	if found := users.FindByEmail(" DANA@example.com"); found == nil || found.Name != "dana2" {
 		t.Fatalf("FindByEmail = %+v", found)
+	}
+
+	// Without an email (an invite for anyone, and the friend gave none): named from the display name, and two such
+	// users don't clash over their empty email.
+	for name, want := range map[string]string{"Eve Levi": "eve.levi", "  Eve   Levi ": "eve.levi", "אבי": "user", "Ö Ro": "ro"} {
+		if got := NameFromDisplayName(name); got != want {
+			t.Errorf("NameFromDisplayName(%q) = %q, want %q", name, got, want)
+		}
+	}
+	eve, err := users.AddInvited("", "Eve Levi", "hen", time.Now())
+	if err != nil || eve.Name != "eve.levi" || eve.Email != "" {
+		t.Fatalf("eve = %+v, %v", eve, err)
+	}
+	again, err := users.AddInvited(" ", "Eve Levi", "hen", time.Now())
+	if err != nil || again.Name != "eve.levi2" {
+		t.Fatalf("a second eve = %+v, %v", again, err)
+	}
+	if found := users.FindByEmail(""); found != nil {
+		t.Fatalf("FindByEmail(\"\") = %+v", found)
 	}
 }

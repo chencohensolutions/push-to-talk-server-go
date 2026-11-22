@@ -53,9 +53,9 @@ type ComplexityRoot struct {
 	}
 
 	CreatedInvite struct {
-		Code      func(childComplexity int) int
-		EmailCode func(childComplexity int) int
-		Invite    func(childComplexity int) int
+		Code     func(childComplexity int) int
+		Invite   func(childComplexity int) int
+		Passcode func(childComplexity int) int
 	}
 
 	EnrolledDevice struct {
@@ -84,11 +84,6 @@ type ComplexityRoot struct {
 		ID        func(childComplexity int) int
 	}
 
-	InviteEmailSent struct {
-		Email     func(childComplexity int) int
-		ExpiresAt func(childComplexity int) int
-	}
-
 	InviteEnrolled struct {
 		Device  func(childComplexity int) int
 		Pairing func(childComplexity int) int
@@ -100,7 +95,6 @@ type ComplexityRoot struct {
 	}
 
 	InvitePreview struct {
-		CodeFromInviter    func(childComplexity int) int
 		Email              func(childComplexity int) int
 		ExpiresAt          func(childComplexity int) int
 		Inviter            func(childComplexity int) int
@@ -135,7 +129,6 @@ type ComplexityRoot struct {
 		CreateInvite       func(childComplexity int, email *string) int
 		EnrollDevice       func(childComplexity int, input model.EnrollDeviceInput) int
 		EnrollWithInvite   func(childComplexity int, input model.InviteEnrollInput) int
-		InviteEmailCode    func(childComplexity int, code string, email string) int
 		PairingToken       func(childComplexity int) int
 		RenewCertificate   func(childComplexity int, csr string, keyProtection model.KeyProtection) int
 		ReplaceIdentityKey func(childComplexity int, identityKey string) int
@@ -223,7 +216,6 @@ type MutationResolver interface {
 	RenewCertificate(ctx context.Context, csr string, keyProtection model.KeyProtection) (model.EnrollDeviceResult, error)
 	CreateInvite(ctx context.Context, email *string) (*model.CreatedInvite, error)
 	CancelInvite(ctx context.Context, id string) (bool, error)
-	InviteEmailCode(ctx context.Context, code string, email string) (model.InviteEmailResult, error)
 	EnrollWithInvite(ctx context.Context, input model.InviteEnrollInput) (model.InviteEnrollResult, error)
 	AcceptInvite(ctx context.Context, code string) (model.InviteAcceptResult, error)
 	UploadPrekeys(ctx context.Context, input model.UploadPrekeysInput) (*model.PrekeyCount, error)
@@ -317,18 +309,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.CreatedInvite.Code(childComplexity), true
-	case "CreatedInvite.emailCode":
-		if e.ComplexityRoot.CreatedInvite.EmailCode == nil {
-			break
-		}
-
-		return e.ComplexityRoot.CreatedInvite.EmailCode(childComplexity), true
 	case "CreatedInvite.invite":
 		if e.ComplexityRoot.CreatedInvite.Invite == nil {
 			break
 		}
 
 		return e.ComplexityRoot.CreatedInvite.Invite(childComplexity), true
+	case "CreatedInvite.passcode":
+		if e.ComplexityRoot.CreatedInvite.Passcode == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CreatedInvite.Passcode(childComplexity), true
 
 	case "EnrolledDevice.caCertificate":
 		if e.ComplexityRoot.EnrolledDevice.CaCertificate == nil {
@@ -418,19 +410,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Invite.ID(childComplexity), true
 
-	case "InviteEmailSent.email":
-		if e.ComplexityRoot.InviteEmailSent.Email == nil {
-			break
-		}
-
-		return e.ComplexityRoot.InviteEmailSent.Email(childComplexity), true
-	case "InviteEmailSent.expiresAt":
-		if e.ComplexityRoot.InviteEmailSent.ExpiresAt == nil {
-			break
-		}
-
-		return e.ComplexityRoot.InviteEmailSent.ExpiresAt(childComplexity), true
-
 	case "InviteEnrolled.device":
 		if e.ComplexityRoot.InviteEnrolled.Device == nil {
 			break
@@ -457,12 +436,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.InvitePairing.PairingToken(childComplexity), true
 
-	case "InvitePreview.codeFromInviter":
-		if e.ComplexityRoot.InvitePreview.CodeFromInviter == nil {
-			break
-		}
-
-		return e.ComplexityRoot.InvitePreview.CodeFromInviter(childComplexity), true
 	case "InvitePreview.email":
 		if e.ComplexityRoot.InvitePreview.Email == nil {
 			break
@@ -634,17 +607,6 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.EnrollWithInvite(childComplexity, args["input"].(model.InviteEnrollInput)), true
-	case "Mutation.inviteEmailCode":
-		if e.ComplexityRoot.Mutation.InviteEmailCode == nil {
-			break
-		}
-
-		args, err := ec.field_Mutation_inviteEmailCode_args(ctx, rawArgs)
-		if err != nil {
-			return 0, false
-		}
-
-		return e.ComplexityRoot.Mutation.InviteEmailCode(childComplexity, args["code"].(string), args["email"].(string)), true
 	case "Mutation.pairingToken":
 		if e.ComplexityRoot.Mutation.PairingToken == nil {
 			break
@@ -1105,8 +1067,9 @@ type ServerDiscovery {
 `, BuiltIn: false},
 	{Name: "../schema/invite.graphql", Input: `# --- Invites ---------------------------------------------------------------------------------------------------
 # See docs/authentication.md, "Invites". One link (ptt://invite) that enrolls a friend and pairs them with whoever
-# invited them. A friend who isn't on this server proves an email address with a code sent there (inviteEmailCode),
-# and enrollWithInvite then makes their user, named from the email, and their device's certificate. A friend already
+# invited them. Every invite has a six-digit passcode that goes beside the link: the inviter's phone sends both to
+# the friend (from its mail app, or any chat app), and the server sends no mail at all. A friend who isn't on this
+# server redeems it with enrollWithInvite, which makes their user and their device's certificate; a friend already
 # enrolled here redeems it with acceptInvite. Both answer a pairing token of the inviter, which the phone uses as one
 # read from the inviter's QR code.
 #
@@ -1121,22 +1084,17 @@ extend type Query {
 
 extend type Mutation {
   """
-  An invite from the caller's user, working once, for 7 days. With email, only that address can redeem it, and the
-  answer has its emailCode: the caller's phone emails it with the link, from the user's own mail app, so the server
-  sends no mail for it. RATE_LIMITED with 5 waiting; INVITES_OFF when the server's owner turned invites off.
+  An invite from the caller's user, working once, for 7 days: its code (for the link) and its passcode (six digits,
+  sent beside the link). The caller's phone sends both to the friend; the server sends nothing. With email, only
+  that address can redeem it. RATE_LIMITED with 5 waiting; INVITES_OFF when the server's owner turned invites off.
   """
   createInvite(email: String): CreatedInvite!
   "Stops the caller's waiting invite id from working. False if there was none."
   cancelInvite(id: String!): Boolean!
   """
-  Sends a six-digit code to email, for enrollWithInvite: a new one each time (the one before stops working), at most
-  5 per invite and 30 seconds apart. The code works for 15 minutes.
-  """
-  inviteEmailCode(code: String!, email: String!): InviteEmailResult! @public
-  """
-  Redeems an invite on a phone that isn't enrolled: with the email and the code sent there, makes the user and the
-  device's certificate (as enrollDevice), and gives a pairing token of the inviter. The invite is used up only when
-  all of it checked out.
+  Redeems an invite on a phone that isn't enrolled: checks the passcode (10 wrong ones end the invite) and the email,
+  makes the user and the device's certificate (as enrollDevice), and gives a pairing token of the inviter. The invite
+  is used up only when all of it checked out.
   """
   enrollWithInvite(input: InviteEnrollInput!): InviteEnrollResult! @public
   "Redeems an invite on a phone already enrolled here: a pairing token of the inviter."
@@ -1156,16 +1114,20 @@ type CreatedInvite {
   invite: Invite!
   "22 characters, base64url: put it in the invite link. Shown only now."
   code: String!
-  "For an invite with an email: six digits to email there with the link (not in the link). Shown only now."
-  emailCode: String
+  "Six digits, to send beside the link (not in it). Shown only now."
+  passcode: String!
 }
 
 input InviteEnrollInput {
   "From the invite link."
   code: String!
-  email: String!
-  "The six digits sent to email; spaces and dashes are ignored."
-  emailCode: String!
+  "The six digits sent with the link; spaces and dashes are ignored."
+  passcode: String!
+  """
+  For an invite with an email: that address (any case), or EMAIL_MISMATCH. For one without: the friend's own email
+  when they give one (not verified: nothing is sent there), or null.
+  """
+  email: String
   "The friend's own name, as their contacts see it (first and last name, any letters)."
   displayName: String!
   "As in EnrollDeviceInput."
@@ -1175,7 +1137,6 @@ input InviteEnrollInput {
 }
 
 union InvitePreviewResult = InvitePreview | InviteRejected
-union InviteEmailResult = InviteEmailSent | InviteRejected
 union InviteEnrollResult = InviteEnrolled | InviteRejected
 union InviteAcceptResult = InvitePairing | InviteRejected
 
@@ -1184,14 +1145,6 @@ type InvitePreview {
   inviterDisplayName: String
   "The address the invite is for; null for anyone."
   email: String
-  expiresAt: Time!
-  "The inviter emailed the code with the link: type it; inviteEmailCode isn't needed (it answers CODE_FROM_INVITER)."
-  codeFromInviter: Boolean!
-}
-
-type InviteEmailSent {
-  email: String!
-  "When the code stops working."
   expiresAt: Time!
 }
 
@@ -1218,18 +1171,14 @@ enum InviteRejectedReason {
   EMAIL_MISMATCH
   "Another user has this email: enroll a new phone of theirs with a code from the server's owner instead."
   EMAIL_TAKEN
-  "The email code is wrong or expired; after 5 wrong ones, ask for a new one."
-  WRONG_EMAIL_CODE
-  "Too many wrong codes from this address (wait a minute), or too many email codes for this invite."
+  "The passcode is wrong; after 10 wrong ones the invite stops working."
+  WRONG_PASSCODE
+  "Too many wrong codes from this address: wait a minute."
   RATE_LIMITED
   "The certificate request is malformed, badly signed or not for an EC P-256 key."
   INVALID_CSR
   "The inviter opened their own invite."
   OWN_INVITE
-  "The server couldn't send the email; try again later."
-  MAIL_FAILED
-  "The inviter emailed the code with the link: use that one."
-  CODE_FROM_INVITER
 }
 `, BuiltIn: false},
 	{Name: "../schema/messaging.graphql", Input: `# --- Keys, pairing and contacts (phase 2) ------------------------------------------------------------------------
@@ -1460,7 +1409,7 @@ type Me {
   deviceName: String!
   "The name the user gave for themselves when they joined by an invite; null otherwise."
   displayName: String
-  "The email the user proved when they joined by an invite; null otherwise."
+  "The email the user joined with by an invite (the one the inviter typed, or for an invite to anyone the one they gave, unverified); null otherwise."
   email: String
 }
 
@@ -1577,8 +1526,8 @@ func (ec *executionContext) childFields_CreatedInvite(ctx context.Context, field
 		return ec.fieldContext_CreatedInvite_invite(ctx, field)
 	case "code":
 		return ec.fieldContext_CreatedInvite_code(ctx, field)
-	case "emailCode":
-		return ec.fieldContext_CreatedInvite_emailCode(ctx, field)
+	case "passcode":
+		return ec.fieldContext_CreatedInvite_passcode(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type CreatedInvite", field.Name)
 }
@@ -1990,28 +1939,6 @@ func (ec *executionContext) field_Mutation_enrollWithInvite_args(ctx context.Con
 		return nil, err
 	}
 	args["input"] = arg0
-	return args, nil
-}
-
-func (ec *executionContext) field_Mutation_inviteEmailCode_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
-	var err error
-	args := map[string]any{}
-	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "code",
-		func(ctx context.Context, v any) (string, error) {
-			return ec.unmarshalNString2string(ctx, v)
-		})
-	if err != nil {
-		return nil, err
-	}
-	args["code"] = arg0
-	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "email",
-		func(ctx context.Context, v any) (string, error) {
-			return ec.unmarshalNString2string(ctx, v)
-		})
-	if err != nil {
-		return nil, err
-	}
-	args["email"] = arg1
 	return args, nil
 }
 
@@ -2469,26 +2396,26 @@ func (ec *executionContext) fieldContext_CreatedInvite_code(_ context.Context, f
 	return graphql.NewScalarFieldContext("CreatedInvite", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
-func (ec *executionContext) _CreatedInvite_emailCode(ctx context.Context, field graphql.CollectedField, obj *model.CreatedInvite) (ret graphql.Marshaler) {
+func (ec *executionContext) _CreatedInvite_passcode(ctx context.Context, field graphql.CollectedField, obj *model.CreatedInvite) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
 		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.fieldContext_CreatedInvite_emailCode(ctx, field)
+			return ec.fieldContext_CreatedInvite_passcode(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return obj.EmailCode, nil
+			return obj.Passcode, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
-			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
 		},
 		true,
-		false,
+		true,
 	)
 }
-func (ec *executionContext) fieldContext_CreatedInvite_emailCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_CreatedInvite_passcode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("CreatedInvite", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -2814,52 +2741,6 @@ func (ec *executionContext) fieldContext_Invite_expiresAt(_ context.Context, fie
 	return graphql.NewScalarFieldContext("Invite", field, false, false, errors.New("field of type Time does not have child fields"))
 }
 
-func (ec *executionContext) _InviteEmailSent_email(ctx context.Context, field graphql.CollectedField, obj *model.InviteEmailSent) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.fieldContext_InviteEmailSent_email(ctx, field)
-		},
-		func(ctx context.Context) (any, error) {
-			return obj.Email, nil
-		},
-		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
-			return ec.marshalNString2string(ctx, selections, v)
-		},
-		true,
-		true,
-	)
-}
-func (ec *executionContext) fieldContext_InviteEmailSent_email(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("InviteEmailSent", field, false, false, errors.New("field of type String does not have child fields"))
-}
-
-func (ec *executionContext) _InviteEmailSent_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.InviteEmailSent) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.fieldContext_InviteEmailSent_expiresAt(ctx, field)
-		},
-		func(ctx context.Context) (any, error) {
-			return obj.ExpiresAt, nil
-		},
-		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
-			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
-		},
-		true,
-		true,
-	)
-}
-func (ec *executionContext) fieldContext_InviteEmailSent_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("InviteEmailSent", field, false, false, errors.New("field of type Time does not have child fields"))
-}
-
 func (ec *executionContext) _InviteEnrolled_device(ctx context.Context, field graphql.CollectedField, obj *model.InviteEnrolled) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -3069,29 +2950,6 @@ func (ec *executionContext) _InvitePreview_expiresAt(ctx context.Context, field 
 }
 func (ec *executionContext) fieldContext_InvitePreview_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("InvitePreview", field, false, false, errors.New("field of type Time does not have child fields"))
-}
-
-func (ec *executionContext) _InvitePreview_codeFromInviter(ctx context.Context, field graphql.CollectedField, obj *model.InvitePreview) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.fieldContext_InvitePreview_codeFromInviter(ctx, field)
-		},
-		func(ctx context.Context) (any, error) {
-			return obj.CodeFromInviter, nil
-		},
-		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
-			return ec.marshalNBoolean2bool(ctx, selections, v)
-		},
-		true,
-		true,
-	)
-}
-func (ec *executionContext) fieldContext_InvitePreview_codeFromInviter(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("InvitePreview", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _InviteRejected_reason(ctx context.Context, field graphql.CollectedField, obj *model.InviteRejected) (ret graphql.Marshaler) {
@@ -3530,63 +3388,6 @@ func (ec *executionContext) fieldContext_Mutation_cancelInvite(ctx context.Conte
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_cancelInvite_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
-		ec.Error(ctx, err)
-		return fc, err
-	}
-	return fc, nil
-}
-
-func (ec *executionContext) _Mutation_inviteEmailCode(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	return graphql.ResolveField(
-		ctx,
-		ec.OperationContext,
-		field,
-		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return ec.fieldContext_Mutation_inviteEmailCode(ctx, field)
-		},
-		func(ctx context.Context) (any, error) {
-			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Mutation().InviteEmailCode(ctx, fc.Args["code"].(string), fc.Args["email"].(string))
-		},
-		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
-			directive0 := next
-
-			directive1 := func(ctx context.Context) (any, error) {
-				if ec.Directives.Public == nil {
-					var zeroVal model.InviteEmailResult
-					return zeroVal, errors.New("directive public is not implemented")
-				}
-				return ec.Directives.Public(ctx, nil, directive0)
-			}
-
-			next = directive1
-			return next
-		},
-		func(ctx context.Context, selections ast.SelectionSet, v model.InviteEmailResult) graphql.Marshaler {
-			return ec.marshalNInviteEmailResult2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐInviteEmailResult(ctx, selections, v)
-		},
-		true,
-		true,
-	)
-}
-func (ec *executionContext) fieldContext_Mutation_inviteEmailCode(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	fc = &graphql.FieldContext{
-		Object:     "Mutation",
-		Field:      field,
-		IsMethod:   true,
-		IsResolver: true,
-		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
-			return nil, errors.New("field of type InviteEmailResult does not have child fields")
-		},
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			err = ec.Recover(ctx, r)
-			ec.Error(ctx, err)
-		}
-	}()
-	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_Mutation_inviteEmailCode_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -6364,7 +6165,7 @@ func (ec *executionContext) unmarshalInputInviteEnrollInput(ctx context.Context,
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"code", "email", "emailCode", "displayName", "deviceName", "csr", "keyProtection"}
+	fieldsInOrder := [...]string{"code", "passcode", "email", "displayName", "deviceName", "csr", "keyProtection"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -6378,20 +6179,20 @@ func (ec *executionContext) unmarshalInputInviteEnrollInput(ctx context.Context,
 				return it, err
 			}
 			it.Code = data
+		case "passcode":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("passcode"))
+			data, err := ec.unmarshalNString2string(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.Passcode = data
 		case "email":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("email"))
-			data, err := ec.unmarshalNString2string(ctx, v)
+			data, err := ec.unmarshalOString2ᚖstring(ctx, v)
 			if err != nil {
 				return it, err
 			}
 			it.Email = data
-		case "emailCode":
-			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("emailCode"))
-			data, err := ec.unmarshalNString2string(ctx, v)
-			if err != nil {
-				return it, err
-			}
-			it.EmailCode = data
 		case "displayName":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("displayName"))
 			data, err := ec.unmarshalNString2string(ctx, v)
@@ -6656,33 +6457,6 @@ func (ec *executionContext) _InviteAcceptResult(ctx context.Context, sel ast.Sel
 	}
 }
 
-func (ec *executionContext) _InviteEmailResult(ctx context.Context, sel ast.SelectionSet, obj model.InviteEmailResult) graphql.Marshaler {
-	switch obj := (obj).(type) {
-	case nil:
-		return graphql.Null
-	case model.InviteRejected:
-		return ec._InviteRejected(ctx, sel, &obj)
-	case *model.InviteRejected:
-		if obj == nil {
-			return graphql.Null
-		}
-		return ec._InviteRejected(ctx, sel, obj)
-	case model.InviteEmailSent:
-		return ec._InviteEmailSent(ctx, sel, &obj)
-	case *model.InviteEmailSent:
-		if obj == nil {
-			return graphql.Null
-		}
-		return ec._InviteEmailSent(ctx, sel, obj)
-	default:
-		if typedObj, ok := obj.(graphql.Marshaler); ok {
-			return typedObj
-		} else {
-			panic(fmt.Errorf("unexpected type %T; non-generated variants of InviteEmailResult must implement graphql.Marshaler", obj))
-		}
-	}
-}
-
 func (ec *executionContext) _InviteEnrollResult(ctx context.Context, sel ast.SelectionSet, obj model.InviteEnrollResult) graphql.Marshaler {
 	switch obj := (obj).(type) {
 	case nil:
@@ -6864,8 +6638,11 @@ func (ec *executionContext) _CreatedInvite(ctx context.Context, sel ast.Selectio
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
-		case "emailCode":
-			out.Values[i] = ec._CreatedInvite_emailCode(ctx, field, obj)
+		case "passcode":
+			out.Values[i] = ec._CreatedInvite_passcode(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -7089,50 +6866,6 @@ func (ec *executionContext) _Invite(ctx context.Context, sel ast.SelectionSet, o
 	return out
 }
 
-var inviteEmailSentImplementors = []string{"InviteEmailSent", "InviteEmailResult"}
-
-func (ec *executionContext) _InviteEmailSent(ctx context.Context, sel ast.SelectionSet, obj *model.InviteEmailSent) graphql.Marshaler {
-	fields := graphql.CollectFields(ec.OperationContext, sel, inviteEmailSentImplementors)
-
-	out := graphql.NewFieldSet(fields)
-	deferred := make(map[string]*graphql.FieldSet)
-	for i, field := range fields {
-		switch field.Name {
-		case "__typename":
-			out.Values[i] = graphql.MarshalString("InviteEmailSent")
-		case "email":
-			out.Values[i] = ec._InviteEmailSent_email(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
-		case "expiresAt":
-			out.Values[i] = ec._InviteEmailSent_expiresAt(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
-		default:
-			panic("unknown field " + strconv.Quote(field.Name))
-		}
-	}
-	out.Dispatch(ctx)
-	if out.Invalids > 0 {
-		return graphql.Null
-	}
-
-	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
-
-	for label, dfs := range deferred {
-		ec.ProcessDeferredGroup(graphql.DeferredGroup{
-			Label:    label,
-			Path:     graphql.GetPath(ctx),
-			FieldSet: dfs,
-			Context:  ctx,
-		})
-	}
-
-	return out
-}
-
 var inviteEnrolledImplementors = []string{"InviteEnrolled", "InviteEnrollResult"}
 
 func (ec *executionContext) _InviteEnrolled(ctx context.Context, sel ast.SelectionSet, obj *model.InviteEnrolled) graphql.Marshaler {
@@ -7243,11 +6976,6 @@ func (ec *executionContext) _InvitePreview(ctx context.Context, sel ast.Selectio
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
-		case "codeFromInviter":
-			out.Values[i] = ec._InvitePreview_codeFromInviter(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -7271,7 +6999,7 @@ func (ec *executionContext) _InvitePreview(ctx context.Context, sel ast.Selectio
 	return out
 }
 
-var inviteRejectedImplementors = []string{"InviteRejected", "InvitePreviewResult", "InviteEmailResult", "InviteEnrollResult", "InviteAcceptResult"}
+var inviteRejectedImplementors = []string{"InviteRejected", "InvitePreviewResult", "InviteEnrollResult", "InviteAcceptResult"}
 
 func (ec *executionContext) _InviteRejected(ctx context.Context, sel ast.SelectionSet, obj *model.InviteRejected) graphql.Marshaler {
 	fields := graphql.CollectFields(ec.OperationContext, sel, inviteRejectedImplementors)
@@ -7462,13 +7190,6 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "cancelInvite":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_cancelInvite(ctx, field)
-			})
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
-		case "inviteEmailCode":
-			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
-				return ec._Mutation_inviteEmailCode(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -8797,16 +8518,6 @@ func (ec *executionContext) marshalNInviteAcceptResult2githubᚗcomᚋchencohens
 		return graphql.Null
 	}
 	return ec._InviteAcceptResult(ctx, sel, v)
-}
-
-func (ec *executionContext) marshalNInviteEmailResult2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐInviteEmailResult(ctx context.Context, sel ast.SelectionSet, v model.InviteEmailResult) graphql.Marshaler {
-	if v == nil {
-		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
-			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
-		}
-		return graphql.Null
-	}
-	return ec._InviteEmailResult(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNInviteEnrollInput2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐInviteEnrollInput(ctx context.Context, v any) (model.InviteEnrollInput, error) {

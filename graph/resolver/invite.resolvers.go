@@ -31,7 +31,7 @@ func (r *mutationResolver) CreateInvite(ctx context.Context, email *string) (*mo
 	if email != nil {
 		address = *email
 	}
-	created, code, emailCode, err := r.Invites.Create(d.User, address)
+	created, code, passcode, err := r.Invites.Create(d.User, address)
 	switch {
 	case errors.Is(err, invite.ErrInvalidEmail):
 		return nil, coded(CodeInvalidEmail, "%v", err)
@@ -40,7 +40,7 @@ func (r *mutationResolver) CreateInvite(ctx context.Context, email *string) (*mo
 	case err != nil:
 		return nil, err
 	}
-	return &model.CreatedInvite{Invite: inviteModel(created), Code: code, EmailCode: nonEmpty(emailCode)}, nil
+	return &model.CreatedInvite{Invite: inviteModel(created), Code: code, Passcode: passcode}, nil
 }
 
 // CancelInvite is the resolver for the cancelInvite field.
@@ -55,19 +55,6 @@ func (r *mutationResolver) CancelInvite(ctx context.Context, id string) (bool, e
 	return r.Invites.Store.Cancel(d.User, id)
 }
 
-// InviteEmailCode is the resolver for the inviteEmailCode field.
-func (r *mutationResolver) InviteEmailCode(ctx context.Context, code string, email string) (model.InviteEmailResult, error) {
-	if r.Invites == nil {
-		return model.InviteRejected{Reason: model.InviteRejectedReasonInvalidCode}, nil
-	}
-	expires, rejection := r.Invites.SendEmailCode(auth.ClientIPFromContext(ctx), code, email)
-	if rejection != "" {
-		return model.InviteRejected{Reason: model.InviteRejectedReason(rejection)}, nil
-	}
-	normalized, _ := invite.NormalizeEmail(email)
-	return model.InviteEmailSent{Email: normalized, ExpiresAt: expires}, nil
-}
-
 // EnrollWithInvite is the resolver for the enrollWithInvite field.
 func (r *mutationResolver) EnrollWithInvite(ctx context.Context, input model.InviteEnrollInput) (model.InviteEnrollResult, error) {
 	if r.Invites == nil {
@@ -78,10 +65,14 @@ func (r *mutationResolver) EnrollWithInvite(ctx context.Context, input model.Inv
 		return model.InviteRejected{Reason: model.InviteRejectedReasonInvalidCsr}, nil
 	}
 	ip := auth.ClientIPFromContext(ctx)
+	email := ""
+	if input.Email != nil {
+		email = *input.Email
+	}
 	enrolled, pairing, rejection, err := r.Invites.Enroll(ip, invite.EnrollRequest{
 		Code:        input.Code,
-		Email:       input.Email,
-		EmailCode:   input.EmailCode,
+		Passcode:    input.Passcode,
+		Email:       email,
 		DisplayName: input.DisplayName,
 		Request: enroll.Request{
 			DeviceName:    input.DeviceName,
@@ -149,5 +140,5 @@ func (r *queryResolver) InvitePreview(ctx context.Context, code string) (model.I
 		return model.InviteRejected{Reason: model.InviteRejectedReason(rejection)}, nil
 	}
 	return model.InvitePreview{Inviter: preview.Inviter, InviterDisplayName: nonEmpty(preview.InviterDisplayName),
-		Email: nonEmpty(preview.Email), ExpiresAt: preview.ExpiresAt, CodeFromInviter: preview.CodeFromInviter}, nil
+		Email: nonEmpty(preview.Email), ExpiresAt: preview.ExpiresAt}, nil
 }

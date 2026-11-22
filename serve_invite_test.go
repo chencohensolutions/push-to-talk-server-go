@@ -9,77 +9,40 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	pb "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1"
 )
 
-// sentMail keeps what the server would have emailed.
-type sentMail struct {
-	mu   sync.Mutex
-	mail []struct{ to, subject, body string }
-}
-
-func (m *sentMail) Send(to, subject, body string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.mail = append(m.mail, struct{ to, subject, body string }{to, subject, body})
-	return nil
-}
-
-var sixDigits = regexp.MustCompile(`\b\d{6}\b`)
-
-// lastCode is the six-digit code of the last email to to.
-func (m *sentMail) lastCode(t *testing.T, to string) string {
-	t.Helper()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for i := len(m.mail) - 1; i >= 0; i-- {
-		if m.mail[i].to == to {
-			return sixDigits.FindString(m.mail[i].body)
-		}
-	}
-	t.Fatalf("no email to %s", to)
-	return ""
-}
-
-func (e *testEnv) mailbox() *sentMail {
-	m := &sentMail{}
-	e.invites.Mail = m
-	return m
-}
+var sixDigits = regexp.MustCompile(`^\d{6}$`)
 
 func (e *testEnv) createInvite(t *testing.T, p *phone, email string) (string, string) {
 	t.Helper()
-	code, _, problem := e.createInviteWithCode(t, p, email)
+	code, _, problem := e.createInviteWithPasscode(t, p, email)
 	return code, problem
 }
 
-// createInviteWithCode is createInvite with the email code the inviter's phone emails (empty without an email).
-func (e *testEnv) createInviteWithCode(t *testing.T, p *phone, email string) (string, string, string) {
+// createInviteWithPasscode is createInvite with the passcode the inviter's phone sends beside the link.
+func (e *testEnv) createInviteWithPasscode(t *testing.T, p *phone, email string) (string, string, string) {
 	t.Helper()
 	vars := map[string]any{}
 	if email != "" {
 		vars["email"] = email
 	}
-	r := e.graphql(t, p.client, `mutation($email: String) { createInvite(email: $email) { code emailCode invite { id email expiresAt } } }`, vars)
+	r := e.graphql(t, p.client, `mutation($email: String) { createInvite(email: $email) { code passcode invite { id email expiresAt } } }`, vars)
 	if code := errorCode(r); code != "" {
 		return "", "", code
 	}
 	var got struct {
-		Code      string
-		EmailCode *string
+		Code     string
+		Passcode string
 	}
 	json.Unmarshal(r.Data["createInvite"], &got)
-	if len(r.Errors) > 0 || len(got.Code) != 22 || (email != "") != (got.EmailCode != nil) {
+	if len(r.Errors) > 0 || len(got.Code) != 22 || !sixDigits.MatchString(got.Passcode) {
 		t.Fatalf("createInvite: %s %+v", r.Data["createInvite"], r.Errors)
 	}
-	if got.EmailCode == nil {
-		return got.Code, "", ""
-	}
-	return got.Code, *got.EmailCode, ""
+	return got.Code, got.Passcode, ""
 }
 
 // anonymous runs a public field without a certificate and gives its answer.
@@ -91,10 +54,6 @@ func (e *testEnv) anonymous(t *testing.T, query string, vars map[string]any, fie
 	}
 	return string(r.Data[field])
 }
-
-const emailCodeMutation = `mutation($code: String!, $email: String!) {
-	inviteEmailCode(code: $code, email: $email) { __typename ... on InviteEmailSent { email } ... on InviteRejected { reason } }
-}`
 
 const enrollWithInviteMutation = `mutation($input: InviteEnrollInput!) {
 	enrollWithInvite(input: $input) {
@@ -119,22 +78,42 @@ type invitedResult struct {
 	}
 }
 
-func (e *testEnv) enrollWithInvite(t *testing.T, code, email, emailCode string, key *ecdsa.PrivateKey) invitedResult {
+// redeem is what a friend's phone sends with enrollWithInvite; an empty email is sent as null.
+type redeem struct {
+	code, passcode, email, name string
+}
+
+func (e *testEnv) enrollWithInvite(t *testing.T, r redeem, key *ecdsa.PrivateKey) invitedResult {
 	t.Helper()
-	answer := e.anonymous(t, enrollWithInviteMutation, map[string]any{"input": map[string]any{
-		"code": code, "email": email, "emailCode": emailCode, "displayName": "  Dana Cohen‮ ",
+	if r.name == "" {
+		r.name = "  Dana Cohen‮ "
+	}
+	input := map[string]any{
+		"code": r.code, "passcode": r.passcode, "displayName": r.name,
 		"deviceName": "Galaxy S25", "csr": csrOf(t, key), "keyProtection": "STRONGBOX",
-	}}, "enrollWithInvite")
+	}
+	if r.email != "" {
+		input["email"] = r.email
+	}
+	answer := e.anonymous(t, enrollWithInviteMutation, map[string]any{"input": input}, "enrollWithInvite")
 	var got invitedResult
 	json.Unmarshal([]byte(answer), &got)
 	return got
 }
 
-// An invite from hen to dana's email: dana's phone proves the address with the code sent there, is made a user and
-// enrolled in one step, and pairs with hen using the pairing token the invite gives, as after scanning hen's QR code.
+// otherDigits is six digits that aren't passcode.
+func otherDigits(passcode string) string {
+	if passcode == "000000" {
+		return "111111"
+	}
+	return "000000"
+}
+
+// An invite from hen to dana's email: hen's phone sends the link and its passcode (the server sends nothing), and
+// dana's phone, with both and that email, is made a user and enrolled in one step, then pairs with hen using the
+// pairing token the invite gives, as after scanning hen's QR code.
 func TestAFriendJoinsByAnInvite(t *testing.T) {
 	env := newTestEnv(t)
-	box := env.mailbox()
 	env.addUser(t, "hen")
 	hen := env.phone(t, "hen")
 	env.uploadKeys(t, hen, ecKey())
@@ -142,45 +121,32 @@ func TestAFriendJoinsByAnInvite(t *testing.T) {
 	if _, problem := env.createInvite(t, hen, "not an email"); problem != "INVALID_EMAIL" {
 		t.Fatalf("an invite for a bad address: %s", problem)
 	}
-	code, digits, _ := env.createInviteWithCode(t, hen, " Dana@Example.com ")
-	if !sixDigits.MatchString(digits) {
-		t.Fatalf("email code = %q", digits)
-	}
-	preview := env.anonymous(t, `query($c: String!) { invitePreview(code: $c) { __typename ... on InvitePreview { inviter email codeFromInviter } } }`,
+	code, passcode, _ := env.createInviteWithPasscode(t, hen, " Dana@Example.com ")
+	preview := env.anonymous(t, `query($c: String!) { invitePreview(code: $c) { __typename ... on InvitePreview { inviter email } } }`,
 		map[string]any{"c": code}, "invitePreview")
-	if preview != `{"__typename":"InvitePreview","inviter":"hen","email":"dana@example.com","codeFromInviter":true}` {
+	if preview != `{"__typename":"InvitePreview","inviter":"hen","email":"dana@example.com"}` {
 		t.Fatalf("preview = %s", preview)
 	}
-	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": code, "email": "eve@example.com"}, "inviteEmailCode"); !strings.Contains(got, "EMAIL_MISMATCH") {
-		t.Fatalf("a code to another address: %s", got)
-	}
-	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": "wrong", "email": "dana@example.com"}, "inviteEmailCode"); !strings.Contains(got, "INVALID_CODE") {
-		t.Fatalf("a wrong invite: %s", got)
-	}
-	// The server sends no mail for it: hen's phone did.
-	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": code, "email": "DANA@example.com"}, "inviteEmailCode"); !strings.Contains(got, "CODE_FROM_INVITER") {
-		t.Fatalf("asking the server for a code: %s", got)
-	}
-	if len(box.mail) != 0 {
-		t.Fatalf("the server sent mail: %+v", box.mail)
-	}
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if got := env.enrollWithInvite(t, code, "eve@example.com", digits, key); got.Reason != "EMAIL_MISMATCH" {
+	if got := env.enrollWithInvite(t, redeem{code: "wrong", passcode: passcode, email: "dana@example.com"}, key); got.Reason != "INVALID_CODE" {
+		t.Fatalf("a wrong invite: %+v", got)
+	}
+	if got := env.enrollWithInvite(t, redeem{code: code, passcode: otherDigits(passcode), email: "dana@example.com"}, key); got.Reason != "WRONG_PASSCODE" {
+		t.Fatalf("a wrong passcode: %+v", got)
+	}
+	// The email is checked after the passcode, so the link alone doesn't tell whether an address is taken.
+	if got := env.enrollWithInvite(t, redeem{code: code, passcode: passcode, email: "eve@example.com"}, key); got.Reason != "EMAIL_MISMATCH" {
 		t.Fatalf("enrolling with another email: %+v", got)
 	}
-	wrong := "000000"
-	if digits == wrong {
-		wrong = "111111"
+	if got := env.enrollWithInvite(t, redeem{code: code, passcode: passcode}, key); got.Reason != "EMAIL_MISMATCH" {
+		t.Fatalf("enrolling without the invite's email: %+v", got)
 	}
-	if got := env.enrollWithInvite(t, code, "dana@example.com", wrong, key); got.Reason != "WRONG_EMAIL_CODE" {
-		t.Fatalf("a wrong email code: %+v", got)
-	}
-	got := env.enrollWithInvite(t, code, "dana@example.com", digits[:3]+" "+digits[3:], key)
+	got := env.enrollWithInvite(t, redeem{code: code, passcode: passcode[:3] + " " + passcode[3:], email: "DANA@example.com"}, key)
 	if got.Typename != "InviteEnrolled" || got.Device.User != "dana" || got.Device.DeviceNumber != 1 ||
 		got.Pairing.Inviter != "hen" || got.Pairing.PairingToken == nil || len(got.Pairing.PairingToken.Token) != 22 {
 		t.Fatalf("enrollWithInvite = %+v", got)
 	}
-	if again := env.enrollWithInvite(t, code, "dana@example.com", digits, key); again.Reason != "INVALID_CODE" {
+	if again := env.enrollWithInvite(t, redeem{code: code, passcode: passcode, email: "dana@example.com"}, key); again.Reason != "INVALID_CODE" {
 		t.Fatalf("the invite a second time: %+v", again)
 	}
 	user := env.users.Find("dana")
@@ -218,34 +184,69 @@ func TestAFriendJoinsByAnInvite(t *testing.T) {
 	}
 
 	// The email is dana's now: another invite can't make a second user with it.
-	again, _ := env.createInvite(t, hen, "")
-	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": again, "email": "dana@EXAMPLE.com"}, "inviteEmailCode"); !strings.Contains(got, "EMAIL_TAKEN") {
-		t.Fatalf("a code for a taken email: %s", got)
+	again, passcode, _ := env.createInviteWithPasscode(t, hen, "")
+	other, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if got := env.enrollWithInvite(t, redeem{code: again, passcode: passcode, email: "dana@EXAMPLE.com"}, other); got.Reason != "EMAIL_TAKEN" {
+		t.Fatalf("a taken email: %+v", got)
 	}
 }
 
-// An invite without an email: the friend types theirs, and the server sends the code (over SMTP, or to its log).
-func TestAnOpenInviteSendsTheCodeFromTheServer(t *testing.T) {
+// An invite without an email: it has a passcode all the same, and the friend may give their own email (not
+// verified) or none; without one, their user name is made from their display name.
+func TestAnInviteForAnyone(t *testing.T) {
 	env := newTestEnv(t)
-	box := env.mailbox()
 	env.addUser(t, "hen")
 	hen := env.phone(t, "hen")
-	code, _ := env.createInvite(t, hen, "")
-	preview := env.anonymous(t, `query($c: String!) { invitePreview(code: $c) { ... on InvitePreview { email codeFromInviter } } }`,
+	code, passcode, _ := env.createInviteWithPasscode(t, hen, "")
+	preview := env.anonymous(t, `query($c: String!) { invitePreview(code: $c) { ... on InvitePreview { inviter email } } }`,
 		map[string]any{"c": code}, "invitePreview")
-	if preview != `{"email":null,"codeFromInviter":false}` {
+	if preview != `{"inviter":"hen","email":null}` {
 		t.Fatalf("preview = %s", preview)
 	}
-	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": code, "email": "Eve@Example.com"}, "inviteEmailCode"); got != `{"__typename":"InviteEmailSent","email":"eve@example.com"}` {
-		t.Fatalf("the email code: %s", got)
-	}
-	if got := env.anonymous(t, emailCodeMutation, map[string]any{"code": code, "email": "eve@example.com"}, "inviteEmailCode"); !strings.Contains(got, "RATE_LIMITED") {
-		t.Fatalf("a second code at once: %s", got)
-	}
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	got := env.enrollWithInvite(t, code, "eve@example.com", box.lastCode(t, "eve@example.com"), key)
+	if got := env.enrollWithInvite(t, redeem{code: code, passcode: ""}, key); got.Reason != "WRONG_PASSCODE" {
+		t.Fatalf("no passcode: %+v", got)
+	}
+	if got := env.enrollWithInvite(t, redeem{code: code, passcode: passcode, email: "not an email"}, key); got.Reason != "INVALID_EMAIL" {
+		t.Fatalf("a bad email: %+v", got)
+	}
+	got := env.enrollWithInvite(t, redeem{code: code, passcode: passcode, email: " Eve@Example.com", name: "Eve Levi"}, key)
 	if got.Typename != "InviteEnrolled" || got.Device.User != "eve" || got.Pairing.Inviter != "hen" {
 		t.Fatalf("enrollWithInvite = %+v", got)
+	}
+	if eve := env.users.Find("eve"); eve == nil || eve.Email != "eve@example.com" || eve.DisplayName != "Eve Levi" {
+		t.Fatalf("users.json has %+v", eve)
+	}
+	if again := env.enrollWithInvite(t, redeem{code: code, passcode: passcode, name: "Eve Levi"}, key); again.Reason != "INVALID_CODE" {
+		t.Fatalf("the invite a second time: %+v", again)
+	}
+
+	code, passcode, _ = env.createInviteWithPasscode(t, hen, "")
+	other, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	got = env.enrollWithInvite(t, redeem{code: code, passcode: passcode, name: "Avi Mizrahi"}, other)
+	if got.Typename != "InviteEnrolled" || got.Device.User != "avi.mizrahi" {
+		t.Fatalf("enrollWithInvite without an email = %+v", got)
+	}
+	if avi := env.users.Find("avi.mizrahi"); avi == nil || avi.Email != "" || avi.InvitedBy != "hen" {
+		t.Fatalf("users.json has %+v", avi)
+	}
+}
+
+// Wrong passcodes count against the client's address, as wrong enrollment codes do: five in a minute, then even
+// the right one waits.
+func TestWrongPasscodesAreLimited(t *testing.T) {
+	env := newTestEnv(t)
+	env.addUser(t, "hen")
+	hen := env.phone(t, "hen")
+	code, passcode, _ := env.createInviteWithPasscode(t, hen, "")
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	for i := range 5 {
+		if got := env.enrollWithInvite(t, redeem{code: code, passcode: otherDigits(passcode)}, key); got.Reason != "WRONG_PASSCODE" {
+			t.Fatalf("wrong passcode %d: %+v", i, got)
+		}
+	}
+	if got := env.enrollWithInvite(t, redeem{code: code, passcode: passcode}, key); got.Reason != "RATE_LIMITED" {
+		t.Fatalf("the right passcode after five wrong ones: %+v", got)
 	}
 }
 
@@ -256,7 +257,6 @@ const acceptMutation = `mutation($c: String!) {
 // A friend already enrolled here opens the link: the invite only gives them a pairing token of the inviter.
 func TestAnEnrolledFriendAcceptsAnInvite(t *testing.T) {
 	env := newTestEnv(t)
-	env.mailbox()
 	env.addUsers(t, "hen", "dana")
 	hen, dana := env.phone(t, "hen"), env.phone(t, "dana")
 	code, _ := env.createInvite(t, hen, "")
@@ -287,7 +287,6 @@ func TestAnEnrolledFriendAcceptsAnInvite(t *testing.T) {
 // Invites have limits: five waiting per user, cancel, and none at all when the config turns them off.
 func TestInviteLimits(t *testing.T) {
 	env := newTestEnv(t)
-	env.mailbox()
 	env.addUser(t, "hen")
 	hen := env.phone(t, "hen")
 	for i := range 5 {

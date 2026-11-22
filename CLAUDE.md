@@ -30,8 +30,8 @@ The docs describe what is built, and must be kept in step with the code in the s
   bundle downloads, installer, releases, self-update).
 
 **Phases.** Phase 1: enroll and find the server. Phase 2 (built too): identity keys and prekeys, `/ws` with the
-message queue, pairing, linking a phone, invites (one link that enrolls a friend by their verified email and pairs
-them). Phase 3 FCM (the registry already reserves `fcm_token` and
+message queue, pairing, linking a phone, invites (one link and its passcode, sent from the inviter's phone, that
+enroll a friend and pair them; the server sends no email). Phase 3 FCM (the registry already reserves `fcm_token` and
 `notifications_enabled`); 4 groups; 5a clips and floor control; 5b LiveKit (`/rtc`, `talkToken`, UDP 7882 and TCP
 7881 in `serverPorts`).
 
@@ -51,7 +51,6 @@ go run .                                          # serve https://0.0.0.0:56400 
 go run . user add <name> | user remove <name> | users              # admin commands: the server must be running
 go run . enroll-code <user> | devices [user] | revoke <serial>
 go run . id | discovery                           # this server's id; check the DHT and the router from here
-go run . mail-login                               # sign in once to the Gmail account invite codes are sent from
 ```
 
 After editing `proto/ptt.proto`, regenerate `proto/pttv1/ptt.pb.go` (committed). protoc comes from Maven Central,
@@ -105,10 +104,10 @@ fields); introspection is blocked too. Resolvers get the user with `auth.FromCon
 - `portmap`: UPnP IGD and NAT-PMP, a `Mapper` of `{proto, port}` that maps, renews and removes.
 - `store`: SQLite (`ptt.db`, modernc.org/sqlite, pure Go): the devices' public keys and one-time prekeys, and the
   message queue, one row per (recipient device, envelope).
-- `invite`: invites (`invites.json`, hashed codes, 7 days), the email codes (memory), and redeeming one: a new user
-  named from the verified email and enrolled (`enrollWithInvite`), or an enrolled one (`acceptInvite`); both get a
-  pairing token of the inviter.
-- `mail`: the email codes, through the Gmail API (`gmail` in config.json, a send-only grant from `ptt-server mail-login`), over SMTP (`smtp`) or to the log.
+- `invite`: invites (`invites.json`, hashed codes and passcodes, 7 days; the wrong passcodes in memory), and redeeming
+  one: a new user named from the email or the display name and enrolled (`enrollWithInvite`), or an enrolled one
+  (`acceptInvite`); both get a pairing token of the inviter. The server sends no mail: the inviter's phone sends the
+  link and passcode (`smtp` and `gmail` in an old config.json are taken and ignored).
 - `contacts`: `pairs.json` (pairs, pairings waiting for both confirmations, blocks) and the pairing tokens (memory).
 - `relay`: who may reach whom, the Send checks (`Send`), the active devices, `/ws` (`ServeHTTP`,
   github.com/coder/websocket), `Revoked` (closes sockets, drops keys and queues) and the hourly `Sweep`.

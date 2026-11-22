@@ -25,7 +25,6 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/resolver"
 	"github.com/chencohensolutions/push-to-talk-server-go/invite"
-	"github.com/chencohensolutions/push-to-talk-server-go/mail"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
 	"github.com/chencohensolutions/push-to-talk-server-go/version"
@@ -47,7 +46,7 @@ type server struct {
 	book  *contacts.Book
 	store *store.Store
 	relay *relay.Relay
-	// Invites (invites.json, the email codes); nil when config.json turns them off.
+	// Invites (invites.json, the wrong passcodes); nil when config.json turns them off.
 	invites *invite.Service
 	// Who this server is and where, for serverInfo.discovery; nil when unknown.
 	discovery func() *model.ServerDiscovery
@@ -57,6 +56,9 @@ type server struct {
 // port mapping is removed.
 func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	log.Printf("ptt-server %s", version.String())
+	for _, key := range config.UnusedKeys() {
+		log.Printf("config.json: %q is no longer used (the inviter's phone sends invites; the server sends no mail): remove it", key)
+	}
 	tlsConfig, err := createTLSConfig(config)
 	if err != nil {
 		log.Fatalf("failed to create TLS config: %v", err)
@@ -132,11 +134,7 @@ func openServer(config auth.AppConfig) (*server, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to open the invites: %w", err)
 		}
-		sender, err := mail.New(config.SMTP, config.Gmail)
-		if err != nil {
-			return nil, fmt.Errorf("config.json: %w", err)
-		}
-		s.invites = invite.NewService(invites, users, enrollment, book, sender, time.Now)
+		s.invites = invite.NewService(invites, users, enrollment, book, time.Now)
 	}
 	return s, nil
 }

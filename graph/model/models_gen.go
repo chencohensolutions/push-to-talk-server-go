@@ -22,10 +22,6 @@ type InviteAcceptResult interface {
 	IsInviteAcceptResult()
 }
 
-type InviteEmailResult interface {
-	IsInviteEmailResult()
-}
-
 type InviteEnrollResult interface {
 	IsInviteEnrollResult()
 }
@@ -56,8 +52,8 @@ type CreatedInvite struct {
 	Invite *Invite `json:"invite"`
 	// 22 characters, base64url: put it in the invite link. Shown only now.
 	Code string `json:"code"`
-	// For an invite with an email: six digits to email there with the link (not in the link). Shown only now.
-	EmailCode *string `json:"emailCode,omitempty"`
+	// Six digits, to send beside the link (not in it). Shown only now.
+	Passcode string `json:"passcode"`
 }
 
 type EnrollDeviceInput struct {
@@ -109,20 +105,14 @@ type Invite struct {
 	ExpiresAt time.Time `json:"expiresAt"`
 }
 
-type InviteEmailSent struct {
-	Email string `json:"email"`
-	// When the code stops working.
-	ExpiresAt time.Time `json:"expiresAt"`
-}
-
-func (InviteEmailSent) IsInviteEmailResult() {}
-
 type InviteEnrollInput struct {
 	// From the invite link.
-	Code  string `json:"code"`
-	Email string `json:"email"`
-	// The six digits sent to email; spaces and dashes are ignored.
-	EmailCode string `json:"emailCode"`
+	Code string `json:"code"`
+	// The six digits sent with the link; spaces and dashes are ignored.
+	Passcode string `json:"passcode"`
+	// For an invite with an email: that address (any case), or EMAIL_MISMATCH. For one without: the friend's own email
+	// when they give one (not verified: nothing is sent there), or null.
+	Email *string `json:"email,omitempty"`
 	// The friend's own name, as their contacts see it (first and last name, any letters).
 	DisplayName string `json:"displayName"`
 	// As in EnrollDeviceInput.
@@ -152,8 +142,6 @@ type InvitePreview struct {
 	// The address the invite is for; null for anyone.
 	Email     *string   `json:"email,omitempty"`
 	ExpiresAt time.Time `json:"expiresAt"`
-	// The inviter emailed the code with the link: type it; inviteEmailCode isn't needed (it answers CODE_FROM_INVITER).
-	CodeFromInviter bool `json:"codeFromInviter"`
 }
 
 func (InvitePreview) IsInvitePreviewResult() {}
@@ -163,8 +151,6 @@ type InviteRejected struct {
 }
 
 func (InviteRejected) IsInvitePreviewResult() {}
-
-func (InviteRejected) IsInviteEmailResult() {}
 
 func (InviteRejected) IsInviteEnrollResult() {}
 
@@ -186,7 +172,7 @@ type Me struct {
 	DeviceName string `json:"deviceName"`
 	// The name the user gave for themselves when they joined by an invite; null otherwise.
 	DisplayName *string `json:"displayName,omitempty"`
-	// The email the user proved when they joined by an invite; null otherwise.
+	// The email the user joined with by an invite (the one the inviter typed, or for an invite to anyone the one they gave, unverified); null otherwise.
 	Email *string `json:"email,omitempty"`
 	// The user's identity key, base64; null until a device of the user uploaded it (uploadPrekeys).
 	IdentityKey *string `json:"identityKey,omitempty"`
@@ -384,18 +370,14 @@ const (
 	InviteRejectedReasonEmailMismatch InviteRejectedReason = "EMAIL_MISMATCH"
 	// Another user has this email: enroll a new phone of theirs with a code from the server's owner instead.
 	InviteRejectedReasonEmailTaken InviteRejectedReason = "EMAIL_TAKEN"
-	// The email code is wrong or expired; after 5 wrong ones, ask for a new one.
-	InviteRejectedReasonWrongEmailCode InviteRejectedReason = "WRONG_EMAIL_CODE"
-	// Too many wrong codes from this address (wait a minute), or too many email codes for this invite.
+	// The passcode is wrong; after 10 wrong ones the invite stops working.
+	InviteRejectedReasonWrongPasscode InviteRejectedReason = "WRONG_PASSCODE"
+	// Too many wrong codes from this address: wait a minute.
 	InviteRejectedReasonRateLimited InviteRejectedReason = "RATE_LIMITED"
 	// The certificate request is malformed, badly signed or not for an EC P-256 key.
 	InviteRejectedReasonInvalidCsr InviteRejectedReason = "INVALID_CSR"
 	// The inviter opened their own invite.
 	InviteRejectedReasonOwnInvite InviteRejectedReason = "OWN_INVITE"
-	// The server couldn't send the email; try again later.
-	InviteRejectedReasonMailFailed InviteRejectedReason = "MAIL_FAILED"
-	// The inviter emailed the code with the link: use that one.
-	InviteRejectedReasonCodeFromInviter InviteRejectedReason = "CODE_FROM_INVITER"
 )
 
 var AllInviteRejectedReason = []InviteRejectedReason{
@@ -403,17 +385,15 @@ var AllInviteRejectedReason = []InviteRejectedReason{
 	InviteRejectedReasonInvalidEmail,
 	InviteRejectedReasonEmailMismatch,
 	InviteRejectedReasonEmailTaken,
-	InviteRejectedReasonWrongEmailCode,
+	InviteRejectedReasonWrongPasscode,
 	InviteRejectedReasonRateLimited,
 	InviteRejectedReasonInvalidCsr,
 	InviteRejectedReasonOwnInvite,
-	InviteRejectedReasonMailFailed,
-	InviteRejectedReasonCodeFromInviter,
 }
 
 func (e InviteRejectedReason) IsValid() bool {
 	switch e {
-	case InviteRejectedReasonInvalidCode, InviteRejectedReasonInvalidEmail, InviteRejectedReasonEmailMismatch, InviteRejectedReasonEmailTaken, InviteRejectedReasonWrongEmailCode, InviteRejectedReasonRateLimited, InviteRejectedReasonInvalidCsr, InviteRejectedReasonOwnInvite, InviteRejectedReasonMailFailed, InviteRejectedReasonCodeFromInviter:
+	case InviteRejectedReasonInvalidCode, InviteRejectedReasonInvalidEmail, InviteRejectedReasonEmailMismatch, InviteRejectedReasonEmailTaken, InviteRejectedReasonWrongPasscode, InviteRejectedReasonRateLimited, InviteRejectedReasonInvalidCsr, InviteRejectedReasonOwnInvite:
 		return true
 	}
 	return false

@@ -44,7 +44,7 @@ type Me {
   deviceName: String!
   "The name the user gave for themselves when they joined by an invite; null otherwise."
   displayName: String
-  "The email the user proved when they joined by an invite; null otherwise."
+  "The email the user joined with by an invite (the one the inviter typed, or for an invite to anyone the one they gave, unverified); null otherwise."
   email: String
 }
 

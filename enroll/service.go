@@ -112,7 +112,7 @@ func (s *Service) Enroll(clientIP string, req Request) (Enrolled, Rejection, err
 }
 
 // EnrollAs issues a certificate for the request's key as a device of user, with no enrollment code: for a user an
-// invite just made, once the invite and the email code checked out (invite.Service). The caller checks the request
+// invite just made, once the invite and its passcode checked out (invite.Service). The caller checks the request
 // with CheckRequest first.
 func (s *Service) EnrollAs(user string, req Request) (Enrolled, error) {
 	csr, err := ParseDeviceCSR(req.CSR)
