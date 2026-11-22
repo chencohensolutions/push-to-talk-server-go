@@ -340,8 +340,10 @@ home videos. It holds the ciphertext only, so a kept call can be played only by 
 - **Who may read a kept call.** Only the people in that conversation, over the same mTLS and permission checks as
   every other blob. The server holds ciphertext, so it can never watch. (The app's own per-phone "Save this call"
   from phase 6b is separate.)
-- `serverInfo.keepsCalls` tells the apps the server keeps calls, so they can surface it to the people in a call. Set
-  `"keep_calls": false` in `livekit` to turn it off.
+- **Everyone in the call is told.** 2026-11-22 (hen): calls are never kept silently. `serverInfo.keepsCalls` says
+  the server keeps calls, and while it is true every phone in a call shows a standing "This call is being saved"
+  badge on the call screen and a line when the call starts. Set `"keep_calls": false` in `livekit` to turn keeping
+  off; `keepsCalls` is then false and the phones show neither.
 
 ## Blobs
 
