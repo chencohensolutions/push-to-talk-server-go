@@ -59,6 +59,14 @@ extend type Mutation {
   stops when the device that started it leaves, after 4 hours, or when the room empties.
   """
   stopRecordingCall(call: ID!, peer: String, group: ID): CallRecording!
+  """
+  Add an event (base64, 1 to 4096 bytes, encrypted end to end with the call's key) to the caller's device's event log
+  in call, while it is kept: how this phone shows each video (Fill or Fit, the tile's shape) or which way its camera
+  is turned. Each device's log is a RecordedTrack of kind "events" and codec application/x-talk-events, timed like
+  the other tracks, so a saved call can replay the crops. NOT_RECORDING when the call isn't being kept; NOT_IN_CALL
+  as recordCall.
+  """
+  logCallEvent(call: ID!, peer: String, group: ID, event: String!): Boolean!
 }
 
 extend type Query {
@@ -91,7 +99,7 @@ type RecordedTrack {
   blob: ID!
   "The participant, user.device."
   identity: String!
-  "audio or video."
+  "audio, video, or events (a device's event log: logCallEvent)."
   kind: String!
   "The codec's MIME type: audio/opus, video/VP8 or video/H264."
   codec: String!

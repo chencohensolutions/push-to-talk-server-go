@@ -352,6 +352,13 @@ can be played only by the people who were in it.
   and LiveKit won't strip it for a subscriber that can't take it. The recorder offers `audio/red` first and keeps
   each payload whole as an `audio/red` track; a phone decrypts each frame, then takes its primary block, the last
   (2026-11-22: before this, calls were kept without sound).
+- **Event logs.** 2026-11-22 (hen): a saved call also keeps how each phone showed each video, so the crops can be
+  replayed. While a call is kept, `logCallEvent(call, peer | group, event)` (a device in the room; 1 to 4096 bytes
+  of base64, encrypted end to end with the call's key) appends the event to that device's event log: a Track blob
+  of media `events` and codec `application/x-talk-events`, with records timed like the frames (microseconds since
+  the recording began, flags 0, the event). The phones log, for example, Fill or Fit and the tile's shape for each
+  video they show, and which way their camera is turned. `NOT_RECORDING` when the call isn't kept now. The logs end
+  with the recording, and Save as file writes them into the .mkv as a data track.
 - **`callRecording(call, peer | group)`** (a query, same checks as `callToken`) answers whether the call is kept now,
   who records it (`by`), when keeping began, and its tracks (blob id, identity, kind, codec, when it began, size, complete) that the caller
   may read. A phone reads each track with `GET /blob/<id>`, decrypts the frames with the call's key, and writes one

@@ -85,6 +85,8 @@ type recording struct {
 	lkRoom  Room
 	stop    chan struct{}
 	stopped bool
+	// events is each participant's event log in this recording (identity to blob id; AppendEvent).
+	events map[string]string
 }
 
 // Status is a call's saving: whether it goes on now, when it began and who started it (user.device).
@@ -233,13 +235,62 @@ func (r *Recorder) Stop(call string) Status {
 	close(rec.stop)
 	room := rec.lkRoom
 	status := rec.status()
+	logs := rec.events
+	rec.events = nil
 	r.mu.Unlock()
+	for _, id := range logs {
+		r.Blobs.Finish(id)
+	}
 	if room != nil {
 		room.Disconnect()
 		r.changed(rec, status) // told only if it was told it started
 	}
 	log.Printf("Recorder: call %s saved", call)
 	return status
+}
+
+// EventsCodec is the codec of an event log track: records the phones encrypted end to end with the call's key.
+const EventsCodec = "application/x-talk-events"
+
+// MaxEventBytes is the most one event may be.
+const MaxEventBytes = 4096
+
+// ErrNotRecording: an event for a call that isn't being kept now.
+var ErrNotRecording = errors.New("this call isn't being kept now")
+
+// AppendEvent adds one event from identity (user.device) to its event log in call, while the call is kept: a
+// record like a frame's (microseconds since the recording began, flags 0, the event), in a Track blob of media
+// "events". 2026-11-22 (hen): the phones log how each viewer shows each video (Fill or Fit, the tile's shape) and
+// which way each sender's camera is turned, encrypted, so a saved call can replay the crops as they were. It
+// answers the log's blob id.
+func (r *Recorder) AppendEvent(call, identity string, event []byte) (string, error) {
+	if len(event) == 0 || len(event) > MaxEventBytes {
+		return "", fmt.Errorf("an event is 1 to %d bytes", MaxEventBytes)
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	rec, ok := r.calls[call]
+	if !ok || rec.stopped {
+		return "", ErrNotRecording
+	}
+	now := r.now()
+	id, ok := rec.events[identity]
+	if !ok {
+		id = newBlobID()
+		err := r.Blobs.Create(blobs.Meta{ID: id, Kind: blobs.Track, Owner: rec.conv.Owner, Peer: rec.conv.Peer,
+			Group: rec.conv.Group, Track: &blobs.TrackInfo{Call: call, Identity: identity, Media: "events",
+				Codec: EventsCodec, Started: now.UTC(), Recording: rec.started.UTC()}})
+		if err != nil {
+			return "", err
+		}
+		if rec.events == nil {
+			rec.events = map[string]string{}
+		}
+		rec.events[identity] = id
+	}
+	record := binary.BigEndian.AppendUint64(nil, uint64(max(now.Sub(rec.started).Microseconds(), 0)))
+	record = append(append(record, 0), event...)
+	return id, r.Blobs.AppendRecord(id, record, false)
 }
 
 // Status is call's saving now.

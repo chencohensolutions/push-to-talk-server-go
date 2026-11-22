@@ -303,7 +303,7 @@ type RecordedTrack struct {
 	Blob string `json:"blob"`
 	// The participant, user.device.
 	Identity string `json:"identity"`
-	// audio or video.
+	// audio, video, or events (a device's event log: logCallEvent).
 	Kind string `json:"kind"`
 	// The codec's MIME type: audio/opus, video/VP8 or video/H264.
 	Codec string `json:"codec"`
