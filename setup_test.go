@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
-	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	"github.com/chencohensolutions/push-to-talk-server-go/certs"
+	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 )
 
 func init() { certs.UseSmallKeysForTests() }
