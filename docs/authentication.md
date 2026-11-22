@@ -149,7 +149,9 @@ So the server holds no mail account or password, and nothing it sends can be spo
 **Why the passcode isn't in the link.** With it in the link, the link alone would be enough, and anywhere the link
 alone ends up (a forwarded message, a link scanner, a chat backup, a screenshot of the QR code) could redeem it. Kept
 apart, the link alone does nothing, and an inviter who wants to can send the two by different ways. The cost is six
-digits to type. When the friend pastes the whole message into the app, it finds both and fills the passcode in.
+digits to type. When the friend pastes the whole message into the app, it finds both and fills the passcode in. The
+one place the passcode is in the link (`p`) is the QR code the inviter's screen shows face to face: the friend is in
+the room, and scanning it is the whole invite. The server never sees the link, so this is the phones' choice.
 
 **The user.** The email is the unique part of an invited user: no two users share one, compared in lower case. **No
 email is verified any more**: with an email-bound invite, the email is the one the inviter typed (whoever has the link
