@@ -30,6 +30,15 @@ type InvitePreviewResult interface {
 	IsInvitePreviewResult()
 }
 
+type CallRecording struct {
+	Call string `json:"call"`
+	// The server is keeping the call now.
+	Recording bool `json:"recording"`
+	// When keeping began; every track record's timestamp counts from here. Null when the call was never kept.
+	StartedAt *time.Time       `json:"startedAt,omitempty"`
+	Tracks    []*RecordedTrack `json:"tracks"`
+}
+
 type Contact struct {
 	User string `json:"user"`
 	// The name the contact gave for themselves when they joined by an invite; null otherwise.
@@ -269,6 +278,27 @@ type Presence struct {
 type Query struct {
 }
 
+// One participant's audio or video in a kept call, read with GET /blob/<blob>: records of a 4-byte big-endian length,
+// then 8 bytes of big-endian microseconds since its recordingStartedAt, 1 byte of flags (1: a key frame), and the
+// frame as the sender's LiveKit encrypted it.
+type RecordedTrack struct {
+	Blob string `json:"blob"`
+	// The participant, user.device.
+	Identity string `json:"identity"`
+	// audio or video.
+	Kind string `json:"kind"`
+	// The codec's MIME type: audio/opus, video/VP8 or video/H264.
+	Codec string `json:"codec"`
+	// When its first frame arrived.
+	StartedAt time.Time `json:"startedAt"`
+	// When the keeping it belongs to began: its records' timestamps count from here. A call rejoined after everyone left
+	// is kept again from a new start, so line tracks up by this, not by CallRecording.startedAt.
+	RecordingStartedAt time.Time `json:"recordingStartedAt"`
+	Size               int       `json:"size"`
+	// No more frames will come.
+	Complete bool `json:"complete"`
+}
+
 // Who this server is and where it is now. An app pins the fingerprint (checking the server's key instead of the host
 // name, so any address works), keeps the addresses to try when the one it uses stops answering, and looks the server up
 // in the BitTorrent DHT under key when none answers. The DHT record is a BEP 44 mutable item under key with salt
@@ -303,6 +333,8 @@ type ServerInfo struct {
 	Push bool `json:"push"`
 	// The server has the live talk path (LiveKit): talkToken works.
 	LiveTalk bool `json:"liveTalk"`
+	// The server keeps every call (livekit.keep_calls): the phones show it in the call.
+	KeepsCalls bool `json:"keepsCalls"`
 }
 
 type SignedPrekey struct {

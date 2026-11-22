@@ -33,6 +33,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/invite"
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	"github.com/chencohensolutions/push-to-talk-server-go/push"
+	"github.com/chencohensolutions/push-to-talk-server-go/recorder"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
 	"github.com/chencohensolutions/push-to-talk-server-go/version"
@@ -61,6 +62,8 @@ type server struct {
 	// LiveKit's keys (talkToken) and its signalling, which /rtc passes to; nil without LiveKit.
 	liveKeys *livekit.Keys
 	rtc      http.Handler
+	// Saves calls (recordCall); nil without LiveKit.
+	recorder *recorder.Recorder
 	// liveRestart restarts the livekit-server this server runs (restartLiveKit); nil when it runs none.
 	liveRestart chan struct{}
 }
@@ -110,6 +113,9 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	go serveAdmin(s)
 	go func() {
 		<-running.Done()
+		if s.recorder != nil {
+			s.recorder.StopAll() // the saved calls' tracks are completed
+		}
 		stop() // a second Ctrl+C now ends the process the usual way
 		log.Printf("Stopping: removing the port mapping (Ctrl+C again to stop now)")
 		select {
@@ -191,6 +197,10 @@ func openServer(config auth.AppConfig) (*server, error) {
 			return nil, fmt.Errorf("config.json livekit url: %w", err)
 		}
 		s.liveKeys = &keys
+		if config.LiveKit.KeepsCalls() {
+			s.recorder = &recorder.Recorder{Keys: keys, URL: config.LiveKit.URL, Blobs: s.relay.Blobs}
+			log.Printf("Calls: kept, encrypted end to end, in %s (livekit.keep_calls)", config.BlobDir)
+		}
 		maxCall := config.LiveKit.MaxCallDevices
 		if maxCall <= 0 {
 			maxCall = auth.DefaultMaxCallDevices
@@ -292,7 +302,7 @@ func (s *server) newMux() *http.ServeMux {
 
 func (s *server) newGraphQLServer() *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
-		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Invites: s.invites, Now: time.Now, LiveKeys: s.liveKeys,
+		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Invites: s.invites, Now: time.Now, LiveKeys: s.liveKeys, Recorder: s.recorder,
 			Version: version.String(),
 			Discovery: func() *model.ServerDiscovery {
 				if s.discovery == nil {

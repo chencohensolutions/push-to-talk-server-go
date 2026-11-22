@@ -38,6 +38,13 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	CallRecording struct {
+		Call      func(childComplexity int) int
+		Recording func(childComplexity int) int
+		StartedAt func(childComplexity int) int
+		Tracks    func(childComplexity int) int
+	}
+
 	Contact struct {
 		Blocked     func(childComplexity int) int
 		Devices     func(childComplexity int) int
@@ -210,6 +217,7 @@ type ComplexityRoot struct {
 
 	Query struct {
 		Blocked           func(childComplexity int) int
+		CallRecording     func(childComplexity int, call string, peer *string, group *string) int
 		Contacts          func(childComplexity int) int
 		Devices           func(childComplexity int) int
 		EnrollmentPreview func(childComplexity int, code string) int
@@ -221,6 +229,17 @@ type ComplexityRoot struct {
 		PrekeyCount       func(childComplexity int) int
 		Presence          func(childComplexity int, users []string) int
 		ServerInfo        func(childComplexity int) int
+	}
+
+	RecordedTrack struct {
+		Blob               func(childComplexity int) int
+		Codec              func(childComplexity int) int
+		Complete           func(childComplexity int) int
+		Identity           func(childComplexity int) int
+		Kind               func(childComplexity int) int
+		RecordingStartedAt func(childComplexity int) int
+		Size               func(childComplexity int) int
+		StartedAt          func(childComplexity int) int
 	}
 
 	ServerDiscovery struct {
@@ -235,6 +254,7 @@ type ComplexityRoot struct {
 		CaCertificate     func(childComplexity int) int
 		DeviceNumber      func(childComplexity int) int
 		Discovery         func(childComplexity int) int
+		KeepsCalls        func(childComplexity int) int
 		LiveTalk          func(childComplexity int) int
 		Push              func(childComplexity int) int
 		RenewCertificates func(childComplexity int) int
@@ -295,6 +315,7 @@ type QueryResolver interface {
 	Blocked(ctx context.Context) ([]string, error)
 	Devices(ctx context.Context) ([]*model.OwnDevice, error)
 	Presence(ctx context.Context, users []string) ([]*model.Presence, error)
+	CallRecording(ctx context.Context, call string, peer *string, group *string) (*model.CallRecording, error)
 }
 
 type executableSchema graphql.ExecutableSchemaState[ResolverRoot, DirectiveRoot, ComplexityRoot]
@@ -310,6 +331,31 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	ec := newExecutionContext(nil, e, nil)
 	_ = ec
 	switch typeName + "." + field {
+
+	case "CallRecording.call":
+		if e.ComplexityRoot.CallRecording.Call == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CallRecording.Call(childComplexity), true
+	case "CallRecording.recording":
+		if e.ComplexityRoot.CallRecording.Recording == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CallRecording.Recording(childComplexity), true
+	case "CallRecording.startedAt":
+		if e.ComplexityRoot.CallRecording.StartedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CallRecording.StartedAt(childComplexity), true
+	case "CallRecording.tracks":
+		if e.ComplexityRoot.CallRecording.Tracks == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CallRecording.Tracks(childComplexity), true
 
 	case "Contact.blocked":
 		if e.ComplexityRoot.Contact.Blocked == nil {
@@ -1051,6 +1097,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Query.Blocked(childComplexity), true
+	case "Query.callRecording":
+		if e.ComplexityRoot.Query.CallRecording == nil {
+			break
+		}
+
+		args, err := ec.field_Query_callRecording_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.CallRecording(childComplexity, args["call"].(string), args["peer"].(*string), args["group"].(*string)), true
 	case "Query.contacts":
 		if e.ComplexityRoot.Query.Contacts == nil {
 			break
@@ -1139,6 +1196,55 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Query.ServerInfo(childComplexity), true
 
+	case "RecordedTrack.blob":
+		if e.ComplexityRoot.RecordedTrack.Blob == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordedTrack.Blob(childComplexity), true
+	case "RecordedTrack.codec":
+		if e.ComplexityRoot.RecordedTrack.Codec == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordedTrack.Codec(childComplexity), true
+	case "RecordedTrack.complete":
+		if e.ComplexityRoot.RecordedTrack.Complete == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordedTrack.Complete(childComplexity), true
+	case "RecordedTrack.identity":
+		if e.ComplexityRoot.RecordedTrack.Identity == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordedTrack.Identity(childComplexity), true
+	case "RecordedTrack.kind":
+		if e.ComplexityRoot.RecordedTrack.Kind == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordedTrack.Kind(childComplexity), true
+	case "RecordedTrack.recordingStartedAt":
+		if e.ComplexityRoot.RecordedTrack.RecordingStartedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordedTrack.RecordingStartedAt(childComplexity), true
+	case "RecordedTrack.size":
+		if e.ComplexityRoot.RecordedTrack.Size == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordedTrack.Size(childComplexity), true
+	case "RecordedTrack.startedAt":
+		if e.ComplexityRoot.RecordedTrack.StartedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.RecordedTrack.StartedAt(childComplexity), true
+
 	case "ServerDiscovery.addresses":
 		if e.ComplexityRoot.ServerDiscovery.Addresses == nil {
 			break
@@ -1188,6 +1294,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Discovery(childComplexity), true
+	case "ServerInfo.keepsCalls":
+		if e.ComplexityRoot.ServerInfo.KeepsCalls == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.KeepsCalls(childComplexity), true
 	case "ServerInfo.liveTalk":
 		if e.ComplexityRoot.ServerInfo.LiveTalk == nil {
 			break
@@ -1929,7 +2041,8 @@ extend type Mutation {
   A token to join call's own LiveKit room (phase 6, video calls), in the conversation with peer or group, after the
   same checks; call is 32 hex digits the caller's phone made and sent in its encrypted call invite, with the call's
   fresh media key. The first callToken binds the id to its conversation (INVALID for another one). The room takes at
-  most livekit.max_call_devices from config.json (32 by default). LIVE_OFF without LiveKit.
+  most livekit.max_call_devices from config.json (32 by default). The server keeps the call (callRecording) unless
+  livekit.keep_calls is false. LIVE_OFF without LiveKit.
   """
   callToken(call: ID!, peer: String, group: ID): TalkToken!
 }
@@ -1948,6 +2061,57 @@ type TalkToken {
   path: String!
   expiresAt: Time!
 }
+
+# --- Saved calls (2026-11-22) --------------------------------------------------------------------------------------
+# See docs/messaging.md, "Saved calls". The server keeps every call (livekit.keep_calls, on by default): from the
+# call's first callToken it is in the call's room as a hidden participant and keeps each participant's audio and
+# video exactly as LiveKit carried them, still encrypted end to end with the call's key, and never deletes them. The
+# phones in the call download and decrypt them, without re-encoding. Codes: as callToken, plus RECORDING_OFF when
+# this server doesn't keep calls.
+
+extend type Query {
+  "A call's saved streams so far, for whoever may read them (the call's conversation), and whether it is kept now."
+  callRecording(call: ID!, peer: String, group: ID): CallRecording!
+}
+
+extend type ServerInfo {
+  "The server keeps every call (livekit.keep_calls): the phones show it in the call."
+  keepsCalls: Boolean!
+}
+
+type CallRecording {
+  call: ID!
+  "The server is keeping the call now."
+  recording: Boolean!
+  "When keeping began; every track record's timestamp counts from here. Null when the call was never kept."
+  startedAt: Time
+  tracks: [RecordedTrack!]!
+}
+
+"""
+One participant's audio or video in a kept call, read with GET /blob/<blob>: records of a 4-byte big-endian length,
+then 8 bytes of big-endian microseconds since its recordingStartedAt, 1 byte of flags (1: a key frame), and the
+frame as the sender's LiveKit encrypted it.
+"""
+type RecordedTrack {
+  blob: ID!
+  "The participant, user.device."
+  identity: String!
+  "audio or video."
+  kind: String!
+  "The codec's MIME type: audio/opus, video/VP8 or video/H264."
+  codec: String!
+  "When its first frame arrived."
+  startedAt: Time!
+  """
+  When the keeping it belongs to began: its records' timestamps count from here. A call rejoined after everyone left
+  is kept again from a new start, so line tracks up by this, not by CallRecording.startedAt.
+  """
+  recordingStartedAt: Time!
+  size: Int!
+  "No more frames will come."
+  complete: Boolean!
+}
 `, BuiltIn: false},
 }
 var parsedSchema = gqlparser.MustLoadSchema(sources...)
@@ -1955,6 +2119,20 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // childFields_* functions provide shared child field context lookups.
 // Each function is generated once per unique object type, deduplicating the
 // switch statements that were previously inlined in every fieldContext_* function.
+
+func (ec *executionContext) childFields_CallRecording(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "call":
+		return ec.fieldContext_CallRecording_call(ctx, field)
+	case "recording":
+		return ec.fieldContext_CallRecording_recording(ctx, field)
+	case "startedAt":
+		return ec.fieldContext_CallRecording_startedAt(ctx, field)
+	case "tracks":
+		return ec.fieldContext_CallRecording_tracks(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type CallRecording", field.Name)
+}
 
 func (ec *executionContext) childFields_Contact(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
@@ -2192,6 +2370,28 @@ func (ec *executionContext) childFields_Presence(ctx context.Context, field grap
 	return nil, fmt.Errorf("no field named %q was found under type Presence", field.Name)
 }
 
+func (ec *executionContext) childFields_RecordedTrack(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "blob":
+		return ec.fieldContext_RecordedTrack_blob(ctx, field)
+	case "identity":
+		return ec.fieldContext_RecordedTrack_identity(ctx, field)
+	case "kind":
+		return ec.fieldContext_RecordedTrack_kind(ctx, field)
+	case "codec":
+		return ec.fieldContext_RecordedTrack_codec(ctx, field)
+	case "startedAt":
+		return ec.fieldContext_RecordedTrack_startedAt(ctx, field)
+	case "recordingStartedAt":
+		return ec.fieldContext_RecordedTrack_recordingStartedAt(ctx, field)
+	case "size":
+		return ec.fieldContext_RecordedTrack_size(ctx, field)
+	case "complete":
+		return ec.fieldContext_RecordedTrack_complete(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type RecordedTrack", field.Name)
+}
+
 func (ec *executionContext) childFields_ServerDiscovery(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
 	case "fingerprint":
@@ -2224,6 +2424,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_push(ctx, field)
 	case "liveTalk":
 		return ec.fieldContext_ServerInfo_liveTalk(ctx, field)
+	case "keepsCalls":
+		return ec.fieldContext_ServerInfo_keepsCalls(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ServerInfo", field.Name)
 }
@@ -2736,6 +2938,36 @@ func (ec *executionContext) field_Query___type_args(ctx context.Context, rawArgs
 	return args, nil
 }
 
+func (ec *executionContext) field_Query_callRecording_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "call",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNID2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["call"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "peer",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["peer"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "group",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOID2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["group"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Query_enrollmentPreview_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -2863,6 +3095,107 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _CallRecording_call(ctx context.Context, field graphql.CollectedField, obj *model.CallRecording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CallRecording_call(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Call, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNID2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CallRecording_call(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CallRecording", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _CallRecording_recording(ctx context.Context, field graphql.CollectedField, obj *model.CallRecording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CallRecording_recording(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Recording, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CallRecording_recording(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CallRecording", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _CallRecording_startedAt(ctx context.Context, field graphql.CollectedField, obj *model.CallRecording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CallRecording_startedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.StartedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
+			return ec.marshalOTime2ᚖtimeᚐTime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_CallRecording_startedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CallRecording", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _CallRecording_tracks(ctx context.Context, field graphql.CollectedField, obj *model.CallRecording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CallRecording_tracks(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Tracks, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []*model.RecordedTrack) graphql.Marshaler {
+			return ec.marshalNRecordedTrack2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐRecordedTrackᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_CallRecording_tracks(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "CallRecording",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_RecordedTrack(ctx, field)
+		},
+	}
+	return fc, nil
+}
 
 func (ec *executionContext) _Contact_user(ctx context.Context, field graphql.CollectedField, obj *model.Contact) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
@@ -6211,6 +6544,50 @@ func (ec *executionContext) fieldContext_Query_presence(ctx context.Context, fie
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_callRecording(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_callRecording(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().CallRecording(ctx, fc.Args["call"].(string), fc.Args["peer"].(*string), fc.Args["group"].(*string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.CallRecording) graphql.Marshaler {
+			return ec.marshalNCallRecording2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐCallRecording(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Query_callRecording(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_CallRecording(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_callRecording_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query___type(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6285,6 +6662,190 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 		},
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _RecordedTrack_blob(ctx context.Context, field graphql.CollectedField, obj *model.RecordedTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordedTrack_blob(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Blob, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNID2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordedTrack_blob(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordedTrack", field, false, false, errors.New("field of type ID does not have child fields"))
+}
+
+func (ec *executionContext) _RecordedTrack_identity(ctx context.Context, field graphql.CollectedField, obj *model.RecordedTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordedTrack_identity(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Identity, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordedTrack_identity(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordedTrack", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordedTrack_kind(ctx context.Context, field graphql.CollectedField, obj *model.RecordedTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordedTrack_kind(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Kind, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordedTrack_kind(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordedTrack", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordedTrack_codec(ctx context.Context, field graphql.CollectedField, obj *model.RecordedTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordedTrack_codec(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Codec, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordedTrack_codec(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordedTrack", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _RecordedTrack_startedAt(ctx context.Context, field graphql.CollectedField, obj *model.RecordedTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordedTrack_startedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.StartedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordedTrack_startedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordedTrack", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _RecordedTrack_recordingStartedAt(ctx context.Context, field graphql.CollectedField, obj *model.RecordedTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordedTrack_recordingStartedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.RecordingStartedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordedTrack_recordingStartedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordedTrack", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _RecordedTrack_size(ctx context.Context, field graphql.CollectedField, obj *model.RecordedTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordedTrack_size(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Size, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordedTrack_size(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordedTrack", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _RecordedTrack_complete(ctx context.Context, field graphql.CollectedField, obj *model.RecordedTrack) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_RecordedTrack_complete(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Complete, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_RecordedTrack_complete(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("RecordedTrack", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
 func (ec *executionContext) _ServerDiscovery_fingerprint(ctx context.Context, field graphql.CollectedField, obj *model.ServerDiscovery) (ret graphql.Marshaler) {
@@ -6569,6 +7130,29 @@ func (ec *executionContext) _ServerInfo_liveTalk(ctx context.Context, field grap
 	)
 }
 func (ec *executionContext) fieldContext_ServerInfo_liveTalk(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _ServerInfo_keepsCalls(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_keepsCalls(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.KeepsCalls, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_keepsCalls(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
@@ -8227,6 +8811,57 @@ func (ec *executionContext) _InvitePreviewResult(ctx context.Context, sel ast.Se
 
 // region    **************************** object.gotpl ****************************
 
+var callRecordingImplementors = []string{"CallRecording"}
+
+func (ec *executionContext) _CallRecording(ctx context.Context, sel ast.SelectionSet, obj *model.CallRecording) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, callRecordingImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("CallRecording")
+		case "call":
+			out.Values[i] = ec._CallRecording_call(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "recording":
+			out.Values[i] = ec._CallRecording_recording(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "startedAt":
+			out.Values[i] = ec._CallRecording_startedAt(ctx, field, obj)
+		case "tracks":
+			out.Values[i] = ec._CallRecording_tracks(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var contactImplementors = []string{"Contact"}
 
 func (ec *executionContext) _Contact(ctx context.Context, sel ast.SelectionSet, obj *model.Contact) graphql.Marshaler {
@@ -9814,6 +10449,28 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "callRecording":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_callRecording(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "__type":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___type(ctx, field)
@@ -9822,6 +10479,80 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___schema(ctx, field)
 			})
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var recordedTrackImplementors = []string{"RecordedTrack"}
+
+func (ec *executionContext) _RecordedTrack(ctx context.Context, sel ast.SelectionSet, obj *model.RecordedTrack) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, recordedTrackImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("RecordedTrack")
+		case "blob":
+			out.Values[i] = ec._RecordedTrack_blob(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "identity":
+			out.Values[i] = ec._RecordedTrack_identity(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "kind":
+			out.Values[i] = ec._RecordedTrack_kind(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "codec":
+			out.Values[i] = ec._RecordedTrack_codec(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "startedAt":
+			out.Values[i] = ec._RecordedTrack_startedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "recordingStartedAt":
+			out.Values[i] = ec._RecordedTrack_recordingStartedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "size":
+			out.Values[i] = ec._RecordedTrack_size(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "complete":
+			out.Values[i] = ec._RecordedTrack_complete(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -9938,6 +10669,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			}
 		case "liveTalk":
 			out.Values[i] = ec._ServerInfo_liveTalk(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "keepsCalls":
+			out.Values[i] = ec._ServerInfo_keepsCalls(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -10423,6 +11159,20 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 	return res
 }
 
+func (ec *executionContext) marshalNCallRecording2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐCallRecording(ctx context.Context, sel ast.SelectionSet, v model.CallRecording) graphql.Marshaler {
+	return ec._CallRecording(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNCallRecording2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐCallRecording(ctx context.Context, sel ast.SelectionSet, v *model.CallRecording) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._CallRecording(ctx, sel, v)
+}
+
 func (ec *executionContext) marshalNContact2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐContactᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.Contact) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
@@ -10858,6 +11608,32 @@ func (ec *executionContext) marshalNPresence2ᚖgithubᚗcomᚋchencohensolution
 		return graphql.Null
 	}
 	return ec._Presence(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNRecordedTrack2ᚕᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐRecordedTrackᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.RecordedTrack) graphql.Marshaler {
+	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
+		fc := graphql.GetFieldContext(ctx)
+		fc.Result = &v[i]
+		return ec.marshalNRecordedTrack2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐRecordedTrack(ctx, sel, v[i])
+	})
+
+	for _, e := range ret {
+		if e == graphql.Null {
+			return graphql.Null
+		}
+	}
+
+	return ret
+}
+
+func (ec *executionContext) marshalNRecordedTrack2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐRecordedTrack(ctx context.Context, sel ast.SelectionSet, v *model.RecordedTrack) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._RecordedTrack(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNServerInfo2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐServerInfo(ctx context.Context, sel ast.SelectionSet, v model.ServerInfo) graphql.Marshaler {

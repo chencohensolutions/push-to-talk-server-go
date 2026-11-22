@@ -27,6 +27,9 @@ const (
 	clipFollow = MaxBurst + lastSegmentWait
 )
 
+// MayRead says whether user may read blob m (mayRead), for the listing of a saved call's tracks.
+func (r *Relay) MayRead(user string, m blobs.Meta) bool { return r.mayRead(user, m) }
+
 // mayRead says whether user may read blob m: its maker, the other user of its one-to-one conversation, or a member of
 // its group now. Blocks apply.
 func (r *Relay) mayRead(user string, m blobs.Meta) bool {
@@ -180,8 +183,12 @@ func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta) 
 		io.Copy(w, f)
 		return
 	}
-	// A clip: send what is there, then follow it until its last record.
-	w.Header().Set("Content-Type", "application/vnd.ptt.clip")
+	// A clip or a saved call's track: send what is there, then follow it until its last record.
+	if m.Kind == blobs.Track {
+		w.Header().Set("Content-Type", "application/vnd.ptt.track")
+	} else {
+		w.Header().Set("Content-Type", "application/vnd.ptt.clip")
+	}
 	if offset > 0 {
 		w.WriteHeader(http.StatusPartialContent)
 	}

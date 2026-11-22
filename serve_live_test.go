@@ -17,8 +17,11 @@ import (
 	"time"
 
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
+	"github.com/chencohensolutions/push-to-talk-server-go/blobs"
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
+	"github.com/chencohensolutions/push-to-talk-server-go/recorder"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
+	lksdk "github.com/livekit/server-sdk-go/v2"
 )
 
 // fakeLiveKit stands in for livekit-server's HTTP side: /rtc (signalling, answered plainly here) and the room API,
@@ -228,7 +231,7 @@ func TestCallTokens(t *testing.T) {
 	fake.mu.Lock()
 	created := append([]string{}, fake.created...)
 	fake.mu.Unlock()
-	if len(created) != 1 || created[0] != livekit.CallRoom(id)+" 32" {
+	if len(created) != 1 || created[0] != livekit.CallRoom(id)+" 33" { // 32 devices + the hidden recorder
 		t.Fatalf("the call's room: %v", created)
 	}
 	if room, code := call(dana, "hen"); code != "" || room != livekit.CallRoom(id) {
@@ -276,5 +279,93 @@ func TestRestartLiveKit(t *testing.T) {
 	}
 	if _, err := liveKitProgram(env.config); err == nil {
 		t.Fatal(`livekit update with binary "none"`)
+	}
+}
+
+// fakeRoom stands in for a LiveKit room the recorder joined, with a set number of others in it.
+type fakeRoom struct {
+	others     int
+	disconnect func()
+}
+
+func (r *fakeRoom) Disconnect() {
+	if r.disconnect != nil {
+		r.disconnect()
+	}
+}
+func (r *fakeRoom) RemoteParticipantCount() int { return r.others }
+
+// Every call is kept (2026-11-22, hen): callToken starts the recorder keeping the call, callRecording lists its
+// tracks to whoever may read them, and GET /blob reads a track. The recorder never fails a call.
+func TestCallsAreKept(t *testing.T) {
+	env, _ := newLiveEnv(t)
+	if !env.config.LiveKit.KeepsCalls() || env.recorder == nil {
+		t.Fatal("a LiveKit server keeps calls by default")
+	}
+	// The recorder joins through this fake instead of a real LiveKit, and lets the test see the room it joined.
+	joined := make(chan *fakeRoom, 4)
+	env.recorder.Join = func(url, token string, cb *lksdk.RoomCallback) (recorder.Room, error) {
+		room := &fakeRoom{others: 1}
+		joined <- room
+		return room, nil
+	}
+
+	env.addUsers(t, "hen", "dana", "eli")
+	hen, dana, eli := env.phone(t, "hen"), env.phone(t, "dana"), env.phone(t, "eli")
+	for _, p := range []*phone{hen, dana, eli} {
+		env.uploadKeys(t, p, ecKey())
+	}
+	henSocket := env.socket(t, hen)
+	env.pair(t, dana, []store.Device{dev(dana)}, hen, henSocket)
+
+	const callMutation = `mutation($c: ID!, $p: String, $g: ID) { callToken(call: $c, peer: $p, group: $g) { room } }`
+	id := burstID()
+	if r := env.graphql(t, hen.client, callMutation, map[string]any{"c": id, "p": "dana"}); errorCode(r) != "" {
+		t.Fatalf("callToken: %s", errorCode(r))
+	}
+	select {
+	case <-joined:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the recorder didn't join the call's room")
+	}
+
+	// A track of the call, as the recorder would write it (its frames stay encrypted; the test writes bytes).
+	blob := burstID()
+	if err := env.recorder.Blobs.Create(blobs.Meta{ID: blob, Kind: blobs.Track, Owner: "hen", Peer: "dana",
+		Track: &blobs.TrackInfo{Call: id, Identity: "hen.1", Media: "audio", Codec: "audio/opus"}}); err != nil {
+		t.Fatal(err)
+	}
+	env.recorder.Blobs.AppendRecord(blob, []byte("frame"), true)
+
+	const recQuery = `query($c: ID!, $p: String) { callRecording(call: $c, peer: $p) { call recording tracks { blob identity kind codec } } }`
+	r := env.graphql(t, hen.client, recQuery, map[string]any{"c": id, "p": "dana"})
+	var got struct {
+		Recording bool
+		Tracks    []struct{ Blob, Identity, Kind, Codec string }
+	}
+	json.Unmarshal(r.Data["callRecording"], &got)
+	if !got.Recording || len(got.Tracks) != 1 || got.Tracks[0].Blob != blob || got.Tracks[0].Identity != "hen.1" ||
+		got.Tracks[0].Kind != "audio" || got.Tracks[0].Codec != "audio/opus" {
+		t.Fatalf("callRecording for hen: %s", r.Data["callRecording"])
+	}
+	// dana, the other side, sees it too; eli, not in the conversation, can't even get a token.
+	if r := env.graphql(t, dana.client, recQuery, map[string]any{"c": id, "p": "hen"}); errorCode(r) != "" {
+		t.Fatalf("callRecording for dana: %s", errorCode(r))
+	}
+	if r := env.graphql(t, eli.client, recQuery, map[string]any{"c": id, "p": "hen"}); errorCode(r) != "NOT_PAIRED" {
+		t.Fatalf("callRecording for eli (not a contact): %s", errorCode(r))
+	}
+	// The track reads back over /blob for a reader, and is kept past the blob lifetime.
+	resp, body := env.blobRequest(t, hen, "GET", blob, nil, nil)
+	if resp.StatusCode != 200 || len(body) == 0 {
+		t.Fatalf("GET the track: %d", resp.StatusCode)
+	}
+	if n := env.relay.Blobs.Expire(time.Now().Add(365 * 24 * time.Hour)); n != 0 {
+		t.Fatalf("a kept call's track expired: %d", n)
+	}
+
+	// serverInfo says calls are kept.
+	if r := env.graphql(t, hen.client, `{ serverInfo { keepsCalls } }`, nil); string(r.Data["serverInfo"]) != `{"keepsCalls":true}` {
+		t.Fatalf("serverInfo.keepsCalls: %s", r.Data["serverInfo"])
 	}
 }

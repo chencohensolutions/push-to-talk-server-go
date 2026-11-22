@@ -85,7 +85,12 @@ type LiveKitConfig struct {
 	// The most devices in one call's room (default 32). Each device in a video call receives every other camera, so
 	// the server's upload grows with the square of this; phones subscribe to a small layer for small tiles.
 	MaxCallDevices int `json:"max_call_devices,omitempty"`
+	// Whether the server keeps every call's streams, still encrypted end to end (default true; 2026-11-22, hen).
+	KeepCalls *bool `json:"keep_calls,omitempty"`
 }
+
+// KeepsCalls says whether the server keeps every call (livekit.keep_calls, default on).
+func (l LiveKitConfig) KeepsCalls() bool { return l.KeepCalls == nil || *l.KeepCalls }
 
 // DefaultMaxCallDevices is livekit.max_call_devices when config.json doesn't say: 32 (2026-11-22, hen; it was 8).
 const DefaultMaxCallDevices = 32

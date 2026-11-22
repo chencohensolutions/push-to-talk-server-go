@@ -317,9 +317,29 @@ the call's fresh media key; answers, hang-ups and "Recording" go the same way. T
   conversation; one from another conversation is `INVALID`. Calls are remembered in memory for a day.
 - Taken out of the group, unpaired or blocked: out of that conversation's call rooms at once, as from its talk room;
   revoked or removed: out of every room.
-- **Saving calls** happens on the phones: with Save calls on, a phone records what it shows and plays (it has the
-  key; the server and LiveKit never do), and tells the others in the call so they show the Recording badge. Nothing
-  of a call is stored on the server.
+## Saved calls
+
+2026-11-22 (hen): this is a family keepsake app, so the server keeps every call for the family to watch later, like
+home videos. It holds the ciphertext only, so a kept call can be played only by the people who were in it.
+
+- **What the server does.** With `livekit.keep_calls` on (the default when the server has LiveKit), the first
+  `callToken` of a call starts the recorder (package `recorder`): ptt-server joins the call's LiveKit room as a
+  hidden participant (`livekit.RecorderIdentity`, a token with no publish rights) that sends nothing, takes every
+  participant's audio and the best layer of their video, and writes each stream to a Track blob as the frames
+  arrive. The frames stay encrypted end to end with the call's key (LiveKit's frame encryption), which the server
+  never has, so the server can't watch. It keeps the streams **forever** — they are exempt from `blob_days` until a
+  way to delete them is designed. The recorder leaves when the room empties, after 4 hours, or when the server stops.
+- **A Track blob** (`blobs.Track`) is records (as a clip: a 4-byte big-endian length, then the record) of: 8 bytes
+  of big-endian microseconds since the recording began, 1 byte of flags (1 = a key frame), then the frame as the
+  sender encrypted it. Its meta names the call, the participant (`user.device`), the media (audio/video) and codec
+  (`audio/opus`, `video/VP8`).
+- **`callRecording(call, peer | group)`** (a query, same checks as `callToken`) answers whether the call is kept now,
+  when keeping began, and its tracks (blob id, identity, kind, codec, when it began, size, complete) that the caller
+  may read. A phone reads each track with `GET /blob/<id>`, decrypts the frames with the call's key, and writes one
+  Matroska file: a video and an audio track per person, lined up by `recordingStartedAt`, without re-encoding.
+- **No one is told.** The recorder is hidden in LiveKit, and `callRecording` is read only by the family themselves;
+  phones show no Recording badge for a kept call. (The app's own per-phone "Save this call" from phase 6b is separate.)
+- `serverInfo.keepsCalls` says the server keeps calls. Set `"keep_calls": false` in `livekit` to turn it off.
 
 ## Blobs
 

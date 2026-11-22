@@ -14,6 +14,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	pb "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1"
+	"github.com/chencohensolutions/push-to-talk-server-go/recorder"
 )
 
 // TalkToken is the resolver for the talkToken field.
@@ -56,8 +57,20 @@ func (r *mutationResolver) CallToken(ctx context.Context, call string, peer *str
 		return nil, coded(status.String(), "%s", detail)
 	}
 	if r.Relay.Live != nil {
-		if err := r.Relay.Live.CreateRoom(ctx, room, r.Relay.Live.MaxCall); err != nil {
+		max := r.Relay.Live.MaxCall
+		if r.Recorder != nil {
+			max++ // one more place than devices: the hidden recorder that keeps the call
+		}
+		if err := r.Relay.Live.CreateRoom(ctx, room, max); err != nil {
 			log.Printf("callToken: making room %s: %v", room, err)
+			return nil, fmt.Errorf("LiveKit isn't answering")
+		}
+	}
+	if r.Recorder != nil {
+		// Every call is kept (2026-11-22, hen): the recorder is in the room before the first device.
+		conv := recorder.Conversation{Owner: d.User, Peer: deref(peer), Group: deref(group)}
+		if _, err := r.Recorder.Start(call, room, conv); err != nil {
+			log.Printf("callToken: keeping call %s: %v", call, err)
 			return nil, fmt.Errorf("LiveKit isn't answering")
 		}
 	}
@@ -70,4 +83,13 @@ func (r *mutationResolver) CallToken(ctx context.Context, call string, peer *str
 	log.Printf("Call %s: token for %s", call, identity)
 	return &model.TalkToken{Token: token, Room: room, Identity: identity, Path: "/rtc",
 		ExpiresAt: now.Add(livekit.TokenTTL)}, nil
+}
+
+// CallRecording is the resolver for the callRecording field.
+func (r *queryResolver) CallRecording(ctx context.Context, call string, peer *string, group *string) (*model.CallRecording, error) {
+	_, conv, err := r.callConversation(ctx, call, peer, group)
+	if err != nil {
+		return nil, err
+	}
+	return r.callRecording(conv.Owner, call, r.Recorder.Status(call)), nil
 }

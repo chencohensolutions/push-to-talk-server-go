@@ -75,4 +75,6 @@ const (
 const (
 	// CodeLiveOff: the server has no LiveKit ("livekit" in config.json).
 	CodeLiveOff = "LIVE_OFF"
+	// CodeRecordingOff: this server doesn't save calls (no LiveKit).
+	CodeRecordingOff = "RECORDING_OFF"
 )
