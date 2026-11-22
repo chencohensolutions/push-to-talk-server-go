@@ -157,6 +157,7 @@ type ComplexityRoot struct {
 		RenewCertificate   func(childComplexity int, csr string, keyProtection model.KeyProtection) int
 		ReplaceIdentityKey func(childComplexity int, identityKey string) int
 		SetPresenceVisible func(childComplexity int, visible bool) int
+		TalkToken          func(childComplexity int, peer *string, group *string) int
 		Unblock            func(childComplexity int, user string) int
 		Unpair             func(childComplexity int, user string) int
 		UploadPrekeys      func(childComplexity int, input model.UploadPrekeysInput) int
@@ -233,6 +234,7 @@ type ComplexityRoot struct {
 		CaCertificate     func(childComplexity int) int
 		DeviceNumber      func(childComplexity int) int
 		Discovery         func(childComplexity int) int
+		LiveTalk          func(childComplexity int) int
 		Push              func(childComplexity int) int
 		RenewCertificates func(childComplexity int) int
 		Version           func(childComplexity int) int
@@ -242,6 +244,14 @@ type ComplexityRoot struct {
 		KeyID     func(childComplexity int) int
 		PublicKey func(childComplexity int) int
 		Signature func(childComplexity int) int
+	}
+
+	TalkToken struct {
+		ExpiresAt func(childComplexity int) int
+		Identity  func(childComplexity int) int
+		Path      func(childComplexity int) int
+		Room      func(childComplexity int) int
+		Token     func(childComplexity int) int
 	}
 }
 
@@ -268,6 +278,7 @@ type MutationResolver interface {
 	Unblock(ctx context.Context, user string) (bool, error)
 	RegisterPush(ctx context.Context, token *string, notificationsEnabled bool) (bool, error)
 	SetPresenceVisible(ctx context.Context, visible bool) (bool, error)
+	TalkToken(ctx context.Context, peer *string, group *string) (*model.TalkToken, error)
 }
 type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
@@ -831,6 +842,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.SetPresenceVisible(childComplexity, args["visible"].(bool)), true
+	case "Mutation.talkToken":
+		if e.ComplexityRoot.Mutation.TalkToken == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_talkToken_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.TalkToken(childComplexity, args["peer"].(*string), args["group"].(*string)), true
 	case "Mutation.unblock":
 		if e.ComplexityRoot.Mutation.Unblock == nil {
 			break
@@ -1153,6 +1175,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.ServerInfo.Discovery(childComplexity), true
+	case "ServerInfo.liveTalk":
+		if e.ComplexityRoot.ServerInfo.LiveTalk == nil {
+			break
+		}
+
+		return e.ComplexityRoot.ServerInfo.LiveTalk(childComplexity), true
 	case "ServerInfo.push":
 		if e.ComplexityRoot.ServerInfo.Push == nil {
 			break
@@ -1190,6 +1218,37 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.SignedPrekey.Signature(childComplexity), true
+
+	case "TalkToken.expiresAt":
+		if e.ComplexityRoot.TalkToken.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.TalkToken.ExpiresAt(childComplexity), true
+	case "TalkToken.identity":
+		if e.ComplexityRoot.TalkToken.Identity == nil {
+			break
+		}
+
+		return e.ComplexityRoot.TalkToken.Identity(childComplexity), true
+	case "TalkToken.path":
+		if e.ComplexityRoot.TalkToken.Path == nil {
+			break
+		}
+
+		return e.ComplexityRoot.TalkToken.Path(childComplexity), true
+	case "TalkToken.room":
+		if e.ComplexityRoot.TalkToken.Room == nil {
+			break
+		}
+
+		return e.ComplexityRoot.TalkToken.Room(childComplexity), true
+	case "TalkToken.token":
+		if e.ComplexityRoot.TalkToken.Token == nil {
+			break
+		}
+
+		return e.ComplexityRoot.TalkToken.Token(childComplexity), true
 
 	}
 	return 0, false
@@ -1838,6 +1897,38 @@ type LinkCode {
   expiresAt: Time!
 }
 `, BuiltIn: false},
+	{Name: "../schema/talk.graphql", Input: `# --- Live talk (phase 5b) -----------------------------------------------------------------------------------------
+# See docs/messaging.md, "Live talk". Each conversation has a LiveKit room; ptt-server signs a phone's token after the
+# same checks as talking there, and passes LiveKit's signalling through /rtc on this port (mTLS), so only enrolled
+# devices reach it. Media goes to LiveKit's own ports, encrypted end to end with the talk keys the phones swap.
+#
+# Errors a device acts on carry a code in extensions.code: NOT_ENROLLED, LIVE_OFF, NOT_PAIRED, BLOCKED, NOT_MEMBER,
+# UNKNOWN_USER, INVALID.
+
+extend type Mutation {
+  """
+  A token to join the LiveKit room of the conversation with peer (a contact or fellow group member) or of group (one
+  of the two), for 10 minutes, as identity "user.device". The phone connects LiveKit's client to this server's
+  address with the path /rtc. LIVE_OFF when the server has no LiveKit.
+  """
+  talkToken(peer: String, group: ID): TalkToken!
+}
+
+extend type ServerInfo {
+  "The server has the live talk path (LiveKit): talkToken works."
+  liveTalk: Boolean!
+}
+
+type TalkToken {
+  "LiveKit's access token."
+  token: String!
+  room: String!
+  identity: String!
+  "The path on this server to give LiveKit's client: /rtc."
+  path: String!
+  expiresAt: Time!
+}
+`, BuiltIn: false},
 }
 var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
@@ -2111,6 +2202,8 @@ func (ec *executionContext) childFields_ServerInfo(ctx context.Context, field gr
 		return ec.fieldContext_ServerInfo_discovery(ctx, field)
 	case "push":
 		return ec.fieldContext_ServerInfo_push(ctx, field)
+	case "liveTalk":
+		return ec.fieldContext_ServerInfo_liveTalk(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type ServerInfo", field.Name)
 }
@@ -2125,6 +2218,22 @@ func (ec *executionContext) childFields_SignedPrekey(ctx context.Context, field 
 		return ec.fieldContext_SignedPrekey_signature(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type SignedPrekey", field.Name)
+}
+
+func (ec *executionContext) childFields_TalkToken(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "token":
+		return ec.fieldContext_TalkToken_token(ctx, field)
+	case "room":
+		return ec.fieldContext_TalkToken_room(ctx, field)
+	case "identity":
+		return ec.fieldContext_TalkToken_identity(ctx, field)
+	case "path":
+		return ec.fieldContext_TalkToken_path(ctx, field)
+	case "expiresAt":
+		return ec.fieldContext_TalkToken_expiresAt(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type TalkToken", field.Name)
 }
 
 func (ec *executionContext) childFields___Directive(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -2496,6 +2605,28 @@ func (ec *executionContext) field_Mutation_setPresenceVisible_args(ctx context.C
 		return nil, err
 	}
 	args["visible"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_talkToken_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "peer",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["peer"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "group",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOID2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["group"] = arg1
 	return args, nil
 }
 
@@ -4928,6 +5059,50 @@ func (ec *executionContext) fieldContext_Mutation_setPresenceVisible(ctx context
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_talkToken(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_talkToken(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().TalkToken(ctx, fc.Args["peer"].(*string), fc.Args["group"].(*string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.TalkToken) graphql.Marshaler {
+			return ec.marshalNTalkToken2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐTalkToken(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_talkToken(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_TalkToken(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_talkToken_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _OwnDevice_deviceNumber(ctx context.Context, field graphql.CollectedField, obj *model.OwnDevice) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6280,6 +6455,29 @@ func (ec *executionContext) fieldContext_ServerInfo_push(_ context.Context, fiel
 	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _ServerInfo_liveTalk(ctx context.Context, field graphql.CollectedField, obj *model.ServerInfo) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_ServerInfo_liveTalk(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LiveTalk, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_ServerInfo_liveTalk(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("ServerInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _SignedPrekey_keyId(ctx context.Context, field graphql.CollectedField, obj *model.SignedPrekey) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6347,6 +6545,121 @@ func (ec *executionContext) _SignedPrekey_signature(ctx context.Context, field g
 }
 func (ec *executionContext) fieldContext_SignedPrekey_signature(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("SignedPrekey", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _TalkToken_token(ctx context.Context, field graphql.CollectedField, obj *model.TalkToken) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_TalkToken_token(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Token, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_TalkToken_token(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("TalkToken", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _TalkToken_room(ctx context.Context, field graphql.CollectedField, obj *model.TalkToken) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_TalkToken_room(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Room, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_TalkToken_room(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("TalkToken", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _TalkToken_identity(ctx context.Context, field graphql.CollectedField, obj *model.TalkToken) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_TalkToken_identity(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Identity, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_TalkToken_identity(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("TalkToken", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _TalkToken_path(ctx context.Context, field graphql.CollectedField, obj *model.TalkToken) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_TalkToken_path(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Path, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_TalkToken_path(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("TalkToken", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _TalkToken_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.TalkToken) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_TalkToken_expiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_TalkToken_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("TalkToken", field, false, false, errors.New("field of type Time does not have child fields"))
 }
 
 func (ec *executionContext) ___Directive_name(ctx context.Context, field graphql.CollectedField, obj *introspection.Directive) (ret graphql.Marshaler) {
@@ -8743,6 +9056,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "talkToken":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_talkToken(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -9515,6 +9835,11 @@ func (ec *executionContext) _ServerInfo(ctx context.Context, sel ast.SelectionSe
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "liveTalk":
+			out.Values[i] = ec._ServerInfo_liveTalk(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -9561,6 +9886,65 @@ func (ec *executionContext) _SignedPrekey(ctx context.Context, sel ast.Selection
 			}
 		case "signature":
 			out.Values[i] = ec._SignedPrekey_signature(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var talkTokenImplementors = []string{"TalkToken"}
+
+func (ec *executionContext) _TalkToken(ctx context.Context, sel ast.SelectionSet, obj *model.TalkToken) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, talkTokenImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("TalkToken")
+		case "token":
+			out.Values[i] = ec._TalkToken_token(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "room":
+			out.Values[i] = ec._TalkToken_room(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "identity":
+			out.Values[i] = ec._TalkToken_identity(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "path":
+			out.Values[i] = ec._TalkToken_path(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._TalkToken_expiresAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -10450,6 +10834,20 @@ func (ec *executionContext) marshalNString2ᚕstringᚄ(ctx context.Context, sel
 	return ret
 }
 
+func (ec *executionContext) marshalNTalkToken2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐTalkToken(ctx context.Context, sel ast.SelectionSet, v model.TalkToken) graphql.Marshaler {
+	return ec._TalkToken(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNTalkToken2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐTalkToken(ctx context.Context, sel ast.SelectionSet, v *model.TalkToken) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._TalkToken(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNTime2timeᚐTime(ctx context.Context, v any) (time.Time, error) {
 	res, err := graphql.UnmarshalTime(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -10639,6 +11037,24 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	_ = sel
 	_ = ctx
 	res := graphql.MarshalBoolean(*v)
+	return res
+}
+
+func (ec *executionContext) unmarshalOID2ᚖstring(ctx context.Context, v any) (*string, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := graphql.UnmarshalID(v)
+	return &res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOID2ᚖstring(ctx context.Context, sel ast.SelectionSet, v *string) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	_ = sel
+	_ = ctx
+	res := graphql.MarshalID(*v)
 	return res
 }
 

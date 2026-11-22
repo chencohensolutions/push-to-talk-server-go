@@ -16,6 +16,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	"github.com/chencohensolutions/push-to-talk-server-go/contacts"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
+	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	pb "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
@@ -171,6 +172,10 @@ func (r *mutationResolver) Unpair(ctx context.Context, user string) (bool, error
 	had, err := r.Relay.Book.Unpair(d.User, user)
 	if had {
 		log.Printf("%s unpaired %s", d.User, user)
+		if !r.Relay.ShareGroup(d.User, user) {
+			r.Relay.LeaveRoom(livekit.PairRoom(d.User, user), user)
+			r.Relay.LeaveRoom(livekit.PairRoom(d.User, user), d.User)
+		}
 	}
 	return had, err
 }
@@ -191,6 +196,8 @@ func (r *mutationResolver) Block(ctx context.Context, user string) (bool, error)
 		return false, err
 	}
 	log.Printf("%s blocked %s", d.User, user)
+	r.Relay.LeaveRoom(livekit.PairRoom(d.User, user), user)
+	r.Relay.LeaveRoom(livekit.PairRoom(d.User, user), d.User)
 	return true, nil
 }
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
+	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	"github.com/chencohensolutions/push-to-talk-server-go/certs"
 )
 
@@ -71,6 +72,19 @@ func TestSetupNewServer(t *testing.T) {
 	}
 	// The server can load what setup made (the same calls serve makes).
 	t.Chdir(dir)
+	if !config.LiveKitOn() {
+		t.Fatal("a new server has no livekit")
+	}
+	if _, err := livekit.LoadKeys(config.LiveKit.KeysFile); err != nil {
+		t.Fatalf("LiveKit's keys: %v", err)
+	}
+	if yaml, err := os.ReadFile(config.LiveKit.ConfigFile); err != nil || !strings.Contains(string(yaml), "udp_port: 7882") ||
+		!strings.Contains(string(yaml), "key_file: livekit.keys") {
+		t.Fatalf("livekit.yaml: %s %v", yaml, err)
+	}
+	if ports, _ := serverPorts(config); len(ports) != 3 || !ports[1].Exact || ports[1].Port != 7882 {
+		t.Fatalf("the ports mapped with LiveKit: %v", ports)
+	}
 	if _, err := tls.LoadX509KeyPair(config.TLSCert, config.TLSKey); err != nil {
 		t.Fatal(err)
 	}

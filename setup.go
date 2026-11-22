@@ -7,16 +7,19 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	"github.com/chencohensolutions/push-to-talk-server-go/certs"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
+	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 )
 
 const setupUsage = `usage:
@@ -154,7 +157,12 @@ func setup(_ context.Context, o setupOptions) error {
 		return err
 	}
 
-	// 4. What's next
+	// 4. LiveKit's config and keys (the live talk path), when config.json has "livekit"
+	if err := setupLiveKit(config); err != nil {
+		return err
+	}
+
+	// 5. What's next
 	fmt.Printf("\nReady. Devices connect to %s (port %s).\n", orNone(config.PublicURL), config.Port)
 	fmt.Printf("Start the server with ptt-server (in %s), then:\n", o.dir)
 	list := users.List()
@@ -214,6 +222,8 @@ type newConfig struct {
 	EnrolledOnly bool   `json:"enrolled_only"`
 	PublicURL    string `json:"public_url,omitempty"`
 	Port         string `json:"port,omitempty"`
+	// The live talk path: on for a new server, with every LiveKit setting at its default.
+	LiveKit *auth.LiveKitConfig `json:"livekit"`
 }
 
 func writeNewConfig(o setupOptions) error {
@@ -223,7 +233,7 @@ func writeNewConfig(o setupOptions) error {
 	}
 	config := newConfig{
 		TLSCert: "certs/server.pem", TLSKey: "certs/server-key.pem",
-		ClientCA: "certs/ca.pem", ClientCAKey: "certs/ca-key.pem", EnrolledOnly: true,
+		ClientCA: "certs/ca.pem", ClientCAKey: "certs/ca-key.pem", EnrolledOnly: true, LiveKit: &auth.LiveKitConfig{},
 	}
 	if o.port != "" && o.port != auth.DefaultPort {
 		config.Port = o.port
@@ -395,4 +405,60 @@ func orNone(s string) string {
 		return "(no public_url in config.json)"
 	}
 	return s
+}
+
+// setupLiveKit writes LiveKit's key file and config when config.json has "livekit" and they are missing; ones there
+// are kept. The key file is a secret: LiveKit and ptt-server read it, nothing else.
+func setupLiveKit(config auth.AppConfig) error {
+	if !config.LiveKitOn() {
+		fmt.Printf("LiveKit: off (add \"livekit\": {} to config.json and run setup again for the live talk path)\n")
+		return nil
+	}
+	l := config.LiveKit
+	if exists(l.KeysFile) {
+		if _, err := livekit.LoadKeys(l.KeysFile); err != nil {
+			return err
+		}
+		fmt.Printf("%s: kept\n", l.KeysFile)
+	} else {
+		keys := livekit.NewKeys()
+		if err := writeSecret(l.KeysFile, []byte(keys.Key+": "+keys.Secret+"\n")); err != nil {
+			return err
+		}
+		fmt.Printf("%s: made (LiveKit's API key and secret)\n", l.KeysFile)
+	}
+	if exists(l.ConfigFile) {
+		fmt.Printf("%s: kept\n", l.ConfigFile)
+	} else {
+		u, err := url.Parse(l.URL)
+		if err != nil {
+			return fmt.Errorf("livekit url: %w", err)
+		}
+		port, err := strconv.Atoi(u.Port())
+		if err != nil {
+			return fmt.Errorf("livekit url %s names no port", l.URL)
+		}
+		if err := writeNew(l.ConfigFile, []byte(livekit.ConfigYAML(port, l.TCPPort, l.UDPPort, l.KeysFile))); err != nil {
+			return err
+		}
+		fmt.Printf("%s: written (signalling on %s, media on UDP %d and TCP %d)\n", l.ConfigFile, l.URL, l.UDPPort, l.TCPPort)
+	}
+	if liveKitBinary(config) == "" && l.Binary != "none" {
+		fmt.Printf("LiveKit: put livekit-server beside ptt-server (docs/install.md, \"LiveKit\"); ptt-server runs it\n")
+	}
+	return nil
+}
+
+// writeSecret writes a new file only its owner reads.
+func writeSecret(path string, data []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(path)
+		return err
+	}
+	return f.Close()
 }

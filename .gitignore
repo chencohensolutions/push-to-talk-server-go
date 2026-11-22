@@ -54,3 +54,5 @@ smtp.password
 *-firebase-adminsdk-*.json
 /blobs/*
 !/blobs/*.go
+livekit.keys
+livekit.yaml

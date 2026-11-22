@@ -21,6 +21,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/contacts"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
 	"github.com/chencohensolutions/push-to-talk-server-go/groups"
+	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	pb "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1"
 	"github.com/chencohensolutions/push-to-talk-server-go/push"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
@@ -56,6 +57,8 @@ type Relay struct {
 	Blobs *blobs.Store
 	// How long a blob is kept (blob_days).
 	BlobTTL time.Duration
+	// The LiveKit room API, to take cut-off devices out of rooms; nil without LiveKit.
+	Live *livekit.Client
 
 	// Wakes devices without a /ws through FCM (docs/messaging.md, "Push"); nil sends no pushes.
 	Push *push.Pusher
@@ -425,6 +428,7 @@ func (r *Relay) Revoked(user string) {
 		}
 	}
 	r.mu.Unlock()
+	r.leaveRooms(user, exists, enrolled)
 	forget := func(d store.Device) {
 		r.Push.Forget(d)
 		if err := r.Store.ForgetKeys(d); err != nil {

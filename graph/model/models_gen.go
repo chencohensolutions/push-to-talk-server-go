@@ -301,6 +301,8 @@ type ServerInfo struct {
 	Discovery *ServerDiscovery `json:"discovery,omitempty"`
 	// The server can wake phones through FCM (config.json has an fcm service account). Without it, a phone receives only while connected.
 	Push bool `json:"push"`
+	// The server has the live talk path (LiveKit): talkToken works.
+	LiveTalk bool `json:"liveTalk"`
 }
 
 type SignedPrekey struct {
@@ -314,6 +316,16 @@ type SignedPrekeyInput struct {
 	KeyID     int    `json:"keyId"`
 	PublicKey string `json:"publicKey"`
 	Signature string `json:"signature"`
+}
+
+type TalkToken struct {
+	// LiveKit's access token.
+	Token    string `json:"token"`
+	Room     string `json:"room"`
+	Identity string `json:"identity"`
+	// The path on this server to give LiveKit's client: /rtc.
+	Path      string    `json:"path"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type UploadPrekeysInput struct {

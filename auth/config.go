@@ -59,11 +59,33 @@ type AppConfig struct {
 	// Waking phones through Firebase Cloud Messaging (docs/messaging.md, "Push"). Without it the server sends no
 	// pushes: phones receive only while connected.
 	FCM *FCMConfig `json:"fcm,omitempty"`
+	// The live talk path (phase 5b): a LiveKit server beside this one (docs/install.md, "LiveKit"). Without it,
+	// talkToken answers LIVE_OFF and talk goes by the clip path only.
+	LiveKit *LiveKitConfig `json:"livekit,omitempty"`
 	// Loopback-only listener for the admin GraphQL API (default 127.0.0.1:8082).
 	AdminAddr string `json:"admin_addr"`
 	// Token for the admin API, rewritten on every server start (default admin.token).
 	AdminTokenFile string `json:"admin_token_file"`
 }
+
+// LiveKitConfig is where the LiveKit server is and how ptt-server runs it. Every field has a default.
+type LiveKitConfig struct {
+	// livekit-server's program: ptt-server starts it and starts it again when it exits. "" (the default) runs
+	// livekit-server(.exe) from beside ptt-server when it is there; "none" runs nothing (LiveKit runs on its own).
+	Binary string `json:"binary,omitempty"`
+	// LiveKit's own config (default livekit.yaml), which setup writes.
+	ConfigFile string `json:"config_file,omitempty"`
+	// The API key and secret, "key: secret" (default livekit.keys); setup makes it. A secret.
+	KeysFile string `json:"keys_file,omitempty"`
+	// LiveKit's signalling, on loopback (default http://127.0.0.1:7880): /rtc is passed to it, and the room API.
+	URL string `json:"url,omitempty"`
+	// The media ports LiveKit listens on, mapped on the router with the same number (defaults 7881 and 7882).
+	TCPPort int `json:"tcp_port,omitempty"`
+	UDPPort int `json:"udp_port,omitempty"`
+}
+
+// LiveKitOn says whether the live talk path is set up ("livekit" in config.json).
+func (c AppConfig) LiveKitOn() bool { return c.LiveKit != nil }
 
 // FCMConfig is how the server reaches FCM's HTTP v1 API (docs/install.md, "Push").
 type FCMConfig struct {
@@ -145,6 +167,25 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.PairsFile == "" {
 		c.PairsFile = DefaultPairsFile
+	}
+	if c.LiveKit != nil {
+		l := *c.LiveKit
+		if l.ConfigFile == "" {
+			l.ConfigFile = "livekit.yaml"
+		}
+		if l.KeysFile == "" {
+			l.KeysFile = "livekit.keys"
+		}
+		if l.URL == "" {
+			l.URL = "http://127.0.0.1:7880"
+		}
+		if l.TCPPort == 0 {
+			l.TCPPort = 7881
+		}
+		if l.UDPPort == 0 {
+			l.UDPPort = 7882
+		}
+		c.LiveKit = &l
 	}
 	if c.BlobDir == "" {
 		c.BlobDir = DefaultBlobDir

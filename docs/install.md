@@ -94,6 +94,29 @@ the server folder and name it in `config.json`:
   doesn't turn push off unnoticed.
 - `fcm.endpoint` (default `https://fcm.googleapis.com`) is for tests.
 
+## LiveKit
+
+The live talk path (phase 5b, docs/messaging.md "Live talk") runs a stock **livekit-server** beside ptt-server: one
+node, no Redis, no TURN. ptt-server signs the phones' room tokens after its own checks, passes LiveKit's signalling
+through `/rtc` on its own port (so only enrolled devices reach it), takes cut-off devices out of rooms with LiveKit's
+room API, and runs livekit-server itself, starting it again when it exits. Without `"livekit"` in config.json the
+server runs as before and talk goes by the clip path only.
+
+- **config.json**: `"livekit": {}` turns it on with the defaults; setup writes it for a new server. Fields:
+  `binary` (default: `livekit-server.exe` / `livekit-server` beside ptt-server when it is there; `"none"` runs
+  nothing), `config_file` (`livekit.yaml`), `keys_file` (`livekit.keys`), `url` (`http://127.0.0.1:7880`),
+  `tcp_port` (7881), `udp_port` (7882).
+- **`ptt-server setup`** (run it again after adding `"livekit"`) makes `livekit.keys`, LiveKit's API key and secret
+  as `key: secret` (a secret, gitignored, never in chat), and `livekit.yaml`: signalling on `127.0.0.1:7880`, media on
+  TCP 7881 and UDP 7882, `use_external_ip: true` (LiveKit finds the public address by STUN), `key_file:
+  livekit.keys`. Files already there are kept.
+- **The program**: download livekit-server from LiveKit's GitHub releases (1.13.x at the plan's review; there are
+  Windows, macOS and Linux builds; it is Go and also builds from source) and put it beside ptt-server. Its log lines
+  go into ptt-server's log, prefixed `LiveKit:`.
+- **The router and firewall**: the server maps UDP 7882 and TCP 7881 with the same numbers outside (package
+  `portmap`, `Exact`), since LiveKit tells the phones its own port numbers. On Windows, allow them in Windows
+  Defender Firewall for livekit-server.exe as for ptt-server.
+
 ## The Windows service
 
 On Windows, in an administrator's console in the server folder:
@@ -119,10 +142,11 @@ On macOS and Linux run it with launchd or systemd from the server folder.
 
 | Port | Who listens | Open to the internet |
 |---|---|---|
-| TCP 56400 (`port`) | ptt-server: GraphQL on `/query`, the WebSocket on `/ws` (later `/blob`, `/rtc`) | Yes: the server maps it on the router itself (docs/discovery.md), or forward it by hand |
+| TCP 56400 (`port`) | ptt-server: GraphQL on `/query`, the WebSocket on `/ws`, `/blob`, and LiveKit's signalling passed through on `/rtc` | Yes: the server maps it on the router itself (docs/discovery.md), or forward it by hand |
 | TCP 127.0.0.1:8082 (`admin_addr`) | the admin API | No, loopback only |
 | outbound HTTPS | ptt-server to `oauth2.googleapis.com` and `fcm.googleapis.com`, with `fcm` set | Outbound only |
-| UDP 7882, TCP 7881 | LiveKit's media, from phase 5b | Yes, same number outside and inside |
+| TCP 127.0.0.1:7880 (`livekit.url`) | LiveKit's signalling and room API | No, loopback only: phones reach it through `/rtc` |
+| UDP 7882, TCP 7881 | LiveKit's media | Yes, same number outside and inside (the server maps them with its own port) |
 
 56400 is next to Journal's 56398, so both servers can run on one PC.
 

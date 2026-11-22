@@ -11,6 +11,7 @@ import (
 
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/groups"
+	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 )
 
@@ -90,6 +91,7 @@ func (r *mutationResolver) LeaveGroup(ctx context.Context, group string) (bool, 
 	}
 	log.Printf("%s left group %s", d.User, g.ID)
 	r.Relay.AnnounceGroup(g, d, d.User)
+	r.Relay.LeaveRoom(livekit.GroupRoom(g.ID), d.User)
 	return true, nil
 }
 
@@ -108,6 +110,7 @@ func (r *mutationResolver) RemoveFromGroup(ctx context.Context, group string, us
 	}
 	log.Printf("%s took %s out of group %s", d.User, user, g.ID)
 	r.Relay.AnnounceGroup(g, d, user)
+	r.Relay.LeaveRoom(livekit.GroupRoom(g.ID), user)
 	return groupModel(g), nil
 }
 
@@ -126,6 +129,9 @@ func (r *mutationResolver) DeleteGroup(ctx context.Context, group string) (bool,
 	}
 	log.Printf("%s deleted group %s", d.User, g.ID)
 	r.Relay.AnnounceGroup(groups.Group{ID: g.ID}, d, g.Everyone()...)
+	for _, user := range g.Members {
+		r.Relay.LeaveRoom(livekit.GroupRoom(g.ID), user)
+	}
 	return true, nil
 }
 

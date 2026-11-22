@@ -61,14 +61,19 @@ func newServerDiscovery(config auth.AppConfig, leaf *x509.Certificate, key any) 
 	return d, nil
 }
 
-// serverPorts is what the server asks the router to forward: its own TCP port. LiveKit's media ports (UDP 7882, TCP
-// 7881, portmap.Port.Exact) join them in phase 5b.
+// serverPorts is what the server asks the router to forward: its own TCP port, and with LiveKit its media ports
+// (UDP 7882, TCP 7881) with the same numbers outside, since LiveKit tells the phones its own port numbers.
 func serverPorts(config auth.AppConfig) ([]portmap.Port, error) {
 	port, err := strconv.ParseUint(config.Port, 10, 16)
 	if err != nil {
 		return nil, fmt.Errorf("port %q: %w", config.Port, err)
 	}
-	return []portmap.Port{{Proto: portmap.TCP, Port: uint16(port)}}, nil
+	ports := []portmap.Port{{Proto: portmap.TCP, Port: uint16(port)}}
+	if config.LiveKitOn() {
+		ports = append(ports, portmap.Port{Proto: portmap.UDP, Port: uint16(config.LiveKit.UDPPort), Exact: true},
+			portmap.Port{Proto: portmap.TCP, Port: uint16(config.LiveKit.TCPPort), Exact: true})
+	}
+	return ports, nil
 }
 
 // mapPorts asks the router to forward the server's ports to this machine while it runs (package portmap), unless

@@ -10,6 +10,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/invite"
+	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 )
 
@@ -26,6 +27,8 @@ type Resolver struct {
 	// Invites (docs/authentication.md, "Invites"); nil when the config turns them off.
 	Invites *invite.Service
 	Now     func() time.Time
+	// LiveKit's API key and secret, to sign room tokens (talkToken); nil without LiveKit.
+	LiveKeys *livekit.Keys
 	// The server's build, shown by serverInfo.
 	Version string
 	// Who this server is and where, for serverInfo.discovery; nil when unknown.
@@ -87,4 +90,11 @@ func pairingModel(p invite.Pairing) *model.InvitePairing {
 		out.PairingToken = &model.PairingToken{Token: p.Token, ExpiresAt: p.ExpiresAt}
 	}
 	return out
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }

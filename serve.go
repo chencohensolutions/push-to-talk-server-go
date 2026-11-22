@@ -8,8 +8,12 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -27,6 +31,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/resolver"
 	"github.com/chencohensolutions/push-to-talk-server-go/groups"
 	"github.com/chencohensolutions/push-to-talk-server-go/invite"
+	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	"github.com/chencohensolutions/push-to-talk-server-go/push"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
@@ -53,6 +58,9 @@ type server struct {
 	invites *invite.Service
 	// Who this server is and where, for serverInfo.discovery; nil when unknown.
 	discovery func() *model.ServerDiscovery
+	// LiveKit's keys (talkToken) and its signalling, which /rtc passes to; nil without LiveKit.
+	liveKeys *livekit.Keys
+	rtc      http.Handler
 }
 
 // serve runs the server until ctx ends, Ctrl+C or a stop from the system, then calls stopped once the router's
@@ -81,6 +89,9 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 		go d.publisher.Run(running)
 	}
 	go s.relay.Run(running)
+	if binary := liveKitBinary(config); binary != "" {
+		go livekit.Run(running, binary, config.LiveKit.ConfigFile)
+	}
 	go serveAdmin(s)
 	go func() {
 		<-running.Done()
@@ -155,6 +166,23 @@ func openServer(config auth.AppConfig) (*server, error) {
 		log.Printf("Push: off (no fcm in config.json); phones receive only while connected")
 	}
 	s.relay.Push = push.New(sender, enrollment.Registry, s.relay.Connected)
+	if config.LiveKitOn() {
+		keys, err := livekit.LoadKeys(config.LiveKit.KeysFile)
+		if err != nil {
+			return nil, fmt.Errorf("config.json livekit: %w (ptt-server setup makes it)", err)
+		}
+		target, err := url.Parse(config.LiveKit.URL)
+		if err != nil {
+			return nil, fmt.Errorf("config.json livekit url: %w", err)
+		}
+		s.liveKeys = &keys
+		s.relay.Live = &livekit.Client{Keys: keys, URL: config.LiveKit.URL}
+		s.rtc = httputil.NewSingleHostReverseProxy(target)
+		log.Printf("Live talk: on, through LiveKit at %s (media on UDP %d and TCP %d)", config.LiveKit.URL,
+			config.LiveKit.UDPPort, config.LiveKit.TCPPort)
+	} else {
+		log.Printf("Live talk: off (no livekit in config.json); talk goes by the clip path")
+	}
 	if config.InvitesOn() {
 		invites, err := invite.Open(config.InvitesFile, time.Now)
 		if err != nil {
@@ -234,12 +262,18 @@ func (s *server) newMux() *http.ServeMux {
 	// The WebSocket for envelopes (docs/messaging.md): only enrolled devices, and no deadline, since it stays open.
 	mux.Handle("/ws", identify(s.config, s.users, s.enrollment.Registry, false, s.relay))
 	mux.Handle("/blob/", identify(s.config, s.users, s.enrollment.Registry, false, http.HandlerFunc(s.relay.ServeBlob)))
+	if s.rtc != nil {
+		// LiveKit's signalling, for enrolled devices only; the room token says which room.
+		rtc := identify(s.config, s.users, s.enrollment.Registry, false, s.rtc)
+		mux.Handle("/rtc", rtc)
+		mux.Handle("/rtc/", rtc)
+	}
 	return mux
 }
 
 func (s *server) newGraphQLServer() *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
-		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Invites: s.invites, Now: time.Now,
+		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Invites: s.invites, Now: time.Now, LiveKeys: s.liveKeys,
 			Version: version.String(),
 			Discovery: func() *model.ServerDiscovery {
 				if s.discovery == nil {
@@ -261,4 +295,27 @@ func (s *server) newGraphQLServer() *handler.Server {
 	srv.Use(extension.FixedComplexityLimit(queryComplexity))
 	srv.AroundRootFields(auth.RequireUserUnlessPublic)
 	return srv
+}
+
+// liveKitBinary is the livekit-server program ptt-server runs, or "" for none: config.json's livekit binary, or
+// livekit-server(.exe) beside ptt-server when it is there.
+func liveKitBinary(config auth.AppConfig) string {
+	if !config.LiveKitOn() || config.LiveKit.Binary == "none" {
+		return ""
+	}
+	if config.LiveKit.Binary != "" {
+		return config.LiveKit.Binary
+	}
+	name := "livekit-server"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	if exe, err := os.Executable(); err == nil {
+		beside := filepath.Join(filepath.Dir(exe), name)
+		if _, err := os.Stat(beside); err == nil {
+			return beside
+		}
+	}
+	log.Printf("Live talk: no %s beside ptt-server; start LiveKit yourself, or set livekit.binary in config.json", name)
+	return ""
 }

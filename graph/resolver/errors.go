@@ -70,3 +70,9 @@ const (
 	// CodeTooManyGroups: creating past 200 groups owned.
 	CodeTooManyGroups = "TOO_MANY_GROUPS"
 )
+
+// Codes of the live talk fields (talk.graphql).
+const (
+	// CodeLiveOff: the server has no LiveKit ("livekit" in config.json).
+	CodeLiveOff = "LIVE_OFF"
+)

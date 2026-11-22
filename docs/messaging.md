@@ -286,6 +286,25 @@ audio is AES-256-GCM made by the talker's phone with a key that goes end to end 
 Live frames go out through a queue per connection (512 frames); a device too slow to keep up misses some, and reads
 the clip over `/blob` instead.
 
+## Live talk
+
+Phase 5b, the live path (2026-11-22). Each conversation has one LiveKit room: `g-<group id>` for a group,
+`u-<hash of the two names>` for a pair. The clip path above always runs; a phone in the room hears a burst through
+LiveKit at once and skips the clip stream.
+
+- **`talkToken(peer | group)`** signs a LiveKit token for the calling device after the same checks as talking there
+  (`NOT_PAIRED`, `BLOCKED`, `NOT_MEMBER`, `UNKNOWN_USER`, `INVALID`), for 10 minutes, for that room only, as identity
+  `user.device`: join, publish the microphone, subscribe; no data messages (floor control stays on `/ws`).
+  `LIVE_OFF` without LiveKit; `serverInfo.liveTalk` says whether it is there.
+- The phone points LiveKit's client at the server's own address with the path **`/rtc`**: ptt-server passes it to
+  LiveKit's signalling on loopback, for enrolled devices only (a certificate is required, as on `/ws`).
+- Audio goes to LiveKit's media ports, encrypted end to end with LiveKit's frame encryption and the talk keys the
+  phones swap in encrypted messages; LiveKit sees room names and timing, never audio.
+- Taken out of a group, the user's devices are taken out of the group's room at once; unpairing (when the two share
+  no group) and blocking take both out of their pair's room; a revoked device or a removed user is taken out of
+  every room. Being in the same group's room, two members who blocked each other still share it: their phones
+  don't play each other.
+
 ## Blobs
 
 Clips, voice messages and attachments are files of ciphertext in the blobs folder (`blob_dir`, default `blobs`; package

@@ -106,6 +106,7 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		DeviceNumber:      r.device(ctx).DeviceNumber,
 		Discovery:         found,
 		Push:              r.Relay != nil && r.Relay.Push.On(),
+		LiveTalk:          r.LiveKeys != nil,
 	}, nil
 }
 
