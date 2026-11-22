@@ -1,5 +1,5 @@
-// Package version is the server's version: version/VERSION, the day of the build (2026.11.21, or 2026.11.21.2 for a
-// second one that day), embedded in ptt-server. See docs/install.md "Versions".
+// Package version is the server's version: version/VERSION, a semantic version (1.0.0), embedded in ptt-server. See
+// docs/install.md "Versions".
 package version
 
 import (
@@ -11,11 +11,11 @@ import (
 //go:embed VERSION
 var file string
 
-// Number is the version in VERSION, e.g. "2026.11.21".
+// Number is the version in VERSION, e.g. "1.0.0".
 var Number = strings.TrimSpace(file)
 
-// String is the version with the build's commit and time from the Go build info: "2026.11.21 (3f2a9c1 2026-11-21)",
-// with "dirty" when built with uncommitted changes, or just "2026.11.21" when built without version control.
+// String is the version with the build's commit and time from the Go build info: "1.0.0 (3f2a9c1 2026-11-21)",
+// with "dirty" when built with uncommitted changes, or just "1.0.0" when built without version control.
 func String() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
