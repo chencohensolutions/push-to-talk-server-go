@@ -61,6 +61,20 @@ type server struct {
 	// LiveKit's keys (talkToken) and its signalling, which /rtc passes to; nil without LiveKit.
 	liveKeys *livekit.Keys
 	rtc      http.Handler
+	// liveRestart restarts the livekit-server this server runs (restartLiveKit); nil when it runs none.
+	liveRestart chan struct{}
+}
+
+// restartLiveKit asks livekit.Run to start LiveKit again, and says whether this server runs it.
+func (s *server) restartLiveKit() bool {
+	if s.liveRestart == nil {
+		return false
+	}
+	select {
+	case s.liveRestart <- struct{}{}:
+	default: // one is asked already
+	}
+	return true
 }
 
 // serve runs the server until ctx ends, Ctrl+C or a stop from the system, then calls stopped once the router's
@@ -90,7 +104,8 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	}
 	go s.relay.Run(running)
 	if binary := liveKitBinary(config); binary != "" {
-		go livekit.Run(running, binary, config.LiveKit.ConfigFile, *s.liveKeys)
+		s.liveRestart = make(chan struct{}, 1)
+		go livekit.Run(running, binary, config.LiveKit.ConfigFile, *s.liveKeys, s.liveRestart)
 	}
 	go serveAdmin(s)
 	go func() {

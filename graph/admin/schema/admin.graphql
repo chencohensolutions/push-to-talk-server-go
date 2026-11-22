@@ -1,5 +1,5 @@
 # Admin API, served only on the loopback admin listener (admin_addr) and used by the
-# `ptt-server user add | user remove | users | enroll-code | devices | revoke` commands. See docs/authentication.md.
+# `ptt-server user add | user remove | users | enroll-code | devices | revoke | livekit update` commands. See docs/authentication.md.
 
 scalar Time
 
@@ -19,6 +19,11 @@ type Mutation {
   createEnrollmentCode(user: String!): EnrollmentCode!
   "Revokes an enrolled device's certificate (and its renewals); the server rejects it from then on."
   revokeDevice(serial: String!): Device!
+  """
+  Stops livekit-server and starts it again at once, so a new program (`ptt-server livekit update`) runs. False when
+  this server doesn't run LiveKit itself (no "livekit" in config.json, or its binary is "none").
+  """
+  restartLiveKit: Boolean!
 }
 
 type User {

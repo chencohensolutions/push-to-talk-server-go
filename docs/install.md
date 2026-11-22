@@ -114,8 +114,18 @@ server runs as before and talk goes by the clip path only.
   reports every file there as readable by others. A `livekit.yaml` from before 2026-11-22 names `key_file:
   livekit.keys`; delete that line. If you start LiveKit yourself, set `LIVEKIT_KEYS` to the line in `livekit.keys`.)
 - **The program**: download livekit-server from LiveKit's GitHub releases (1.13.x at the plan's review; there are
-  Windows, macOS and Linux builds; it is Go and also builds from source) and put it beside ptt-server. Its log lines
-  go into ptt-server's log, prefixed `LiveKit:`.
+  Windows, macOS and Linux builds; it is Go and also builds from source) and put it beside ptt-server, or run
+  `ptt-server livekit update`. Its log lines go into ptt-server's log, prefixed `LiveKit:`. ptt-server's own
+  release downloads carry the LiveKit it was tested with.
+- **Upgrading LiveKit**: `ptt-server livekit update [version]`, from the server folder (package `livekit`,
+  `update.go`). It asks GitHub for LiveKit's latest release (or that version), downloads the archive for this OS and
+  processor, checks it against the release's checksums file, checks that the program in it runs and reports the
+  version it should, then puts it in place, keeping the old one as `livekit-server(.exe).old`. It then calls the
+  running server's `restartLiveKit` (admin API), which stops LiveKit and starts the new one at once: live talk and
+  calls drop for a few seconds, messages and push don't. If the server isn't running, it starts the new one when it
+  starts. LiveKit is a separate program (not a library in ptt-server) so that it upgrades this way, without a new
+  ptt-server, and so that a crash in it doesn't take messaging down; the two meet only at LiveKit's room API and its
+  tokens. To go back, run it with the old version number.
 - **The router and firewall**: the server maps UDP 7882 and TCP 7881 with the same numbers outside (package
   `portmap`, `Exact`), since LiveKit tells the phones its own port numbers. On Windows, allow them in Windows
   Defender Firewall for livekit-server.exe as for ptt-server.

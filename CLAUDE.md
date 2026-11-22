@@ -56,6 +56,7 @@ go run .                                          # serve https://0.0.0.0:56400 
 go run . user add <name> | user remove <name> | users              # admin commands: the server must be running
 go run . enroll-code <user> | devices [user] | revoke <serial>
 go run . id | discovery                           # this server's id; check the DHT and the router from here
+go run . livekit update [version]                 # fetch LiveKit's release, check it, swap it in, restart it
 ```
 
 After editing `proto/ptt.proto`, regenerate `proto/pttv1/ptt.pb.go` (committed). protoc comes from Maven Central,
@@ -114,7 +115,7 @@ fields); introspection is blocked too. Resolvers get the user with `auth.FromCon
   (`acceptInvite`); both get a pairing token of the inviter. The server sends no mail: the inviter's phone sends the
   link and passcode (`smtp` and `gmail` in an old config.json are taken and ignored).
 - `livekit`: LiveKit's keys, room tokens (HS256, standard library), the room API (Twirp JSON), running
-  livekit-server.
+  livekit-server (its keys in LIVEKIT_KEYS, restarted on `restartLiveKit`), and updating it (`update.go`).
 - `blobs`: the blobs folder (clips that grow while their burst lasts, uploaded files), with who may read each.
 - `groups`: `groups.json` (owner, members, invited), used only to route; the phones trust the owner's signed changes.
 - `contacts`: `pairs.json` (pairs, pairings waiting for both confirmations, blocks) and the pairing tokens (memory).

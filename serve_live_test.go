@@ -254,3 +254,27 @@ func TestCallTokens(t *testing.T) {
 		t.Fatalf("callToken after a block: %s", code)
 	}
 }
+
+// `ptt-server livekit update` ends with restartLiveKit: false when this server runs no LiveKit, and a restart asked of
+// livekit.Run when it does.
+func TestRestartLiveKit(t *testing.T) {
+	env, _ := newLiveEnv(t) // binary "none": LiveKit runs some other way
+	var data struct{ RestartLiveKit bool }
+	if err := adminQuery(env.adminConfig, `mutation { restartLiveKit }`, nil, &data); err != nil || data.RestartLiveKit {
+		t.Fatalf("restartLiveKit without a LiveKit the server runs: %v %v", data, err)
+	}
+	env.liveRestart = make(chan struct{}, 1)
+	for range 2 { // a second ask while one waits is no error
+		if err := adminQuery(env.adminConfig, `mutation { restartLiveKit }`, nil, &data); err != nil || !data.RestartLiveKit {
+			t.Fatalf("restartLiveKit: %v %v", data, err)
+		}
+	}
+	select {
+	case <-env.liveRestart:
+	default:
+		t.Fatal("no restart was asked of LiveKit")
+	}
+	if _, err := liveKitProgram(env.config); err == nil {
+		t.Fatal(`livekit update with binary "none"`)
+	}
+}
