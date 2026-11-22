@@ -337,9 +337,11 @@ home videos. It holds the ciphertext only, so a kept call can be played only by 
   when keeping began, and its tracks (blob id, identity, kind, codec, when it began, size, complete) that the caller
   may read. A phone reads each track with `GET /blob/<id>`, decrypts the frames with the call's key, and writes one
   Matroska file: a video and an audio track per person, lined up by `recordingStartedAt`, without re-encoding.
-- **No one is told.** The recorder is hidden in LiveKit, and `callRecording` is read only by the family themselves;
-  phones show no Recording badge for a kept call. (The app's own per-phone "Save this call" from phase 6b is separate.)
-- `serverInfo.keepsCalls` says the server keeps calls. Set `"keep_calls": false` in `livekit` to turn it off.
+- **Who may read a kept call.** Only the people in that conversation, over the same mTLS and permission checks as
+  every other blob. The server holds ciphertext, so it can never watch. (The app's own per-phone "Save this call"
+  from phase 6b is separate.)
+- `serverInfo.keepsCalls` tells the apps the server keeps calls, so they can surface it to the people in a call. Set
+  `"keep_calls": false` in `livekit` to turn it off.
 
 ## Blobs
 
