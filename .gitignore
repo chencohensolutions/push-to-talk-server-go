@@ -49,3 +49,5 @@ server.log.old
 gmail-client.json
 gmail.token
 smtp.password
+# The FCM service-account key (docs/install.md, "Push"): a secret
+*-firebase-adminsdk-*.json

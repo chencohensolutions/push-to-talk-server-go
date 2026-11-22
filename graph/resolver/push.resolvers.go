@@ -7,22 +7,64 @@ package resolver
 
 import (
 	"context"
-	"fmt"
+	"unicode"
 
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 )
 
 // RegisterPush is the resolver for the registerPush field.
 func (r *mutationResolver) RegisterPush(ctx context.Context, token *string, notificationsEnabled bool) (bool, error) {
-	panic(fmt.Errorf("not implemented: RegisterPush - registerPush"))
+	caller, err := r.caller(ctx)
+	if err != nil {
+		return false, err
+	}
+	text := ""
+	if token != nil {
+		text = *token
+	}
+	if len(text) > maxPushToken {
+		return false, coded(CodeInvalidToken, "an FCM token is at most %d characters", maxPushToken)
+	}
+	for _, c := range text {
+		if unicode.IsSpace(c) || unicode.IsControl(c) || c > unicode.MaxASCII {
+			return false, coded(CodeInvalidToken, "an FCM token has no spaces, control or non-ASCII characters")
+		}
+	}
+	if err := r.Enrollment.Registry.SetPush(caller.User, caller.Number, text, notificationsEnabled); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // SetPresenceVisible is the resolver for the setPresenceVisible field.
 func (r *mutationResolver) SetPresenceVisible(ctx context.Context, visible bool) (bool, error) {
-	panic(fmt.Errorf("not implemented: SetPresenceVisible - setPresenceVisible"))
+	caller, err := r.caller(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := r.Users.SetPresenceHidden(caller.User, !visible); err != nil {
+		return false, err
+	}
+	return visible, nil
 }
 
 // Presence is the resolver for the presence field.
 func (r *queryResolver) Presence(ctx context.Context, users []string) ([]*model.Presence, error) {
-	panic(fmt.Errorf("not implemented: Presence - presence"))
+	caller, err := r.caller(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) > maxPresenceUsers {
+		users = users[:maxPresenceUsers]
+	}
+	out := []*model.Presence{}
+	for _, p := range r.Relay.Presences(caller.User, users) {
+		m := &model.Presence{User: p.User, Online: p.Online}
+		if !p.LastSeen.IsZero() {
+			seen := p.LastSeen
+			m.LastSeen = &seen
+		}
+		out = append(out, m)
+	}
+	return out, nil
 }

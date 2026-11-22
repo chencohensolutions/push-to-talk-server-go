@@ -68,6 +68,32 @@ still starts; its log says the key is no longer used. Remove the key, delete `gm
 `smtp.password` from the server folder, and, if `ptt-server mail-login` was run, remove ptt-server under **Google
 Account → Security → Your connections to third-party apps**.
 
+## Push (FCM)
+
+Phones that aren't connected are woken through Firebase Cloud Messaging (docs/messaging.md, "Push"). The server
+needs the Firebase project's **service-account key**: in the Firebase console, Project settings › Service accounts ›
+Generate new private key. That downloads a JSON file named like `<project>-firebase-adminsdk-<id>.json`. Put it in
+the server folder and name it in `config.json`:
+
+```jsonc
+  "fcm": {
+    "service_account_file": "talk-3e556-firebase-adminsdk-fbsvc-0cbb81ebe6.json"
+    // "project_id": "talk-3e556"   optional: default the file's project_id
+  }
+```
+
+- **The key is a secret.** Anyone with it can send pushes to every phone of the app. Keep it only in the server
+  folder (readable by SYSTEM and Administrators on Windows, as below), never in git: `.gitignore` leaves out
+  `*-firebase-adminsdk-*.json`. `setup --move-from` doesn't copy it; copy it by hand. If it leaks, delete the key in
+  the console (Google Cloud › IAM › Service accounts › the firebase-adminsdk account › Keys) and make a new one.
+- The server signs in with the key itself (an RS256-signed JWT traded at Google's token endpoint for an hour's access
+  token, standard library only) and sends to `https://fcm.googleapis.com/v1/projects/<project>/messages:send`. It
+  needs outbound HTTPS to `oauth2.googleapis.com` and `fcm.googleapis.com`; nothing comes in.
+- Without `fcm` the server runs with no push and says so at start ("Push: off"); phones then receive only while
+  connected, and `serverInfo.push` is false. A key file that can't be read stops the server at start, so a typo
+  doesn't turn push off unnoticed.
+- `fcm.endpoint` (default `https://fcm.googleapis.com`) is for tests.
+
 ## The Windows service
 
 On Windows, in an administrator's console in the server folder:
@@ -79,8 +105,8 @@ ptt-server service start | stop | uninstall
 ```
 
 The service runs from the program's folder and writes its log to `server.log` there (at most 20 MB, then
-`server.log.old`). Keep the server folder readable only by SYSTEM and Administrators, since it holds `certs/ca-key.pem`
-and `admin.token`:
+`server.log.old`). Keep the server folder readable only by SYSTEM and Administrators, since it holds `certs/ca-key.pem`,
+`admin.token` and the FCM service-account key:
 
 ```bat
 icacls C:\PttServer /inheritance:r /grant:r *S-1-5-18:(OI)(CI)F /grant:r *S-1-5-32-544:(OI)(CI)F
@@ -95,6 +121,7 @@ On macOS and Linux run it with launchd or systemd from the server folder.
 |---|---|---|
 | TCP 56400 (`port`) | ptt-server: GraphQL on `/query`, the WebSocket on `/ws` (later `/blob`, `/rtc`) | Yes: the server maps it on the router itself (docs/discovery.md), or forward it by hand |
 | TCP 127.0.0.1:8082 (`admin_addr`) | the admin API | No, loopback only |
+| outbound HTTPS | ptt-server to `oauth2.googleapis.com` and `fcm.googleapis.com`, with `fcm` set | Outbound only |
 | UDP 7882, TCP 7881 | LiveKit's media, from phase 5b | Yes, same number outside and inside |
 
 56400 is next to Journal's 56398, so both servers can run on one PC.

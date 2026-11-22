@@ -88,6 +88,7 @@ func (r *queryResolver) ServerInfo(ctx context.Context) (*model.ServerInfo, erro
 		Version:           r.Version,
 		DeviceNumber:      r.device(ctx).DeviceNumber,
 		Discovery:         found,
+		Push:              r.Relay != nil && r.Relay.Push.On(),
 	}, nil
 }
 
@@ -98,8 +99,11 @@ func (r *queryResolver) Me(ctx context.Context) (*model.Me, error) {
 		return nil, coded(CodeUnauthorized, "client certificate required")
 	}
 	device := r.device(ctx)
-	me := &model.Me{User: user.Name, DeviceNumber: device.DeviceNumber, DeviceName: device.Name}
+	me := &model.Me{User: user.Name, DeviceNumber: device.DeviceNumber, DeviceName: device.Name,
+		PresenceVisible: !user.PresenceHidden, PushRegistered: device.FCMToken != "",
+		NotificationsEnabled: device.NotificationsEnabled}
 	if current := r.Users.Find(user.Name); current != nil {
+		me.PresenceVisible = !current.PresenceHidden
 		me.IdentityKey = encodeOrNil(current.IdentityKey)
 		me.DisplayName = nonEmpty(current.DisplayName)
 		me.Email = nonEmpty(current.Email)

@@ -102,12 +102,14 @@ func (r *Relay) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			delete(r.conns, c.device)
 		}
 		r.mu.Unlock()
+		r.disconnected(c.device.User)
 	}()
 	// Revoked between identify and here: don't stay.
 	if r.Registry.IsRevoked(device.Serial) {
 		ws.Close(closeRevoked, "revoked")
 		return
 	}
+	r.connected(c.device.User)
 	log.Printf("/ws: device %d of %s connected", c.device.Number, c.device.User)
 
 	go r.deliver(ctx, c)

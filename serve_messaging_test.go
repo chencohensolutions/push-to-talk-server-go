@@ -204,6 +204,8 @@ func kindOf(f *pb.Frame) string {
 		return "queue_empty"
 	case *pb.Frame_Pong:
 		return "pong"
+	case *pb.Frame_Presence:
+		return "presence"
 	}
 	return "other"
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/resolver"
 	"github.com/chencohensolutions/push-to-talk-server-go/invite"
+	"github.com/chencohensolutions/push-to-talk-server-go/push"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
 	"github.com/chencohensolutions/push-to-talk-server-go/version"
@@ -129,6 +130,18 @@ func openServer(config auth.AppConfig) (*server, error) {
 	queueTTL := time.Duration(config.QueueDays) * 24 * time.Hour
 	s := &server{config: config, users: users, enrollment: enrollment, book: book, store: st,
 		relay: relay.New(users, enrollment.Registry, st, book, queueTTL, time.Now)}
+	var sender push.Sender
+	if config.PushOn() {
+		fcm, err := push.LoadFCM(config.FCM.ServiceAccountFile, config.FCM.ProjectID, config.FCM.Endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("config.json fcm: %w", err)
+		}
+		log.Printf("Push: on, through FCM for the Firebase project %s", fcm.Project())
+		sender = fcm
+	} else {
+		log.Printf("Push: off (no fcm in config.json); phones receive only while connected")
+	}
+	s.relay.Push = push.New(sender, enrollment.Registry, s.relay.Connected)
 	if config.InvitesOn() {
 		invites, err := invite.Open(config.InvitesFile, time.Now)
 		if err != nil {
