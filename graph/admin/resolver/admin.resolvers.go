@@ -70,6 +70,9 @@ func (r *mutationResolver) RemoveUser(ctx context.Context, name string) (*model.
 		return nil, fmt.Errorf("user %s removed, but its devices couldn't be revoked: %w", user.Name, err)
 	}
 	r.revoked(user.Name)
+	if r.RemovedUser != nil {
+		r.RemovedUser(user.Name)
+	}
 	log.Printf("Admin: removed user %s and revoked %d of its devices", user.Name, revoked)
 	return &model.RemovedUser{Name: user.Name, RevokedDevices: revoked}, nil
 }

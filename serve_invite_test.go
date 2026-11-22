@@ -317,3 +317,29 @@ func TestInviteLimits(t *testing.T) {
 		t.Fatalf("an invite with invites off: %s", problem)
 	}
 }
+
+// TestARemovedUsersInvitesGo: `user remove` cancels the user's pending invites, so the same name added again can
+// invite at once and the old links don't work (2026-11-22: hen, re-added, got RATE_LIMITED).
+func TestARemovedUsersInvitesGo(t *testing.T) {
+	env := newTestEnv(t)
+	env.addUser(t, "hen")
+	hen := env.phone(t, "hen")
+	var codes []string
+	for range 5 {
+		code, problem := env.createInvite(t, hen, "")
+		if problem != "" {
+			t.Fatal(problem)
+		}
+		codes = append(codes, code)
+	}
+	if err := adminQuery(env.adminConfig, `mutation { removeUser(name: "hen") { name } }`, nil, &struct{}{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := env.server.invites.Store.Find(codes[0]); ok {
+		t.Fatal("an invite of the removed user still works")
+	}
+	env.addUser(t, "hen")
+	if _, problem := env.createInvite(t, env.phone(t, "hen"), ""); problem != "" {
+		t.Fatalf("an invite from hen added again: %s", problem)
+	}
+}

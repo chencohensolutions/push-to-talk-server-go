@@ -24,6 +24,8 @@ type Resolver struct {
 	Revoked func(user string)
 	// LiveKitRestart restarts the livekit-server this server runs, and says whether it runs one. Nil: none.
 	LiveKitRestart func() bool
+	// RemovedUser is called after user was removed, to drop what else it left (its pending invites). Nil does nothing.
+	RemovedUser func(user string)
 	// MailEnrollment mails user an enrollment link with code (config.json "gmail"); nil when the server can't send mail.
 	MailEnrollment func(user auth.User, code string, expiresAt time.Time) error
 	// AppReleases follows the app's releases (checkAppRelease); nil when app_releases is "none".

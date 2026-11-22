@@ -136,6 +136,30 @@ func (s *Store) Drop(id string) error {
 	return s.change(func(list *[]Invite) { (*list)[at].Canceled = true })
 }
 
+// CancelAll stops every pending invite of by from working (`user remove`), so a user added again by the same name
+// starts with none waiting, and none of the old links works. It returns how many it canceled.
+func (s *Store) CancelAll(by string) (int, error) {
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, i := range s.invites {
+		if i.InvitedBy == by && i.Pending(now) {
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, nil
+	}
+	return n, s.change(func(list *[]Invite) {
+		for k := range *list {
+			if (*list)[k].InvitedBy == by && (*list)[k].Pending(now) {
+				(*list)[k].Canceled = true
+			}
+		}
+	})
+}
+
 // List is by's pending invites, newest first.
 func (s *Store) List(by string) []Invite {
 	now := s.now()
