@@ -130,8 +130,9 @@ server runs as before and talk goes by the clip path only.
   ptt-server, and so that a crash in it doesn't take messaging down; the two meet only at LiveKit's room API and its
   tokens. To go back, run it with the old version number.
 - **The router and firewall**: the server maps UDP 7882 and TCP 7881 with the same numbers outside (package
-  `portmap`, `Exact`), since LiveKit tells the phones its own port numbers. On Windows, allow them in Windows
-  Defender Firewall for livekit-server.exe as for ptt-server.
+  `portmap`, `Exact`), since LiveKit tells the phones its own port numbers. On Windows, `ptt-server service install`
+  (or `ptt-server service firewall`, the rules alone) adds the Windows Defender Firewall rule "Push-to-talk
+  LiveKit" for livekit-server.exe on those two ports.
 
 ## The Windows service
 
@@ -139,8 +140,10 @@ On Windows, in an administrator's console in the server folder:
 
 ```bat
 ptt-server service install     :: the PttServer service, started at boot, restarted if it stops on an error,
-                               :: and a firewall rule for the TCP port in config.json
-ptt-server service start | stop | uninstall
+                               :: and firewall rules: the TCP port in config.json for ptt-server, and
+                               :: with "livekit", TCP 7881 and UDP 7882 for livekit-server.exe
+ptt-server service firewall    :: only those firewall rules (for a server started some other way)
+ptt-server service start | stop | uninstall    :: uninstall removes the rules too
 ```
 
 The service runs from the program's folder and writes its log to `server.log` there (at most 20 MB, then

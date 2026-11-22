@@ -26,8 +26,9 @@ const usage = `usage:
                                       addresses, publishing them in the BitTorrent DHT and finding them again
   ptt-server setup ...                make a server folder: config, certificates (docs/install.md;
                                       ptt-server setup --help)
-  ptt-server service install|uninstall|start|stop
-                                      the Windows service that starts the server at boot (as administrator)
+  ptt-server service install|uninstall|start|stop|firewall
+                                      the Windows service that starts the server at boot, with its firewall rules
+                                      (as administrator); firewall makes only the rules
   ptt-server livekit update [version] put LiveKit's latest release (or that version) beside ptt-server, checked
                                       against its checksums, and have the running server restart LiveKit
 
