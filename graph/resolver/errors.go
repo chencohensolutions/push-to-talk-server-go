@@ -77,4 +77,6 @@ const (
 	CodeLiveOff = "LIVE_OFF"
 	// CodeRecordingOff: this server doesn't save calls (no LiveKit).
 	CodeRecordingOff = "RECORDING_OFF"
+	// CodeNotInCall: recordCall or stopRecordingCall from a device that isn't in the call's room.
+	CodeNotInCall = "NOT_IN_CALL"
 )

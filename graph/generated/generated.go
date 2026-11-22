@@ -49,6 +49,7 @@ type ComplexityRoot struct {
 	}
 
 	CallRecording struct {
+		By        func(childComplexity int) int
 		Call      func(childComplexity int) int
 		Recording func(childComplexity int) int
 		StartedAt func(childComplexity int) int
@@ -170,11 +171,13 @@ type ComplexityRoot struct {
 		InviteToGroup      func(childComplexity int, group string, user string) int
 		LeaveGroup         func(childComplexity int, group string) int
 		PairingToken       func(childComplexity int) int
+		RecordCall         func(childComplexity int, call string, peer *string, group *string) int
 		RegisterPush       func(childComplexity int, token *string, notificationsEnabled bool) int
 		RemoveFromGroup    func(childComplexity int, group string, user string) int
 		RenewCertificate   func(childComplexity int, csr string, keyProtection model.KeyProtection) int
 		ReplaceIdentityKey func(childComplexity int, identityKey string) int
 		SetPresenceVisible func(childComplexity int, visible bool) int
+		StopRecordingCall  func(childComplexity int, call string, peer *string, group *string) int
 		TalkToken          func(childComplexity int, peer *string, group *string) int
 		Unblock            func(childComplexity int, user string) int
 		Unpair             func(childComplexity int, user string) int
@@ -312,6 +315,8 @@ type MutationResolver interface {
 	SetPresenceVisible(ctx context.Context, visible bool) (bool, error)
 	TalkToken(ctx context.Context, peer *string, group *string) (*model.TalkToken, error)
 	CallToken(ctx context.Context, call string, peer *string, group *string) (*model.TalkToken, error)
+	RecordCall(ctx context.Context, call string, peer *string, group *string) (*model.CallRecording, error)
+	StopRecordingCall(ctx context.Context, call string, peer *string, group *string) (*model.CallRecording, error)
 }
 type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
@@ -387,6 +392,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.AppRelease.Version(childComplexity), true
 
+	case "CallRecording.by":
+		if e.ComplexityRoot.CallRecording.By == nil {
+			break
+		}
+
+		return e.ComplexityRoot.CallRecording.By(childComplexity), true
 	case "CallRecording.call":
 		if e.ComplexityRoot.CallRecording.Call == nil {
 			break
@@ -901,6 +912,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.PairingToken(childComplexity), true
+	case "Mutation.recordCall":
+		if e.ComplexityRoot.Mutation.RecordCall == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_recordCall_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.RecordCall(childComplexity, args["call"].(string), args["peer"].(*string), args["group"].(*string)), true
 	case "Mutation.registerPush":
 		if e.ComplexityRoot.Mutation.RegisterPush == nil {
 			break
@@ -956,6 +978,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.SetPresenceVisible(childComplexity, args["visible"].(bool)), true
+	case "Mutation.stopRecordingCall":
+		if e.ComplexityRoot.Mutation.StopRecordingCall == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_stopRecordingCall_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.StopRecordingCall(childComplexity, args["call"].(string), args["peer"].(*string), args["group"].(*string)), true
 	case "Mutation.talkToken":
 		if e.ComplexityRoot.Mutation.TalkToken == nil {
 			break
@@ -2132,8 +2165,8 @@ extend type Mutation {
   A token to join call's own LiveKit room (phase 6, video calls), in the conversation with peer or group, after the
   same checks; call is 32 hex digits the caller's phone made and sent in its encrypted call invite, with the call's
   fresh media key. The first callToken binds the id to its conversation (INVALID for another one). The room takes at
-  most livekit.max_call_devices from config.json (32 by default). The server keeps the call (callRecording) unless
-  livekit.keep_calls is false. LIVE_OFF without LiveKit.
+  most livekit.max_call_devices from config.json (32 by default). The call isn't kept unless someone in it records it
+  (recordCall). LIVE_OFF without LiveKit.
   """
   callToken(call: ID!, peer: String, group: ID): TalkToken!
 }
@@ -2154,11 +2187,27 @@ type TalkToken {
 }
 
 # --- Saved calls (2026-11-22) --------------------------------------------------------------------------------------
-# See docs/messaging.md, "Saved calls". The server keeps every call (livekit.keep_calls, on by default): from the
-# call's first callToken it is in the call's room as a hidden participant and keeps each participant's audio and
-# video exactly as LiveKit carried them, still encrypted end to end with the call's key, and never deletes them. The
-# phones in the call download and decrypt them, without re-encoding. Codes: as callToken, plus RECORDING_OFF when
-# this server doesn't keep calls.
+# See docs/messaging.md, "Saved calls". 2026-11-22 (hen): a call is kept only while someone in it records it. From a
+# participant's recordCall until stopRecordingCall, or until the device that started it leaves the call, the server
+# is in the call's room as a hidden participant and keeps each participant's audio and video exactly as LiveKit
+# carried them, still encrypted end to end with the call's key, and never deletes them. Everyone in the call is told
+# by the room's metadata. The phones in the call download and decrypt the tracks, without re-encoding. Codes: as
+# callToken, plus RECORDING_OFF when this server doesn't keep calls and NOT_IN_CALL when the caller's device isn't in
+# the call's room.
+
+extend type Mutation {
+  """
+  Start keeping call, from the caller's device, which must be in the call's room now. Already recorded: the recording
+  that goes on is answered. Once the recorder is in the room, the room's metadata (which LiveKit sends to every phone
+  in the call) is {"recording": true, "by": "user.device", "startedAt": "<RFC 3339>"}; every phone shows it.
+  """
+  recordCall(call: ID!, peer: String, group: ID): CallRecording!
+  """
+  Stop keeping call: anyone in the call's room may stop it. The room's metadata becomes {"recording": false}. It also
+  stops when the device that started it leaves, after 4 hours, or when the room empties.
+  """
+  stopRecordingCall(call: ID!, peer: String, group: ID): CallRecording!
+}
 
 extend type Query {
   "A call's saved streams so far, for whoever may read them (who was in the call), and whether it is kept now."
@@ -2166,7 +2215,7 @@ extend type Query {
 }
 
 extend type ServerInfo {
-  "The server keeps every call (livekit.keep_calls): the phones show it in the call."
+  "The server can keep calls (livekit.keep_calls): the call screen offers Record."
   keepsCalls: Boolean!
 }
 
@@ -2174,6 +2223,8 @@ type CallRecording {
   call: ID!
   "The server is keeping the call now."
   recording: Boolean!
+  "Who records it now or recorded it last since the server started (user.device); null when not known."
+  by: String
   "When keeping began; every track record's timestamp counts from here. Null when the call was never kept."
   startedAt: Time
   tracks: [RecordedTrack!]!
@@ -2237,6 +2288,8 @@ func (ec *executionContext) childFields_CallRecording(ctx context.Context, field
 		return ec.fieldContext_CallRecording_call(ctx, field)
 	case "recording":
 		return ec.fieldContext_CallRecording_recording(ctx, field)
+	case "by":
+		return ec.fieldContext_CallRecording_by(ctx, field)
 	case "startedAt":
 		return ec.fieldContext_CallRecording_startedAt(ctx, field)
 	case "tracks":
@@ -2877,6 +2930,36 @@ func (ec *executionContext) field_Mutation_leaveGroup_args(ctx context.Context, 
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_recordCall_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "call",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNID2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["call"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "peer",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["peer"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "group",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOID2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["group"] = arg2
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_registerPush_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -2968,6 +3051,36 @@ func (ec *executionContext) field_Mutation_setPresenceVisible_args(ctx context.C
 		return nil, err
 	}
 	args["visible"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_stopRecordingCall_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "call",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNID2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["call"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "peer",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["peer"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "group",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOID2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["group"] = arg2
 	return args, nil
 }
 
@@ -3412,6 +3525,29 @@ func (ec *executionContext) _CallRecording_recording(ctx context.Context, field 
 }
 func (ec *executionContext) fieldContext_CallRecording_recording(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("CallRecording", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
+func (ec *executionContext) _CallRecording_by(ctx context.Context, field graphql.CollectedField, obj *model.CallRecording) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_CallRecording_by(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.By, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_CallRecording_by(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("CallRecording", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
 func (ec *executionContext) _CallRecording_startedAt(ctx context.Context, field graphql.CollectedField, obj *model.CallRecording) (ret graphql.Marshaler) {
@@ -5796,6 +5932,94 @@ func (ec *executionContext) fieldContext_Mutation_callToken(ctx context.Context,
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_callToken_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_recordCall(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_recordCall(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RecordCall(ctx, fc.Args["call"].(string), fc.Args["peer"].(*string), fc.Args["group"].(*string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.CallRecording) graphql.Marshaler {
+			return ec.marshalNCallRecording2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐCallRecording(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_recordCall(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_CallRecording(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_recordCall_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_stopRecordingCall(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_stopRecordingCall(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().StopRecordingCall(ctx, fc.Args["call"].(string), fc.Args["peer"].(*string), fc.Args["group"].(*string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.CallRecording) graphql.Marshaler {
+			return ec.marshalNCallRecording2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐCallRecording(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_stopRecordingCall(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_CallRecording(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_stopRecordingCall_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -9202,6 +9426,8 @@ func (ec *executionContext) _CallRecording(ctx context.Context, sel ast.Selectio
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "by":
+			out.Values[i] = ec._CallRecording_by(ctx, field, obj)
 		case "startedAt":
 			out.Values[i] = ec._CallRecording_startedAt(ctx, field, obj)
 		case "tracks":
@@ -10165,6 +10391,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "callToken":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_callToken(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "recordCall":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_recordCall(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "stopRecordingCall":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_stopRecordingCall(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++

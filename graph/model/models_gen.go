@@ -50,6 +50,8 @@ type CallRecording struct {
 	Call string `json:"call"`
 	// The server is keeping the call now.
 	Recording bool `json:"recording"`
+	// Who records it now or recorded it last since the server started (user.device); null when not known.
+	By *string `json:"by,omitempty"`
 	// When keeping began; every track record's timestamp counts from here. Null when the call was never kept.
 	StartedAt *time.Time       `json:"startedAt,omitempty"`
 	Tracks    []*RecordedTrack `json:"tracks"`
@@ -349,7 +351,7 @@ type ServerInfo struct {
 	Push bool `json:"push"`
 	// The server has the live talk path (LiveKit): talkToken works.
 	LiveTalk bool `json:"liveTalk"`
-	// The server keeps every call (livekit.keep_calls): the phones show it in the call.
+	// The server can keep calls (livekit.keep_calls): the call screen offers Record.
 	KeepsCalls bool `json:"keepsCalls"`
 }
 

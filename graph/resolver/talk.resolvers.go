@@ -14,7 +14,6 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	pb "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1"
-	"github.com/chencohensolutions/push-to-talk-server-go/recorder"
 )
 
 // TalkToken is the resolver for the talkToken field.
@@ -66,14 +65,6 @@ func (r *mutationResolver) CallToken(ctx context.Context, call string, peer *str
 			return nil, fmt.Errorf("LiveKit isn't answering")
 		}
 	}
-	if r.Recorder != nil {
-		// Every call is kept (2026-11-22, hen): the recorder is in the room before the first device.
-		conv := recorder.Conversation{Owner: d.User, Peer: deref(peer), Group: deref(group)}
-		if _, err := r.Recorder.Start(call, room, conv); err != nil {
-			log.Printf("callToken: keeping call %s: %v", call, err)
-			return nil, fmt.Errorf("LiveKit isn't answering")
-		}
-	}
 	now := r.Now()
 	identity := livekit.Identity(d.User, d.Number)
 	token, err := r.LiveKeys.JoinToken(identity, room, now)
@@ -83,6 +74,32 @@ func (r *mutationResolver) CallToken(ctx context.Context, call string, peer *str
 	log.Printf("Call %s: token for %s", call, identity)
 	return &model.TalkToken{Token: token, Room: room, Identity: identity, Path: "/rtc",
 		ExpiresAt: now.Add(livekit.TokenTTL)}, nil
+}
+
+// RecordCall is the resolver for the recordCall field.
+func (r *mutationResolver) RecordCall(ctx context.Context, call string, peer *string, group *string) (*model.CallRecording, error) {
+	room, conv, by, err := r.inCall(ctx, call, peer, group)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.Recorder.Start(call, room, conv, by)
+	if err != nil {
+		log.Printf("recordCall: keeping call %s: %v", call, err)
+		return nil, fmt.Errorf("LiveKit isn't answering")
+	}
+	log.Printf("Call %s: recorded by %s", call, by)
+	return r.callRecording(conv.Owner, call, s), nil
+}
+
+// StopRecordingCall is the resolver for the stopRecordingCall field.
+func (r *mutationResolver) StopRecordingCall(ctx context.Context, call string, peer *string, group *string) (*model.CallRecording, error) {
+	_, conv, by, err := r.inCall(ctx, call, peer, group)
+	if err != nil {
+		return nil, err
+	}
+	s := r.Recorder.Stop(call)
+	log.Printf("Call %s: recording stopped by %s", call, by)
+	return r.callRecording(conv.Owner, call, s), nil
 }
 
 // CallRecording is the resolver for the callRecording field.

@@ -201,6 +201,17 @@ func (c *Client) CreateRoom(ctx context.Context, room string, maxParticipants in
 		"max_participants": maxParticipants, "empty_timeout": 60}, nil)
 }
 
+// SetRoomMetadata replaces room's metadata; LiveKit sends it to everyone in the room (RoomMetadataChanged in its
+// client SDKs). A room that isn't open is no error.
+func (c *Client) SetRoomMetadata(ctx context.Context, room, metadata string) error {
+	err := c.call(ctx, "UpdateRoomMetadata", Grant{Room: room, RoomAdmin: true},
+		map[string]string{"room": room, "metadata": metadata}, nil)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
 // Rooms is the names of the rooms open now.
 func (c *Client) Rooms(ctx context.Context) ([]string, error) {
 	var out struct {

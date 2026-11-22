@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -206,13 +207,16 @@ func openServer(config auth.AppConfig) (*server, error) {
 		s.liveKeys = &keys
 		if config.LiveKit.KeepsCalls() {
 			s.recorder = &recorder.Recorder{Keys: keys, URL: config.LiveKit.URL, Blobs: s.relay.Blobs}
-			log.Printf("Calls: kept, encrypted end to end, in %s (livekit.keep_calls)", config.BlobDir)
+			log.Printf("Calls: kept while someone records them, encrypted end to end, in %s (livekit.keep_calls)", config.BlobDir)
 		}
 		maxCall := config.LiveKit.MaxCallDevices
 		if maxCall <= 0 {
 			maxCall = auth.DefaultMaxCallDevices
 		}
 		s.relay.Live = &livekit.Client{Keys: keys, URL: config.LiveKit.URL, MaxCall: maxCall}
+		if s.recorder != nil {
+			s.recorder.Changed = recordingShown(s.relay.Live)
+		}
 		s.rtc = httputil.NewSingleHostReverseProxy(target)
 		log.Printf("Live talk: on, through LiveKit at %s (media on UDP %d and TCP %d)", config.LiveKit.URL,
 			config.LiveKit.UDPPort, config.LiveKit.TCPPort)
@@ -364,4 +368,22 @@ func liveKitBinary(config auth.AppConfig) string {
 	}
 	log.Printf("Live talk: no %s beside ptt-server; start LiveKit yourself, or set livekit.binary in config.json", name)
 	return ""
+}
+
+// recordingShown puts a call's recording in its room's metadata, which LiveKit sends to every phone in the call, so
+// each one shows it (2026-11-22, hen: never kept without everyone in the call seeing it).
+func recordingShown(live *livekit.Client) func(room string, st recorder.Status) {
+	return func(room string, st recorder.Status) {
+		meta := map[string]any{"recording": st.Recording}
+		if st.Recording {
+			meta["by"] = st.By
+			meta["startedAt"] = st.Started.UTC().Format(time.RFC3339)
+		}
+		data, _ := json.Marshal(meta)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := live.SetRoomMetadata(ctx, room, string(data)); err != nil {
+			log.Printf("Recorder: telling room %s: %v", room, err)
+		}
+	}
 }
