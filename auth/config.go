@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/chencohensolutions/push-to-talk-server-go/mail"
 )
 
 type AppConfig struct {
@@ -51,11 +53,13 @@ type AppConfig struct {
 	Invites *bool `json:"invites"`
 	// The invites waiting to be used (default invites.json).
 	InvitesFile string `json:"invites_file"`
-	// No longer used: until 2026-11-22 the server emailed invite codes, over SMTP or the Gmail API. Since then the
-	// inviter's phone sends every invite, and the server sends no mail. Taken and ignored, so a config.json from then
-	// still starts the server (UnusedKeys says so in the log).
-	SMTP  json.RawMessage `json:"smtp,omitempty"`
-	Gmail json.RawMessage `json:"gmail,omitempty"`
+	// Send enrollment links by email through the Gmail API, with the send-only grant `ptt-server mail-login` keeps
+	// (docs/install.md, "Email"). With it, devices enroll only by a link mailed to their user's address
+	// (docs/authentication.md, "Enrollment by email"); without it, by codes the admin prints.
+	Gmail *mail.GmailConfig `json:"gmail,omitempty"`
+	// No longer used: until 2026-11-22 the server could send mail over SMTP, with a password in a file. Taken and
+	// ignored, so an old config.json still starts the server (UnusedKeys says so in the log).
+	SMTP json.RawMessage `json:"smtp,omitempty"`
 	// Waking phones through Firebase Cloud Messaging (docs/messaging.md, "Push"). Without it the server sends no
 	// pushes: phones receive only while connected.
 	FCM *FCMConfig `json:"fcm,omitempty"`
@@ -148,17 +152,17 @@ func (c AppConfig) PushOn() bool { return c.FCM != nil && c.FCM.ServiceAccountFi
 // PortMappingOn says whether the server asks the router to forward its port: on unless "port_mapping": false.
 func (c AppConfig) PortMappingOn() bool { return c.PortMapping == nil || *c.PortMapping }
 
-// UnusedKeys are the keys config.json has that the server no longer uses ("smtp", "gmail"), to say so in the log.
+// UnusedKeys are the keys config.json has that the server no longer uses ("smtp"), to say so in the log.
 func (c AppConfig) UnusedKeys() []string {
 	var keys []string
 	if len(c.SMTP) > 0 {
 		keys = append(keys, "smtp")
 	}
-	if len(c.Gmail) > 0 {
-		keys = append(keys, "gmail")
-	}
 	return keys
 }
+
+// MailOn says whether the server sends email (config.json "gmail"), and so enrolls devices only by emailed links.
+func (c AppConfig) MailOn() bool { return c.Gmail != nil && c.Gmail.ClientFile != "" }
 
 // LoadConfig reads config.json (or another file) and fills in the defaults. Unknown keys are refused, so a typo
 // (or a Journal config.json) doesn't pass silently; the keys the server stopped using are taken (UnusedKeys).

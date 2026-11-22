@@ -15,10 +15,19 @@ const configPath = "config.json"
 const usage = `usage:
   ptt-server                          run the server
   ptt-server version                  the version (version/VERSION) and build
-  ptt-server user add <name>          add a user (users.json); its devices enroll with codes from enroll-code
+  ptt-server user add <email> [name]  add a user (users.json), its email its identity; the name (its certificates'
+                                      CN) is made from the email when omitted. Without gmail in config.json, a user
+                                      may also be added by name alone: user add <name>
+  ptt-server user email <user> <email>
+                                      give a user added by name its email
   ptt-server user remove <name>       remove a user and revoke every certificate of its devices
   ptt-server users                    list the users and how many devices each has
-  ptt-server enroll-code <user>       create a one-time enrollment code (and its QR code) for an existing user
+  ptt-server enroll-code <user>       create a one-time enrollment code for a user (by name or email): with gmail in
+                                      config.json the server mails the link to the user's email, else it is printed
+                                      here with its QR code
+  ptt-server mail-login [--no-browser]
+                                      sign in to the Gmail account the links are sent from (config.json "gmail"),
+                                      once, at this computer: the server keeps a send-only grant, not a password
   ptt-server devices [user]           list enrolled devices, with their device numbers
   ptt-server revoke <serial>          revoke an enrolled device
   ptt-server id                       this server's id, fingerprint and DHT key, as phones know it
@@ -34,7 +43,7 @@ const usage = `usage:
   ptt-server app-update [--push]      read the app's latest GitHub release now and push app_update to the phones
                                       if it is new; --push pushes it even if it was announced before
 
-The commands but setup, service, id and discovery talk to the running server's admin API.
+The commands but setup, service, id, discovery and mail-login talk to the running server's admin API.
 `
 
 func main() {
@@ -77,6 +86,8 @@ func main() {
 	switch os.Args[1] {
 	case "livekit":
 		run = liveKitCommand
+	case "mail-login":
+		run = func(config auth.AppConfig, _ string, args []string) error { return mailLoginCommand(config, args) }
 	case "id", "discovery":
 		run = func(config auth.AppConfig, command string, args []string) error {
 			if len(args) > 0 {

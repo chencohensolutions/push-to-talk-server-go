@@ -34,6 +34,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/groups"
 	"github.com/chencohensolutions/push-to-talk-server-go/invite"
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
+	"github.com/chencohensolutions/push-to-talk-server-go/mail"
 	"github.com/chencohensolutions/push-to-talk-server-go/push"
 	"github.com/chencohensolutions/push-to-talk-server-go/recorder"
 	"github.com/chencohensolutions/push-to-talk-server-go/relay"
@@ -68,6 +69,8 @@ type server struct {
 	recorder *recorder.Recorder
 	// Follows the app's releases and pushes app_update to the phones; nil when app_releases is "none".
 	appReleases *apprelease.Watcher
+	// Sends the enrollment links (config.json "gmail"); nil when the server sends no mail or can't.
+	mail mail.Sender
 	// liveRestart restarts the livekit-server this server runs (restartLiveKit); nil when it runs none.
 	liveRestart chan struct{}
 }
@@ -89,7 +92,7 @@ func (s *server) restartLiveKit() bool {
 func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 	log.Printf("ptt-server %s", version.String())
 	for _, key := range config.UnusedKeys() {
-		log.Printf("config.json: %q is no longer used (the inviter's phone sends invites; the server sends no mail): remove it", key)
+		log.Printf("config.json: %q is no longer used (the server mails only enrollment links, through \"gmail\"): remove it", key)
 	}
 	tlsConfig, err := createTLSConfig(config)
 	if err != nil {
@@ -231,6 +234,18 @@ func openServer(config auth.AppConfig) (*server, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to open the app release: %w", err)
 		}
+	}
+	if config.MailOn() {
+		gmail, err := mail.NewGmail(*config.Gmail)
+		if err != nil {
+			// The server still starts, so mail-login can be run beside it; enroll-code says it can't mail.
+			log.Printf("Mail: can't send: %v", err)
+		} else {
+			log.Printf("Mail: enrollment links are mailed from %s, through the Gmail API", gmail.From())
+			s.mail = gmail
+		}
+	} else {
+		log.Printf("Mail: off (no gmail in config.json); enroll-code prints the codes")
 	}
 	if config.InvitesOn() {
 		invites, err := invite.Open(config.InvitesFile, time.Now)

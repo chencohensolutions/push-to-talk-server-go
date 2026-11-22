@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/mail"
 	"os"
 	"path/filepath"
 	"sort"
@@ -25,9 +26,11 @@ type User struct {
 	IdentityKey []byte `json:"identity_key,omitempty"`
 	// When IdentityKey was last set.
 	IdentityKeySetAt *time.Time `json:"identity_key_set_at,omitempty"`
-	// The email address the user joined with by an invite (docs/authentication.md, "Invites"), lower case: the one the
-	// inviter typed, or for an invite to anyone the one the friend gave, which nobody checked. Empty for one added with
-	// `user add`, or invited without an email. No two users share one.
+	// The user's email, lower case: their identity (2026-11-22, hen), where `enroll-code` mails their enrollment link
+	// when config.json has "gmail". Given by `user add <email>` or `user email`, or the one they joined with by an
+	// invite (docs/authentication.md, "Invites"): the one the inviter typed, or for an invite to anyone the one the
+	// friend gave, which nobody checked. Empty only for a user added by name before, or invited without an email. No
+	// two users share one.
 	Email string `json:"email,omitempty"`
 	// The name the user gave for themselves (first and last name, any letters); shown to their contacts. Not unique:
 	// the email and the keys tell people apart.
@@ -192,6 +195,86 @@ func (u *Users) AddInvited(email, displayName, invitedBy string, at time.Time) (
 		name = base[:min(len(base), maxUserNameLength-len(suffix))] + suffix
 	}
 	return u.add(User{Name: name, AddedAt: at.UTC(), Email: email, DisplayName: CleanDisplayName(displayName), InvitedBy: invitedBy})
+}
+
+// CheckEmail is email as users.json keeps it (trimmed, lower case), or an error when it isn't one plain address
+// (name@domain, no display name, no spaces or line breaks).
+func CheckEmail(email string) (string, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email || !strings.Contains(email[strings.LastIndex(email, "@")+1:], ".") ||
+		strings.ContainsAny(email, " \t\r\n<>,;\"") {
+		return "", fmt.Errorf("%q is not an email address", email)
+	}
+	return email, nil
+}
+
+// AddWithEmail adds a user by `ptt-server user add <email> [name]`: its email (CheckEmail; ErrEmailTaken when
+// another user has it) and a name, made from the email by NameFromEmail when name is empty (with a number added
+// when it is taken). A name given is checked like Add's.
+func (u *Users) AddWithEmail(email, name string, at time.Time) (User, error) {
+	email, err := CheckEmail(email)
+	if err != nil {
+		return User{}, err
+	}
+	if name != "" {
+		if err := CheckUserName(name); err != nil {
+			return User{}, err
+		}
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.emailTaken(email, "") {
+		return User{}, ErrEmailTaken
+	}
+	if name == "" {
+		base := NameFromEmail(email)
+		name = base
+		for n := 2; u.nameTaken(name); n++ {
+			suffix := fmt.Sprint(n)
+			name = base[:min(len(base), maxUserNameLength-len(suffix))] + suffix
+		}
+	} else if u.nameTaken(name) {
+		return User{}, fmt.Errorf("%w: %s", ErrUserExists, name)
+	}
+	return u.add(User{Name: name, AddedAt: at.UTC(), Email: email})
+}
+
+// SetEmail gives the user its email (`ptt-server user email <user> <email>`), for a user added before emails were
+// its identity. ErrEmailTaken when another user has it.
+func (u *Users) SetEmail(name, email string) (User, error) {
+	email, err := CheckEmail(email)
+	if err != nil {
+		return User{}, err
+	}
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.emailTaken(email, name) {
+		return User{}, ErrEmailTaken
+	}
+	for i := range u.users {
+		if u.users[i].Name != name {
+			continue
+		}
+		previous := u.users[i].Email
+		u.users[i].Email = email
+		if err := u.save(); err != nil {
+			u.users[i].Email = previous
+			return User{}, err
+		}
+		return u.users[i], nil
+	}
+	return User{}, fmt.Errorf("%w: %s", ErrUnknownUser, name)
+}
+
+// emailTaken says whether a user other than except has email. Callers hold mu.
+func (u *Users) emailTaken(email, except string) bool {
+	for _, user := range u.users {
+		if user.Email == email && user.Name != except {
+			return true
+		}
+	}
+	return false
 }
 
 // NameFromEmail is a user name made from an email's local part: lower-case a–z, 0–9, '.', '-' and '_', starting with a

@@ -17,7 +17,10 @@ type AppReleaseCheck struct {
 }
 
 type EnrollmentCode struct {
-	Code      string    `json:"code"`
+	// Null when it was emailed.
+	Code *string `json:"code,omitempty"`
+	// The address the enrollment link was mailed to; null when it wasn't (no gmail in config.json).
+	EmailedTo *string   `json:"emailedTo,omitempty"`
 	User      string    `json:"user"`
 	ExpiresAt time.Time `json:"expiresAt"`
 	// public_url from config.json, if set.
@@ -37,7 +40,9 @@ type RemovedUser struct {
 }
 
 type User struct {
-	Name    string    `json:"name"`
+	Name string `json:"name"`
+	// Null for a user added by name before emails were their identity.
+	Email   *string   `json:"email,omitempty"`
 	AddedAt time.Time `json:"addedAt"`
 	// Its devices that aren't revoked.
 	Devices int `json:"devices"`

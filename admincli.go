@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -23,8 +24,10 @@ import (
 // the running server's admin API.
 func runAdminCommand(config auth.AppConfig, command string, args []string) error {
 	switch {
-	case command == "user" && len(args) == 2 && args[0] == "add":
-		return userAddCommand(config, args[1])
+	case command == "user" && (len(args) == 2 || len(args) == 3) && args[0] == "add":
+		return userAddCommand(config, args[1:])
+	case command == "user" && len(args) == 3 && args[0] == "email":
+		return userEmailCommand(config, args[1], args[2])
 	case command == "user" && len(args) == 2 && args[0] == "remove":
 		return userRemoveCommand(config, args[1])
 	case command == "users" && len(args) == 0:
@@ -57,15 +60,51 @@ type adminDevice struct {
 
 const deviceFields = "serial user name deviceNumber keyProtection registeredAt expiresAt revokedAt renewedFrom"
 
-func userAddCommand(config auth.AppConfig, name string) error {
-	var data struct {
-		AddUser struct{ Name string } `json:"addUser"`
+// userAddCommand is `user add <email> [name]`, or `user add <name>` on a server that mails nothing.
+func userAddCommand(config auth.AppConfig, args []string) error {
+	variables := map[string]any{}
+	if strings.Contains(args[0], "@") {
+		variables["email"] = args[0]
+		if len(args) == 2 {
+			variables["name"] = args[1]
+		}
+	} else if len(args) == 1 {
+		variables["name"] = args[0]
+	} else {
+		return fmt.Errorf("user add <email> [name]: %q is not an email", args[0])
 	}
-	if err := adminQuery(config, `mutation($name: String!) { addUser(name: $name) { name } }`,
-		map[string]any{"name": name}, &data); err != nil {
+	var data struct {
+		AddUser struct {
+			Name  string
+			Email *string
+		} `json:"addUser"`
+	}
+	if err := adminQuery(config, `mutation($email: String, $name: String) { addUser(email: $email, name: $name) { name email } }`,
+		variables, &data); err != nil {
 		return err
 	}
-	fmt.Printf("Added user %s. Enroll a phone with: ptt-server enroll-code %s\n", data.AddUser.Name, data.AddUser.Name)
+	u := data.AddUser
+	if u.Email != nil {
+		fmt.Printf("Added user %s (%s). Enroll a phone with: ptt-server enroll-code %s\n", u.Name, *u.Email, *u.Email)
+	} else {
+		fmt.Printf("Added user %s. Enroll a phone with: ptt-server enroll-code %s\n", u.Name, u.Name)
+	}
+	return nil
+}
+
+// userEmailCommand is `user email <user> <email>`: an email for a user added by name before.
+func userEmailCommand(config auth.AppConfig, user, email string) error {
+	var data struct {
+		SetUserEmail struct {
+			Name  string
+			Email *string
+		} `json:"setUserEmail"`
+	}
+	if err := adminQuery(config, `mutation($user: String!, $email: String!) { setUserEmail(user: $user, email: $email) { name email } }`,
+		map[string]any{"user": user, "email": email}, &data); err != nil {
+		return err
+	}
+	fmt.Printf("User %s's email is %s\n", data.SetUserEmail.Name, *data.SetUserEmail.Email)
 	return nil
 }
 
@@ -88,21 +127,26 @@ func usersCommand(config auth.AppConfig) error {
 	var data struct {
 		Users []struct {
 			Name    string
+			Email   *string
 			AddedAt time.Time
 			Devices int
 		} `json:"users"`
 	}
-	if err := adminQuery(config, `{ users { name addedAt devices } }`, nil, &data); err != nil {
+	if err := adminQuery(config, `{ users { name email addedAt devices } }`, nil, &data); err != nil {
 		return err
 	}
 	if len(data.Users) == 0 {
-		fmt.Println("No users. Add one with: ptt-server user add <name>")
+		fmt.Println("No users. Add one with: ptt-server user add <email>")
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "USER\tADDED\tDEVICES")
+	fmt.Fprintln(w, "USER\tEMAIL\tADDED\tDEVICES")
 	for _, u := range data.Users {
-		fmt.Fprintf(w, "%s\t%s\t%d\n", u.Name, u.AddedAt.Local().Format(time.DateOnly), u.Devices)
+		email := "-"
+		if u.Email != nil {
+			email = *u.Email
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%d\n", u.Name, email, u.AddedAt.Local().Format(time.DateOnly), u.Devices)
 	}
 	return w.Flush()
 }
@@ -110,19 +154,29 @@ func usersCommand(config auth.AppConfig) error {
 func enrollCodeCommand(config auth.AppConfig, user string) error {
 	var data struct {
 		CreateEnrollmentCode struct {
-			Code      string    `json:"code"`
+			Code      *string   `json:"code"`
+			EmailedTo *string   `json:"emailedTo"`
 			User      string    `json:"user"`
 			ExpiresAt time.Time `json:"expiresAt"`
 			ServerURL *string   `json:"serverUrl"`
 		} `json:"createEnrollmentCode"`
 	}
 	err := adminQuery(config, `mutation($user: String!) {
-		createEnrollmentCode(user: $user) { code user expiresAt serverUrl }
+		createEnrollmentCode(user: $user) { code emailedTo user expiresAt serverUrl }
 	}`, map[string]any{"user": user}, &data)
 	if err != nil {
 		return err
 	}
 	code := data.CreateEnrollmentCode
+	if code.EmailedTo != nil {
+		// The code went only to the user's mailbox: nothing that enrolls is printed here.
+		fmt.Printf("Mailed an enrollment link for user %q to %s. It works once, until %s (in %d min).\n", code.User,
+			*code.EmailedTo, code.ExpiresAt.Local().Format("15:04"), int(time.Until(code.ExpiresAt).Round(time.Minute).Minutes()))
+		return nil
+	}
+	if code.Code == nil {
+		return errors.New("the server returned no code")
+	}
 	// Who this server is and where, so the phone can pin its key from the first connection and find it without a
 	// host name the certificate lists (docs/authentication.md, "Enrolling by QR code").
 	var found *enrollDiscovery
@@ -146,9 +200,9 @@ func enrollCodeCommand(config auth.AppConfig, user string) error {
 	if found != nil {
 		fmt.Printf("  Id       %s\n", discovery.FormatID(found.Fingerprint))
 	}
-	fmt.Printf("  Code     %s\n", code.Code)
+	fmt.Printf("  Code     %s\n", *code.Code)
 	fmt.Printf("  Expires  %s (in %d min), single use\n", code.ExpiresAt.Local().Format("15:04"), int(time.Until(code.ExpiresAt).Round(time.Minute).Minutes()))
-	link := enrollmentLink(code.Code, code.ServerURL, found)
+	link := enrollmentLink(*code.Code, code.ServerURL, found)
 	qr, err := qrcode.New(link, qrcode.Medium)
 	if err != nil {
 		return err

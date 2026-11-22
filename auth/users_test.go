@@ -84,13 +84,14 @@ func TestConfigDefaultsAndUnknownKeys(t *testing.T) {
 	if _, err := LoadConfig(path); err == nil || !strings.Contains(err.Error(), "users") {
 		t.Fatalf("a Journal config.json: %v", err)
 	}
-	// The mail settings from before 2026-11-22 are taken, unused, so such a config.json still starts the server.
+	// The SMTP setting from before 2026-11-22 is taken, unused, so such a config.json still starts the server;
+	// "gmail" is used again (enrollment by email).
 	if len(config.UnusedKeys()) != 0 {
 		t.Fatalf("unused keys in a new config: %v", config.UnusedKeys())
 	}
 	os.WriteFile(path, []byte(`{"smtp": {"host": "smtp.gmail.com", "port": 587}, "gmail": {"client_file": "gmail-client.json"}}`), 0o644)
 	config, err = LoadConfig(path)
-	if err != nil || strings.Join(config.UnusedKeys(), ",") != "smtp,gmail" {
+	if err != nil || strings.Join(config.UnusedKeys(), ",") != "smtp" || !config.MailOn() {
 		t.Fatalf("an old config.json with mail: %v %v", config.UnusedKeys(), err)
 	}
 }

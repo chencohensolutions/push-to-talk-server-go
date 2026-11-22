@@ -45,7 +45,7 @@ func (s *server) newAdminMux(token string) *http.ServeMux {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
 		Resolvers: &resolver.Resolver{Config: s.config, UserStore: s.users, Enrollment: s.enrollment, Now: time.Now,
 			Revoked: s.relay.Revoked, LiveKitRestart: s.restartLiveKit,
-			AppReleases: s.appReleases},
+			AppReleases: s.appReleases, MailEnrollment: s.mailEnrollment()},
 	}))
 	srv.AddTransport(transport.POST{})
 
