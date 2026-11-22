@@ -116,9 +116,10 @@ server runs as before and talk goes by the clip path only.
   environment variable when it starts it. (Not `key_file`: on Windows LiveKit refuses any key file, because Go
   reports every file there as readable by others. A `livekit.yaml` from before 2026-11-22 names `key_file:
   livekit.keys`; delete that line. If you start LiveKit yourself, set `LIVEKIT_KEYS` to the line in `livekit.keys`.)
-- **The program**: download livekit-server from LiveKit's GitHub releases (1.13.x at the plan's review; there are
-  Windows, macOS and Linux builds; it is Go and also builds from source) and put it beside ptt-server, or run
-  `ptt-server livekit update`. Its log lines go into ptt-server's log, prefixed `LiveKit:`. ptt-server's own
+- **The program**: `ptt-server setup` downloads LiveKit's latest release beside ptt-server when no livekit-server is
+  there (checked as `livekit update` checks it; one already there is kept). LiveKit publishes Windows and Linux
+  builds only, so on macOS setup says so: install it another way (it is Go and builds from source) and set `binary`.
+  `ptt-server livekit update` does the same download by hand. Its log lines go into ptt-server's log, prefixed `LiveKit:`. ptt-server's own
   release downloads carry the LiveKit it was tested with.
 - **Upgrading LiveKit**: `ptt-server livekit update [version]`, from the server folder (package `livekit`,
   `update.go`). It asks GitHub for LiveKit's latest release (or that version), downloads the archive for this OS and
