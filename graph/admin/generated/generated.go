@@ -60,18 +60,20 @@ type ComplexityRoot struct {
 
 	EnrollmentCode struct {
 		Code      func(childComplexity int) int
+		EmailedTo func(childComplexity int) int
 		ExpiresAt func(childComplexity int) int
 		ServerURL func(childComplexity int) int
 		User      func(childComplexity int) int
 	}
 
 	Mutation struct {
-		AddUser              func(childComplexity int, name string) int
+		AddUser              func(childComplexity int, email *string, name *string) int
 		CheckAppRelease      func(childComplexity int, push bool) int
 		CreateEnrollmentCode func(childComplexity int, user string) int
 		RemoveUser           func(childComplexity int, name string) int
 		RestartLiveKit       func(childComplexity int) int
 		RevokeDevice         func(childComplexity int, serial string) int
+		SetUserEmail         func(childComplexity int, user string, email string) int
 	}
 
 	Query struct {
@@ -87,6 +89,7 @@ type ComplexityRoot struct {
 	User struct {
 		AddedAt func(childComplexity int) int
 		Devices func(childComplexity int) int
+		Email   func(childComplexity int) int
 		Name    func(childComplexity int) int
 	}
 }
@@ -95,7 +98,8 @@ type DeviceResolver interface {
 	RenewedFrom(ctx context.Context, obj *enroll.Device) (*string, error)
 }
 type MutationResolver interface {
-	AddUser(ctx context.Context, name string) (*model.User, error)
+	AddUser(ctx context.Context, email *string, name *string) (*model.User, error)
+	SetUserEmail(ctx context.Context, user string, email string) (*model.User, error)
 	RemoveUser(ctx context.Context, name string) (*model.RemovedUser, error)
 	CreateEnrollmentCode(ctx context.Context, user string) (*model.EnrollmentCode, error)
 	RevokeDevice(ctx context.Context, serial string) (*enroll.Device, error)
@@ -207,6 +211,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.EnrollmentCode.Code(childComplexity), true
+	case "EnrollmentCode.emailedTo":
+		if e.ComplexityRoot.EnrollmentCode.EmailedTo == nil {
+			break
+		}
+
+		return e.ComplexityRoot.EnrollmentCode.EmailedTo(childComplexity), true
 	case "EnrollmentCode.expiresAt":
 		if e.ComplexityRoot.EnrollmentCode.ExpiresAt == nil {
 			break
@@ -236,7 +246,7 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 			return 0, false
 		}
 
-		return e.ComplexityRoot.Mutation.AddUser(childComplexity, args["name"].(string)), true
+		return e.ComplexityRoot.Mutation.AddUser(childComplexity, args["email"].(*string), args["name"].(*string)), true
 	case "Mutation.checkAppRelease":
 		if e.ComplexityRoot.Mutation.CheckAppRelease == nil {
 			break
@@ -287,6 +297,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RevokeDevice(childComplexity, args["serial"].(string)), true
+	case "Mutation.setUserEmail":
+		if e.ComplexityRoot.Mutation.SetUserEmail == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setUserEmail_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetUserEmail(childComplexity, args["user"].(string), args["email"].(string)), true
 
 	case "Query.devices":
 		if e.ComplexityRoot.Query.Devices == nil {
@@ -332,6 +353,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.User.Devices(childComplexity), true
+	case "User.email":
+		if e.ComplexityRoot.User.Email == nil {
+			break
+		}
+
+		return e.ComplexityRoot.User.Email(childComplexity), true
 	case "User.name":
 		if e.ComplexityRoot.User.Name == nil {
 			break
@@ -422,7 +449,8 @@ func newExecutionContext(
 
 var sources = []*ast.Source{
 	{Name: "../schema/admin.graphql", Input: `# Admin API, served only on the loopback admin listener (admin_addr) and used by the
-# ` + "`" + `ptt-server user add | user remove | users | enroll-code | devices | revoke | livekit update | app-update` + "`" + ` commands. See docs/authentication.md.
+# ` + "`" + `ptt-server user add | user email | user remove | users | enroll-code | devices | revoke | livekit update | app-update` + "`" + `
+# commands. See docs/authentication.md.
 
 scalar Time
 
@@ -434,11 +462,21 @@ type Query {
 }
 
 type Mutation {
-  "Adds a user to users.json; devices then enroll as it with codes from createEnrollmentCode."
-  addUser(name: String!): User!
+  """
+  Adds a user to users.json; devices then enroll as it with codes from createEnrollmentCode. A user has an email (its
+  identity, unique), and a name made from it when name is omitted. Without an email it takes a name, which only a
+  server without "gmail" in config.json allows.
+  """
+  addUser(email: String, name: String): User!
+  "Gives an existing user its email (users added by name before emails were their identity)."
+  setUserEmail(user: String!, email: String!): User!
   "Removes a user from users.json and revokes every certificate of its devices."
   removeUser(name: String!): RemovedUser!
-  "Creates a one-time enrollment code for an existing user."
+  """
+  Creates a one-time enrollment code for an existing user, by name or email. With "gmail" in config.json the server
+  mails the enrollment link to the user's email and the code isn't returned (emailedTo says where it went); without,
+  the code is returned for the admin to show.
+  """
   createEnrollmentCode(user: String!): EnrollmentCode!
   "Revokes an enrolled device's certificate (and its renewals); the server rejects it from then on."
   revokeDevice(serial: String!): Device!
@@ -467,6 +505,8 @@ type AppReleaseCheck {
 
 type User {
   name: String!
+  "Null for a user added by name before emails were their identity."
+  email: String
   addedAt: Time!
   "Its devices that aren't revoked."
   devices: Int!
@@ -479,7 +519,10 @@ type RemovedUser {
 }
 
 type EnrollmentCode {
-  code: String!
+  "Null when it was emailed."
+  code: String
+  "The address the enrollment link was mailed to; null when it wasn't (no gmail in config.json)."
+  emailedTo: String
   user: String!
   expiresAt: Time!
   "public_url from config.json, if set."
@@ -548,6 +591,8 @@ func (ec *executionContext) childFields_EnrollmentCode(ctx context.Context, fiel
 	switch field.Name {
 	case "code":
 		return ec.fieldContext_EnrollmentCode_code(ctx, field)
+	case "emailedTo":
+		return ec.fieldContext_EnrollmentCode_emailedTo(ctx, field)
 	case "user":
 		return ec.fieldContext_EnrollmentCode_user(ctx, field)
 	case "expiresAt":
@@ -572,6 +617,8 @@ func (ec *executionContext) childFields_User(ctx context.Context, field graphql.
 	switch field.Name {
 	case "name":
 		return ec.fieldContext_User_name(ctx, field)
+	case "email":
+		return ec.fieldContext_User_email(ctx, field)
 	case "addedAt":
 		return ec.fieldContext_User_addedAt(ctx, field)
 	case "devices":
@@ -699,14 +746,22 @@ func (ec *executionContext) childFields___Type(ctx context.Context, field graphq
 func (ec *executionContext) field_Mutation_addUser_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "name",
-		func(ctx context.Context, v any) (string, error) {
-			return ec.unmarshalNString2string(ctx, v)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "email",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
 		})
 	if err != nil {
 		return nil, err
 	}
-	args["name"] = arg0
+	args["email"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "name",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["name"] = arg1
 	return args, nil
 }
 
@@ -763,6 +818,28 @@ func (ec *executionContext) field_Mutation_revokeDevice_args(ctx context.Context
 		return nil, err
 	}
 	args["serial"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setUserEmail_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "user",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["user"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "email",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["email"] = arg1
 	return args, nil
 }
 
@@ -1169,14 +1246,37 @@ func (ec *executionContext) _EnrollmentCode_code(ctx context.Context, field grap
 			return obj.Code, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
-			return ec.marshalNString2string(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
 		},
 		true,
-		true,
+		false,
 	)
 }
 func (ec *executionContext) fieldContext_EnrollmentCode_code(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("EnrollmentCode", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _EnrollmentCode_emailedTo(ctx context.Context, field graphql.CollectedField, obj *model.EnrollmentCode) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_EnrollmentCode_emailedTo(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.EmailedTo, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_EnrollmentCode_emailedTo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("EnrollmentCode", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -1259,7 +1359,7 @@ func (ec *executionContext) _Mutation_addUser(ctx context.Context, field graphql
 		},
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.Resolvers.Mutation().AddUser(ctx, fc.Args["name"].(string))
+			return ec.Resolvers.Mutation().AddUser(ctx, fc.Args["email"].(*string), fc.Args["name"].(*string))
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *model.User) graphql.Marshaler {
@@ -1287,6 +1387,50 @@ func (ec *executionContext) fieldContext_Mutation_addUser(ctx context.Context, f
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_addUser_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_setUserEmail(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setUserEmail(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetUserEmail(ctx, fc.Args["user"].(string), fc.Args["email"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.User) graphql.Marshaler {
+			return ec.marshalNUser2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋadminᚋmodelᚐUser(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setUserEmail(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_User(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setUserEmail_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -1710,6 +1854,29 @@ func (ec *executionContext) _User_name(ctx context.Context, field graphql.Collec
 	)
 }
 func (ec *executionContext) fieldContext_User_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("User", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _User_email(ctx context.Context, field graphql.CollectedField, obj *model.User) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_User_email(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Email, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_User_email(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("User", field, false, false, errors.New("field of type String does not have child fields"))
 }
 
@@ -2997,9 +3164,8 @@ func (ec *executionContext) _EnrollmentCode(ctx context.Context, sel ast.Selecti
 			out.Values[i] = graphql.MarshalString("EnrollmentCode")
 		case "code":
 			out.Values[i] = ec._EnrollmentCode_code(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
+		case "emailedTo":
+			out.Values[i] = ec._EnrollmentCode_emailedTo(ctx, field, obj)
 		case "user":
 			out.Values[i] = ec._EnrollmentCode_user(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -3057,6 +3223,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "addUser":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_addUser(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "setUserEmail":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setUserEmail(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -3273,6 +3446,8 @@ func (ec *executionContext) _User(ctx context.Context, sel ast.SelectionSet, obj
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "email":
+			out.Values[i] = ec._User_email(ctx, field, obj)
 		case "addedAt":
 			out.Values[i] = ec._User_addedAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {

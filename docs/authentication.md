@@ -12,10 +12,11 @@ device.
 ```
 Server (admin)                                   Phone (push-to-talk app)
 ──────────────                                   ────────────────────────
-ptt-server user add hen
-ptt-server enroll-code hen
-  → prints address, code "K7QM-4XPD"    ─────▶   user scans the QR code (or types address + code)
-    and a QR code (ptt://enroll?…)
+ptt-server user add hen@example.com
+ptt-server enroll-code hen@example.com
+  → mails the link ptt://enroll?… and   ─────▶   user opens the link (or pastes it, or types address + code)
+    the code "K7QM-4XPD" to the user
+    (without gmail: prints them and a QR code)
                                         ◀─────   query enrollmentPreview(code)          (no client cert)
   code valid for "hen", 8 min left      ─────▶   "Register this device?"
                                                  create EC P-256 key in hardware
@@ -34,14 +35,24 @@ Users live in `users.json` (`users_file`), not in `config.json`. The server is t
 commands go through its admin API, so the server must be running.
 
 ```
-$ ptt-server user add hen
-Added user hen. Enroll a phone with: ptt-server enroll-code hen
+$ ptt-server user add hen@example.com
+Added user hen (hen@example.com). Enroll a phone with: ptt-server enroll-code hen@example.com
+$ ptt-server user email sharonmu sharon@example.com
+User sharonmu's email is sharon@example.com
 $ ptt-server users
-USER   ADDED        DEVICES
-hen    2026-11-21   1
+USER       EMAIL                ADDED        DEVICES
+hen        hen@example.com      2026-11-21   1
+sharonmu   sharon@example.com   2026-11-21   1
 $ ptt-server user remove hen
 Removed user hen and revoked 1 of its devices
 ```
+
+- A user's **email is its identity** (2026-11-22, hen): unique, kept in lower case, checked to be one plain address
+  (`auth.CheckEmail`). `user add <email> [name]` makes the name from the email when it is omitted (`dana.cohen@…` is
+  `dana.cohen`, then `dana.cohen2`; `auth.NameFromEmail`). The name stays the certificates' CN, so the devices
+  enrolled before keep working. `user email <user> <email>` gives a user added by name before its email.
+- With `gmail` in `config.json` a user can't be added without an email, and `enroll-code` mails the link there
+  ("Enrollment by email"). Without it, `user add <name>` still works.
 
 - A user name is 1 to 32 letters, digits, `.`, `-` and `_`, not starting with `.` or `-` (`auth.CheckUserName`): it
   is the CN of the user's certificates and may become a file or folder name later.
@@ -83,7 +94,8 @@ How it is enforced:
 
 ## Enrollment codes
 
-Created by `ptt-server enroll-code <user>` (`enroll/codes.go`), for a user that is in `users.json`:
+Created by `ptt-server enroll-code <user>` (`enroll/codes.go`), for a user that is in `users.json`, named by its name
+or its email:
 
 - 8 characters from `0123456789ABCDEFGHJKMNPQRSTVWXYZ` (no I, L, O, U), shown as `K7QM-4XPD`: 40 bits.
 - Valid for **10 minutes**, **single use**. Only the user named on the command line can be enrolled with it.
@@ -95,6 +107,21 @@ Created by `ptt-server enroll-code <user>` (`enroll/codes.go`), for a user that 
 - **Guess limit:** 5 wrong codes per client IP per minute (IPv6 counted per /64), counted across
   `enrollmentPreview` and `enrollDevice`. After that both return `RATE_LIMITED` until the minute has passed.
 - Wrong, expired and already used codes, and codes of a removed user, all return the same `INVALID_CODE`.
+
+### Enrollment by email
+
+With `gmail` in `config.json` (docs/install.md, "Email"), `enroll-code` doesn't show the code: the server mails the
+enrollment link to the user's email from the account `ptt-server mail-login` signed in with, and the command prints
+only the address it went to. So a device enrolls only by a link its user received at their own address.
+
+- The mail holds the same `ptt://enroll?code=…&server=…&fingerprint=…&key=…&address=…` link as the QR code (below),
+  built by the running server from its own discovery (`enrollmail.go`), and the server, id and code to type when the
+  mail app doesn't open `ptt://` links. The app's Enroll screen takes the link pasted (its Paste button).
+- The code is the same one-time, 10-minute code, kept hashed in memory. If the mail can't be sent, the code is
+  dropped at once and the command says why (no `mail-login` yet, or the grant was revoked).
+- A user without an email gets no code: `enroll-code` says to give it one with `user email`.
+- Linking a phone (below) and invites ("Invites") are unchanged: an enrolled phone makes the code, or the inviter's
+  phone sends the invite to the friend's address.
 
 ### Enrolling by QR code
 
@@ -128,7 +155,7 @@ key from the QR code's secret and an X25519 exchange.
 
 An enrolled user invites a friend with one link, `ptt://invite?…`, and a six-digit passcode beside it, that enroll
 the friend and pair them with the inviter, so the friend needs no code from the server's owner (package `invite`,
-`graph/schema/invite.graphql`). **The server sends no email**: the inviter's phone sends the link and the passcode,
+`graph/schema/invite.graphql`). **The server sends no invite email**: the inviter's phone sends the link and the passcode,
 from the user's own mail app or any chat app (owner's decision, 2026-11-22: invitations go from client to client).
 So the server holds no mail account or password, and nothing it sends can be spoofed or land in spam.
 
@@ -241,7 +268,7 @@ Revoked "Pixel 9", device 1 of user hen (serial b582e90a5ea9c2a16b60802e95543c85
 
 ## Admin API and commands
 
-`ptt-server user add | user remove | users | enroll-code | devices | revoke` are thin GraphQL clients of the running
+`ptt-server user add | user email | user remove | users | enroll-code | devices | revoke` are thin GraphQL clients of the running
 server's admin API (`admin.go`, `admincli.go`, schema in `graph/admin/schema/admin.graphql`). `ptt-server livekit
 update` ends with its `restartLiveKit` mutation (docs/install.md, "LiveKit"), and `ptt-server app-update [--push]`
 is the `checkAppRelease` mutation (docs/install.md, "App updates").
@@ -304,13 +331,14 @@ pinned key) at any address. See the client repo's docs.
   "port_mapping": true,                         // optional (default): UPnP / NAT-PMP
   "playground": false,                          // optional: serve the GraphQL playground at /
   "invites": true,                              // optional (default): users may invite friends
-  "invites_file": "invites.json"                // optional (default)
+  "invites_file": "invites.json",               // optional (default)
+  "gmail": { "client_file": "gmail-client.json" } // optional: mail enrollment links (install.md, "Email")
 }
 ```
 
 Unknown keys are refused at start, so a typo (or a Journal `config.json` with its `users`) is caught. The one
-exception is `smtp` and `gmail`, the mail settings of the server before 2026-11-22, when it emailed invite codes: they
-are taken and ignored, and the log says to remove them.
+exception is `smtp`, the SMTP setting of the server before 2026-11-22: it is taken and ignored, and the log says to
+remove it.
 
 `client_ca_key` is the most sensitive file on the server: anyone holding it can mint certificates for any user. Keep
 it readable only by the account that runs the server.

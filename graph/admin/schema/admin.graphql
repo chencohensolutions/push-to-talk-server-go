@@ -1,5 +1,6 @@
 # Admin API, served only on the loopback admin listener (admin_addr) and used by the
-# `ptt-server user add | user remove | users | enroll-code | devices | revoke | livekit update | app-update` commands. See docs/authentication.md.
+# `ptt-server user add | user email | user remove | users | enroll-code | devices | revoke | livekit update | app-update`
+# commands. See docs/authentication.md.
 
 scalar Time
 
@@ -11,11 +12,21 @@ type Query {
 }
 
 type Mutation {
-  "Adds a user to users.json; devices then enroll as it with codes from createEnrollmentCode."
-  addUser(name: String!): User!
+  """
+  Adds a user to users.json; devices then enroll as it with codes from createEnrollmentCode. A user has an email (its
+  identity, unique), and a name made from it when name is omitted. Without an email it takes a name, which only a
+  server without "gmail" in config.json allows.
+  """
+  addUser(email: String, name: String): User!
+  "Gives an existing user its email (users added by name before emails were their identity)."
+  setUserEmail(user: String!, email: String!): User!
   "Removes a user from users.json and revokes every certificate of its devices."
   removeUser(name: String!): RemovedUser!
-  "Creates a one-time enrollment code for an existing user."
+  """
+  Creates a one-time enrollment code for an existing user, by name or email. With "gmail" in config.json the server
+  mails the enrollment link to the user's email and the code isn't returned (emailedTo says where it went); without,
+  the code is returned for the admin to show.
+  """
   createEnrollmentCode(user: String!): EnrollmentCode!
   "Revokes an enrolled device's certificate (and its renewals); the server rejects it from then on."
   revokeDevice(serial: String!): Device!
@@ -44,6 +55,8 @@ type AppReleaseCheck {
 
 type User {
   name: String!
+  "Null for a user added by name before emails were their identity."
+  email: String
   addedAt: Time!
   "Its devices that aren't revoked."
   devices: Int!
@@ -56,7 +69,10 @@ type RemovedUser {
 }
 
 type EnrollmentCode {
-  code: String!
+  "Null when it was emailed."
+  code: String
+  "The address the enrollment link was mailed to; null when it wasn't (no gmail in config.json)."
+  emailedTo: String
   user: String!
   expiresAt: Time!
   "public_url from config.json, if set."

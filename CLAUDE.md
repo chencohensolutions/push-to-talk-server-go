@@ -34,7 +34,9 @@ The docs describe what is built, and must be kept in step with the code in the s
 
 **Phases.** Phase 1: enroll and find the server. Phase 2 (built too): identity keys and prekeys, `/ws` with the
 message queue, pairing, linking a phone, invites (one link and its passcode, sent from the inviter's phone, that
-enroll a friend and pair them; the server sends no email). Phase 3, server side built: `registerPush` (`fcm_token`
+enroll a friend and pair them; the server sends no invite mail). Emails are the users' identity (2026-11-22): with
+`gmail` in config.json, `enroll-code <email>` mails the enrollment link through the Gmail API with the send-only
+grant `ptt-server mail-login` keeps (package `mail`, `enrollmail.go`; no password is stored). Phase 3, server side built: `registerPush` (`fcm_token`
 and `notifications_enabled` in the registry), the FCM sender (package `push`), `Send.push_kind`, presence. Phase 4, server side built: groups (`groups.json`, routing only; the group Send). Phase 5a, server side built: floor
 control and clips on `/ws`, `/blob`. Phase 5b, server side built: LiveKit beside the server (`livekit` in config.json,
 setup writes `livekit.yaml` and `livekit.keys`), `/rtc`, `talkToken`, UDP 7882 and TCP 7881 in `serverPorts`. Phase 6, server side built: `callToken` (a room per call, `livekit.max_call_devices`, 32 by default); calls are
@@ -55,7 +57,8 @@ go tool gqlgen generate                           # after editing graph/schema/*
 go tool gqlgen generate --config gqlgen.admin.yml # after editing graph/admin/schema/*.graphql
 go run . setup --dir <folder> [--user <name>] [--address <host>]   # make a server folder (docs/install.md)
 go run .                                          # serve https://0.0.0.0:56400 (needs config.json + certs/)
-go run . user add <name> | user remove <name> | users              # admin commands: the server must be running
+go run . user add <email> [name] | user email <user> <email> | user remove <name> | users   # admin: server running
+go run . mail-login [--no-browser]                # once, at the server's desktop: the Gmail send-only grant
 go run . enroll-code <user> | devices [user] | revoke <serial>
 go run . id | discovery                           # this server's id; check the DHT and the router from here
 go run . livekit update [version]                 # fetch LiveKit's release, check it, swap it in, restart it
@@ -76,7 +79,7 @@ bin/protoc --plugin=protoc-gen-go=bin/protoc-gen-go --go_out=. \
 - The admin commands read `config.json` and `admin.token` in the current folder (or beside the program), so run them
   from the server folder.
 - `config.json`, `certs/`, `users.json`, `devices.json`, `devices.revoked.json`, `pairs.json`, `groups.json`, `blobs/`, `livekit.yaml`, `livekit.keys`, `invites.json`, `app-release.json`,
-  `ptt.db`, `admin.token` and the FCM service-account key (`*-firebase-adminsdk-*.json`) are gitignored local state.
+  `ptt.db`, `admin.token`, `gmail-client.json`, `gmail.token` and the FCM service-account key (`*-firebase-adminsdk-*.json`) are gitignored local state.
   `config.example.json` shows the shape. A second server for testing runs from its own folder with its own `port`
   and `admin_addr`, and `"port_mapping": false` so it leaves the router to the real one (docs/install.md).
 - **After changing the public schema or `proto/ptt.proto`**, the client must get the copy: in `../push-to-talk-kmp`
@@ -115,8 +118,10 @@ fields); introspection is blocked too. Resolvers get the user with `auth.FromCon
   message queue, one row per (recipient device, envelope).
 - `invite`: invites (`invites.json`, hashed codes and passcodes, 7 days; the wrong passcodes in memory), and redeeming
   one: a new user named from the email or the display name and enrolled (`enrollWithInvite`), or an enrolled one
-  (`acceptInvite`); both get a pairing token of the inviter. The server sends no mail: the inviter's phone sends the
-  link and passcode (`smtp` and `gmail` in an old config.json are taken and ignored).
+  (`acceptInvite`); both get a pairing token of the inviter. The server sends no invite mail: the inviter's phone
+  sends the link and passcode (`smtp` in an old config.json is taken and ignored).
+- `mail`: the Gmail API sender (`gmail.go`: the OAuth client file, `Login`'s loopback + PKCE sign-in, the
+  gmail.send refresh token in `gmail.token`), used only for enrollment links (docs/install.md, "Email").
 - `livekit`: LiveKit's keys, room tokens (HS256, standard library), the room API (Twirp JSON), running
   livekit-server (its keys in LIVEKIT_KEYS, restarted on `restartLiveKit`), and updating it (`update.go`).
 - `blobs`: the blobs folder (clips that grow while their burst lasts, uploaded files, kept call tracks), with who may

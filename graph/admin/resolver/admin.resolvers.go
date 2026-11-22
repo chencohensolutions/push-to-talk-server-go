@@ -12,6 +12,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	"github.com/chencohensolutions/push-to-talk-server-go/enroll"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/admin/generated"
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/admin/model"
@@ -26,13 +27,34 @@ func (r *deviceResolver) RenewedFrom(ctx context.Context, obj *enroll.Device) (*
 }
 
 // AddUser is the resolver for the addUser field.
-func (r *mutationResolver) AddUser(ctx context.Context, name string) (*model.User, error) {
-	user, err := r.UserStore.Add(name, r.Now())
+func (r *mutationResolver) AddUser(ctx context.Context, email *string, name *string) (*model.User, error) {
+	var user auth.User
+	var err error
+	switch {
+	case email != nil && *email != "":
+		user, err = r.UserStore.AddWithEmail(*email, deref(name), r.Now())
+	case r.Config.MailOn():
+		return nil, errors.New("a user needs an email: enrollment links are mailed to it (ptt-server user add <email>)")
+	case name != nil:
+		user, err = r.UserStore.Add(*name, r.Now())
+	default:
+		return nil, errors.New("a user needs an email (or, without gmail in config.json, a name)")
+	}
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("Admin: added user %s", user.Name)
-	return &model.User{Name: user.Name, AddedAt: user.AddedAt}, nil
+	log.Printf("Admin: added user %s (%s)", user.Name, user.Email)
+	return userModel(user, 0), nil
+}
+
+// SetUserEmail is the resolver for the setUserEmail field.
+func (r *mutationResolver) SetUserEmail(ctx context.Context, user string, email string) (*model.User, error) {
+	u, err := r.UserStore.SetEmail(user, email)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("Admin: user %s's email is %s", u.Name, u.Email)
+	return userModel(u, r.activeDevices()[u.Name]), nil
 }
 
 // RemoveUser is the resolver for the removeUser field.
@@ -54,14 +76,34 @@ func (r *mutationResolver) RemoveUser(ctx context.Context, name string) (*model.
 
 // CreateEnrollmentCode is the resolver for the createEnrollmentCode field.
 func (r *mutationResolver) CreateEnrollmentCode(ctx context.Context, user string) (*model.EnrollmentCode, error) {
-	if r.UserStore.Find(user) == nil {
-		return nil, fmt.Errorf("unknown user %q: add it first with ptt-server user add %s", user, user)
+	u := r.UserStore.Find(user)
+	if u == nil {
+		u = r.UserStore.FindByEmail(user)
 	}
-	code, expiresAt := r.Enrollment.Codes.Create(user)
-	result := &model.EnrollmentCode{Code: code, User: user, ExpiresAt: expiresAt}
+	if u == nil {
+		return nil, fmt.Errorf("unknown user %q: add it first with ptt-server user add <email>", user)
+	}
+	if r.Config.MailOn() && u.Email == "" {
+		return nil, fmt.Errorf("user %s has no email to mail the link to: ptt-server user email %s <email>", u.Name, u.Name)
+	}
+	code, expiresAt := r.Enrollment.Codes.Create(u.Name)
+	result := &model.EnrollmentCode{User: u.Name, ExpiresAt: expiresAt}
 	if r.Config.PublicURL != "" {
 		result.ServerURL = &r.Config.PublicURL
 	}
+	if !r.Config.MailOn() {
+		result.Code = &code
+		return result, nil
+	}
+	if r.MailEnrollment == nil {
+		return nil, errors.New("the server can't send mail")
+	}
+	if err := r.MailEnrollment(*u, code, expiresAt); err != nil {
+		r.Enrollment.Codes.Redeem(code) // nobody got it
+		return nil, fmt.Errorf("mailing the enrollment link to %s: %w", u.Email, err)
+	}
+	log.Printf("Admin: mailed an enrollment link for %s to %s", u.Name, u.Email)
+	result.EmailedTo = &u.Email
 	return result, nil
 }
 
@@ -99,15 +141,10 @@ func (r *mutationResolver) CheckAppRelease(ctx context.Context, push bool) (*mod
 
 // Users is the resolver for the users field.
 func (r *queryResolver) Users(ctx context.Context) ([]*model.User, error) {
-	active := map[string]int{}
-	for _, d := range r.Enrollment.Registry.List("") {
-		if !r.Enrollment.Registry.IsRevoked(d.Serial) {
-			active[d.User]++
-		}
-	}
+	active := r.activeDevices()
 	list := []*model.User{}
 	for _, u := range r.UserStore.List() {
-		list = append(list, &model.User{Name: u.Name, AddedAt: u.AddedAt, Devices: active[u.Name]})
+		list = append(list, userModel(u, active[u.Name]))
 	}
 	return list, nil
 }

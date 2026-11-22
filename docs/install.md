@@ -59,14 +59,46 @@ own `admin_addr`, and with the router left to the real server:
 
 ## Email
 
-The server sends no email. Invites go from the inviter's phone to the friend's (docs/authentication.md, "Invites"):
-the link and its passcode leave through the phone's own mail app or any chat app, so there is no mail account,
-password or Google grant to set up here.
+With `gmail` in `config.json`, the server mails each user its enrollment link: `ptt-server enroll-code <email>` sends
+the `ptt://enroll` link (with the server's address, fingerprint and DHT key, as the QR code has them) and the code
+to the user's email, and prints only where it went (docs/authentication.md, "Enrollment by email"). The mail goes
+through the **Gmail API** with a **send-only grant**: the server keeps no password, the grant can send mail and can't
+read any, and it is revoked in the Google account at any time (2026-11-22, hen). Without `gmail`, `enroll-code`
+prints the code and its QR code as before, and nothing is mailed.
 
-A server set up before 2026-11-22 may have `smtp` or `gmail` in `config.json`, from when it emailed invite codes. It
-still starts; its log says the key is no longer used. Remove the key, delete `gmail-client.json`, `gmail.token` and
-`smtp.password` from the server folder, and, if `ptt-server mail-login` was run, remove ptt-server under **Google
-Account → Security → Your connections to third-party apps**.
+Once, in Google Cloud (any project, for example the Firebase one):
+
+1. **APIs & Services → Library**: enable the **Gmail API**.
+2. **OAuth consent screen**: user type External, the app name (Talk), your address as the support and developer
+   contact, the scope `.../auth/gmail.send`, and your Gmail address under **Test users**. Leave it in testing: only
+   the test users can sign in. (In testing Google ends the grant after 7 days; publishing the app, with no
+   verification needed for your own account, keeps it until revoked.)
+3. **Credentials → Create credentials → OAuth client ID**, type **Desktop app**. Download the JSON into the server
+   folder as `gmail-client.json`. It identifies the app, not your account, but keep it private.
+
+Then in `config.json`:
+
+```jsonc
+"gmail": {
+  "client_file": "gmail-client.json",
+  "token_file": "gmail.token",   // optional (default): where mail-login keeps the grant, a secret
+  "from_name": "Talk"            // optional: the name beside your address
+}
+```
+
+and at the server's own desktop (the sign-in comes back to this computer's loopback address), in the server folder:
+
+```
+ptt-server mail-login            # opens the browser; --no-browser prints the address to open
+```
+
+Sign in with the Gmail account to send from and allow **Send email on your behalf**. It writes `gmail.token` (the
+address and a refresh token, owner-only), and the server uses it after a restart: its log says `Mail: enrollment
+links are mailed from ...`. Both files are gitignored. To stop it, remove ptt-server under **Google Account →
+Security → Your connections to third-party apps**; `enroll-code` then fails and says to run `mail-login` again.
+
+A server set up before 2026-11-22 may have `smtp` in `config.json`. It still starts; its log says the key is no
+longer used. Remove it and delete `smtp.password`.
 
 ## Push (FCM)
 
