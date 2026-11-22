@@ -99,3 +99,11 @@ const (
 	// maxPresenceUsers is the most users one presence query answers for.
 	maxPresenceUsers = 500
 )
+
+// keyProtection is a registry's key_protection as the schema's enum; SOFTWARE for one it doesn't know.
+func keyProtection(stored string) model.KeyProtection {
+	if k := model.KeyProtection(stored); k.IsValid() {
+		return k
+	}
+	return model.KeyProtectionSoftware
+}

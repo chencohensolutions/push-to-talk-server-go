@@ -177,6 +177,7 @@ type ComplexityRoot struct {
 		RemoveFromGroup    func(childComplexity int, group string, user string) int
 		RenewCertificate   func(childComplexity int, csr string, keyProtection model.KeyProtection) int
 		ReplaceIdentityKey func(childComplexity int, identityKey string) int
+		RevokeMyDevice     func(childComplexity int, deviceNumber int) int
 		SetPresenceVisible func(childComplexity int, visible bool) int
 		StopRecordingCall  func(childComplexity int, call string, peer *string, group *string) int
 		TalkToken          func(childComplexity int, peer *string, group *string) int
@@ -188,6 +189,8 @@ type ComplexityRoot struct {
 	OwnDevice struct {
 		Current        func(childComplexity int) int
 		DeviceNumber   func(childComplexity int) int
+		KeyProtection  func(childComplexity int) int
+		LastSeenAt     func(childComplexity int) int
 		Name           func(childComplexity int) int
 		RegisteredAt   func(childComplexity int) int
 		RegistrationID func(childComplexity int) int
@@ -307,6 +310,7 @@ type MutationResolver interface {
 	AcceptInvite(ctx context.Context, code string) (model.InviteAcceptResult, error)
 	UploadPrekeys(ctx context.Context, input model.UploadPrekeysInput) (*model.PrekeyCount, error)
 	ReplaceIdentityKey(ctx context.Context, identityKey string) (bool, error)
+	RevokeMyDevice(ctx context.Context, deviceNumber int) (model.RevokeMyDeviceResult, error)
 	PairingToken(ctx context.Context) (*model.PairingToken, error)
 	ConfirmPair(ctx context.Context, user string) (model.PairState, error)
 	Unpair(ctx context.Context, user string) (bool, error)
@@ -980,6 +984,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.ReplaceIdentityKey(childComplexity, args["identityKey"].(string)), true
+	case "Mutation.revokeMyDevice":
+		if e.ComplexityRoot.Mutation.RevokeMyDevice == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_revokeMyDevice_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.RevokeMyDevice(childComplexity, args["deviceNumber"].(int)), true
 	case "Mutation.setPresenceVisible":
 		if e.ComplexityRoot.Mutation.SetPresenceVisible == nil {
 			break
@@ -1059,6 +1074,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.OwnDevice.DeviceNumber(childComplexity), true
+	case "OwnDevice.keyProtection":
+		if e.ComplexityRoot.OwnDevice.KeyProtection == nil {
+			break
+		}
+
+		return e.ComplexityRoot.OwnDevice.KeyProtection(childComplexity), true
+	case "OwnDevice.lastSeenAt":
+		if e.ComplexityRoot.OwnDevice.LastSeenAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.OwnDevice.LastSeenAt(childComplexity), true
 	case "OwnDevice.name":
 		if e.ComplexityRoot.OwnDevice.Name == nil {
 			break
@@ -1838,6 +1865,12 @@ extend type Mutation {
   """
   replaceIdentityKey(identityKey: String!): Boolean!
   """
+  Revokes another device of the caller's own user, by its device number (Your devices in the app): every certificate
+  of that device, as ptt-server revoke does, so it can't connect again; its /ws closes and its keys and queue go, and
+  contacts stop sending to it. Never the calling device (CURRENT_DEVICE) and never another user's (NOT_FOUND).
+  """
+  revokeMyDevice(deviceNumber: Int!): RevokeMyDeviceResult!
+  """
   A single-use pairing token for the caller's user, valid for 10 minutes, for the Add contact QR code. One Send from
   a user who isn't a contact, with the token in its envelopes, is routed to the caller's devices; that is the pair
   request. RATE_LIMITED with 10 unused tokens.
@@ -1966,8 +1999,25 @@ type OwnDevice {
   "Null until the device uploaded its keys."
   registrationId: Int
   registeredAt: Time!
+  """
+  When the device last reached the server (a request, or its /ws closing), to the minute; null when it hasn't since
+  the server started keeping it (2026-11-22). A device connected now shows the time it connected or last asked.
+  """
+  lastSeenAt: Time
+  "Where its key is kept, as it said when it enrolled."
+  keyProtection: KeyProtection!
   "The device that asked."
   current: Boolean!
+}
+
+"What revokeMyDevice did."
+enum RevokeMyDeviceResult {
+  "The device is revoked: its certificate is refused from now on, its /ws closed, its keys and queue dropped."
+  REVOKED
+  "No active device of the caller's user has this number (another user's devices are never touched)."
+  NOT_FOUND
+  "The number is the calling device's own: a phone can't revoke itself."
+  CURRENT_DEVICE
 }
 `, BuiltIn: false},
 	{Name: "../schema/push.graphql", Input: `# --- Push and presence (phase 3) ----------------------------------------------------------------------------------
@@ -2477,6 +2527,10 @@ func (ec *executionContext) childFields_OwnDevice(ctx context.Context, field gra
 		return ec.fieldContext_OwnDevice_registrationId(ctx, field)
 	case "registeredAt":
 		return ec.fieldContext_OwnDevice_registeredAt(ctx, field)
+	case "lastSeenAt":
+		return ec.fieldContext_OwnDevice_lastSeenAt(ctx, field)
+	case "keyProtection":
+		return ec.fieldContext_OwnDevice_keyProtection(ctx, field)
 	case "current":
 		return ec.fieldContext_OwnDevice_current(ctx, field)
 	}
@@ -3096,6 +3150,20 @@ func (ec *executionContext) field_Mutation_replaceIdentityKey_args(ctx context.C
 		return nil, err
 	}
 	args["identityKey"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_revokeMyDevice_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "deviceNumber",
+		func(ctx context.Context, v any) (int, error) {
+			return ec.unmarshalNInt2int(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["deviceNumber"] = arg0
 	return args, nil
 }
 
@@ -5613,6 +5681,50 @@ func (ec *executionContext) fieldContext_Mutation_replaceIdentityKey(ctx context
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_revokeMyDevice(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_revokeMyDevice(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RevokeMyDevice(ctx, fc.Args["deviceNumber"].(int))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.RevokeMyDeviceResult) graphql.Marshaler {
+			return ec.marshalNRevokeMyDeviceResult2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐRevokeMyDeviceResult(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_revokeMyDevice(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type RevokeMyDeviceResult does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_revokeMyDevice_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_pairingToken(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6219,6 +6331,52 @@ func (ec *executionContext) _OwnDevice_registeredAt(ctx context.Context, field g
 }
 func (ec *executionContext) fieldContext_OwnDevice_registeredAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("OwnDevice", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _OwnDevice_lastSeenAt(ctx context.Context, field graphql.CollectedField, obj *model.OwnDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_OwnDevice_lastSeenAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.LastSeenAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
+			return ec.marshalOTime2ᚖtimeᚐTime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_OwnDevice_lastSeenAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("OwnDevice", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _OwnDevice_keyProtection(ctx context.Context, field graphql.CollectedField, obj *model.OwnDevice) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_OwnDevice_keyProtection(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.KeyProtection, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.KeyProtection) graphql.Marshaler {
+			return ec.marshalNKeyProtection2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐKeyProtection(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_OwnDevice_keyProtection(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("OwnDevice", field, false, false, errors.New("field of type KeyProtection does not have child fields"))
 }
 
 func (ec *executionContext) _OwnDevice_current(ctx context.Context, field graphql.CollectedField, obj *model.OwnDevice) (ret graphql.Marshaler) {
@@ -10435,6 +10593,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "revokeMyDevice":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_revokeMyDevice(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "pairingToken":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_pairingToken(ctx, field)
@@ -10567,6 +10732,13 @@ func (ec *executionContext) _OwnDevice(ctx context.Context, sel ast.SelectionSet
 			out.Values[i] = ec._OwnDevice_registrationId(ctx, field, obj)
 		case "registeredAt":
 			out.Values[i] = ec._OwnDevice_registeredAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "lastSeenAt":
+			out.Values[i] = ec._OwnDevice_lastSeenAt(ctx, field, obj)
+		case "keyProtection":
+			out.Values[i] = ec._OwnDevice_keyProtection(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -12373,6 +12545,16 @@ func (ec *executionContext) marshalNRecordedTrack2ᚖgithubᚗcomᚋchencohensol
 		return graphql.Null
 	}
 	return ec._RecordedTrack(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNRevokeMyDeviceResult2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐRevokeMyDeviceResult(ctx context.Context, v any) (model.RevokeMyDeviceResult, error) {
+	var res model.RevokeMyDeviceResult
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNRevokeMyDeviceResult2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐRevokeMyDeviceResult(ctx context.Context, sel ast.SelectionSet, v model.RevokeMyDeviceResult) graphql.Marshaler {
+	return v
 }
 
 func (ec *executionContext) marshalNServerInfo2githubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐServerInfo(ctx context.Context, sel ast.SelectionSet, v model.ServerInfo) graphql.Marshaler {

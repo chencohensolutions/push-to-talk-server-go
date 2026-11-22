@@ -116,6 +116,33 @@ func (r *mutationResolver) ReplaceIdentityKey(ctx context.Context, identityKey s
 	return true, nil
 }
 
+// RevokeMyDevice is the resolver for the revokeMyDevice field.
+func (r *mutationResolver) RevokeMyDevice(ctx context.Context, deviceNumber int) (model.RevokeMyDeviceResult, error) {
+	d, err := r.caller(ctx)
+	if err != nil {
+		return "", err
+	}
+	if deviceNumber == d.Number {
+		return model.RevokeMyDeviceResultCurrentDevice, nil
+	}
+	if !slices.Contains(r.Relay.EnrolledDevices(d.User), deviceNumber) {
+		return model.RevokeMyDeviceResultNotFound, nil
+	}
+	for _, device := range r.Enrollment.Registry.List(d.User) {
+		if device.DeviceNumber != deviceNumber || r.Enrollment.Registry.IsRevoked(device.Serial) {
+			continue
+		}
+		// Every certificate of that device: what it renewed and what renewed it.
+		if _, err := r.Enrollment.Registry.RevokeDevice(device.Serial, r.Now().UTC()); err != nil {
+			return "", err
+		}
+		log.Printf("Device %d of %s revoked device %d (%q, serial %s)", d.Number, d.User, deviceNumber, device.Name, device.Serial)
+		break
+	}
+	r.Relay.Revoked(d.User) // its /ws closes, its keys and queue go
+	return model.RevokeMyDeviceResultRevoked, nil
+}
+
 // PairingToken is the resolver for the pairingToken field.
 func (r *mutationResolver) PairingToken(ctx context.Context) (*model.PairingToken, error) {
 	d, err := r.caller(ctx)
@@ -317,6 +344,7 @@ func (r *queryResolver) Devices(ctx context.Context) ([]*model.OwnDevice, error)
 			continue
 		}
 		own := &model.OwnDevice{DeviceNumber: device.DeviceNumber, Name: device.Name, RegisteredAt: device.RegisteredAt,
+			LastSeenAt: device.LastSeenAt, KeyProtection: keyProtection(device.KeyProtection),
 			Current: device.DeviceNumber == d.Number}
 		if registration, ok := keyed[device.DeviceNumber]; ok {
 			own.RegistrationID = &registration
