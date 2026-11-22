@@ -407,8 +407,11 @@ func orNone(s string) string {
 	return s
 }
 
-// setupLiveKit writes LiveKit's key file and config when config.json has "livekit" and they are missing; ones there
-// are kept. The key file is a secret: LiveKit and ptt-server read it, nothing else.
+// setupLiveKitUpdater fetches LiveKit for setup: from GitHub, or nowhere in the tests.
+var setupLiveKitUpdater = func() *livekit.Updater { return &livekit.Updater{} }
+
+// setupLiveKit writes LiveKit's key file and config when config.json has "livekit" and they are missing, and
+// downloads livekit-server beside ptt-server when it isn't there; ones there are kept. The key file is a secret: LiveKit and ptt-server read it, nothing else.
 func setupLiveKit(config auth.AppConfig) error {
 	if !config.LiveKitOn() {
 		fmt.Printf("LiveKit: off (add \"livekit\": {} to config.json and run setup again for the live talk path)\n")
@@ -443,9 +446,28 @@ func setupLiveKit(config auth.AppConfig) error {
 		}
 		fmt.Printf("%s: written (signalling on %s, media on UDP %d and TCP %d)\n", l.ConfigFile, l.URL, l.UDPPort, l.TCPPort)
 	}
-	if liveKitBinary(config) == "" && l.Binary != "none" {
-		fmt.Printf("LiveKit: put livekit-server beside ptt-server (docs/install.md, \"LiveKit\"); ptt-server runs it\n")
+	if l.Binary == "none" {
+		return nil
 	}
+	program, err := liveKitProgram(config)
+	if err != nil {
+		return err
+	}
+	if exists(program) {
+		fmt.Printf("%s: kept (ptt-server livekit update upgrades it)\n", program)
+		return nil
+	}
+	if l.Binary != "" {
+		fmt.Printf("LiveKit: %s (config.json's livekit binary) isn't there; put livekit-server there\n", program)
+		return nil
+	}
+	// No LiveKit beside ptt-server yet: fetch LiveKit's latest release, as ptt-server livekit update does.
+	done, err := setupLiveKitUpdater().Update(context.Background(), program, "")
+	if err != nil {
+		fmt.Printf("LiveKit: couldn't download it (%v); run ptt-server livekit update, or put livekit-server beside ptt-server (docs/install.md, \"LiveKit\")\n", err)
+		return nil
+	}
+	fmt.Printf("%s: LiveKit %s downloaded, checked against its checksums\n", program, done.New)
 	return nil
 }
 

@@ -17,7 +17,11 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 )
 
-func init() { certs.UseSmallKeysForTests() }
+func init() {
+	certs.UseSmallKeysForTests()
+	// Setup downloads LiveKit when it isn't beside ptt-server: not from the tests (a closed port, so it gives up).
+	setupLiveKitUpdater = func() *livekit.Updater { return &livekit.Updater{API: "http://127.0.0.1:1"} }
+}
 
 // hashTree is every file under dir (relative path → sha256), to show setup changed nothing there.
 func hashTree(t *testing.T, dir string) map[string]string {
