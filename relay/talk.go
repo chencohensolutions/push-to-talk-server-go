@@ -25,8 +25,9 @@ const (
 	ackWait = 500 * time.Millisecond
 	// lastSegmentWait is how long a clip waits for its last segment after its talker let go.
 	lastSegmentWait = 10 * time.Second
-	// MaxSegmentBytes is the most ciphertext one ClipSegment carries (200 ms of 24 kbit/s Opus is about 600 bytes).
-	MaxSegmentBytes = 16 << 10
+	// MaxSegmentBytes is the most ciphertext one ClipSegment carries. 200 ms of 24 kbit/s Opus is about 600 bytes;
+	// push-to-video (2026-11-22) puts video in the same segments, and one video key frame can be 20 to 40 KB.
+	MaxSegmentBytes = 64 << 10
 )
 
 // listener is a device a burst goes to, and the conversation as it sees it.

@@ -25,8 +25,9 @@ import (
 const (
 	// MaxFileBytes is the largest file a device may upload (a voice message or an attachment).
 	MaxFileBytes = 100 << 20
-	// MaxClipBytes bounds one clip: 60 seconds of 24 kbit/s Opus is about 180 KB, so this is generous.
-	MaxClipBytes = 4 << 20
+	// MaxClipBytes bounds one clip: 60 seconds of 24 kbit/s Opus is about 180 KB; with push-to-video, 60 seconds of
+	// 1 Mbit/s video is about 7.5 MB.
+	MaxClipBytes = 8 << 20
 	// MaxTrackBytes bounds one recorded track of a call: 4 hours of 1 Mbit/s video is about 1.8 GB.
 	MaxTrackBytes = 2 << 30
 )
