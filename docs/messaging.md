@@ -283,7 +283,7 @@ audio is AES-256-GCM made by the talker's phone with a key that goes end to end 
   once; a connected one that sends no TalkAck within 0.5 s is pushed too (`Pusher.Urgent`: its connection may be
   dead without the server knowing yet).
 - **`ClipSegment`** `{burst_id, index, last, ciphertext}` from the talker, in order from 0 with no gaps, 1 byte to
-  16 KB each: the server appends it to the clip and forwards it to the conversation's connected devices. A segment
+  64 KB each (a burst may carry video too: push-to-video; a clip is at most 8 MB): the server appends it to the clip and forwards it to the conversation's connected devices. A segment
   out of order, too large, or from anyone but the talker is answered `REFUSED` (`INVALID`).
 - **`TalkEnd`**, the last segment, 60 seconds, or the talker's connection dropping for 3 seconds ends the floor:
   every device of the conversation, the talker's too, gets **`ENDED`** with `RELEASED`, `TIMEOUT` or `DROPPED`. After
