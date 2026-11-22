@@ -56,7 +56,7 @@ func (r *mutationResolver) CallToken(ctx context.Context, call string, peer *str
 		return nil, coded(status.String(), "%s", detail)
 	}
 	if r.Relay.Live != nil {
-		if err := r.Relay.Live.CreateRoom(ctx, room, livekit.MaxCallParticipants); err != nil {
+		if err := r.Relay.Live.CreateRoom(ctx, room, r.Relay.Live.MaxCall); err != nil {
 			log.Printf("callToken: making room %s: %v", room, err)
 			return nil, fmt.Errorf("LiveKit isn't answering")
 		}

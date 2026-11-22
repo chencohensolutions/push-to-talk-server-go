@@ -37,7 +37,7 @@ message queue, pairing, linking a phone, invites (one link and its passcode, sen
 enroll a friend and pair them; the server sends no email). Phase 3, server side built: `registerPush` (`fcm_token`
 and `notifications_enabled` in the registry), the FCM sender (package `push`), `Send.push_kind`, presence. Phase 4, server side built: groups (`groups.json`, routing only; the group Send). Phase 5a, server side built: floor
 control and clips on `/ws`, `/blob`. Phase 5b, server side built: LiveKit beside the server (`livekit` in config.json,
-setup writes `livekit.yaml` and `livekit.keys`), `/rtc`, `talkToken`, UDP 7882 and TCP 7881 in `serverPorts`. Phase 6, server side built: `callToken` (a room per call, 8 devices); calls are
+setup writes `livekit.yaml` and `livekit.keys`), `/rtc`, `talkToken`, UDP 7882 and TCP 7881 in `serverPorts`. Phase 6, server side built: `callToken` (a room per call, `livekit.max_call_devices`, 32 by default); calls are
 signalled and saved on the phones, end to end.
 
 **Platforms.** The owner's server is a Windows PC, development happens on a Mac, and the server should run on

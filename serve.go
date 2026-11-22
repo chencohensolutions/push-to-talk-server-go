@@ -191,7 +191,11 @@ func openServer(config auth.AppConfig) (*server, error) {
 			return nil, fmt.Errorf("config.json livekit url: %w", err)
 		}
 		s.liveKeys = &keys
-		s.relay.Live = &livekit.Client{Keys: keys, URL: config.LiveKit.URL}
+		maxCall := config.LiveKit.MaxCallDevices
+		if maxCall <= 0 {
+			maxCall = auth.DefaultMaxCallDevices
+		}
+		s.relay.Live = &livekit.Client{Keys: keys, URL: config.LiveKit.URL, MaxCall: maxCall}
 		s.rtc = httputil.NewSingleHostReverseProxy(target)
 		log.Printf("Live talk: on, through LiveKit at %s (media on UDP %d and TCP %d)", config.LiveKit.URL,
 			config.LiveKit.UDPPort, config.LiveKit.TCPPort)

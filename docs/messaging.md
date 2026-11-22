@@ -312,7 +312,7 @@ invite (an ordinary Send with `push_kind` `PUSH_CALL`, high priority, kept 30 se
 the call's fresh media key; answers, hang-ups and "Recording" go the same way. The server adds only the room:
 
 - **`callToken(call, peer | group)`**: `call` is the 32 hex digits the caller's phone made. After the same checks as
-  talking in that conversation, the server makes the call's own LiveKit room, `c-<call id>`, with at most 8 devices
+  talking in that conversation, the server makes the call's own LiveKit room, `c-<call id>`, with at most `livekit.max_call_devices` devices (config.json, 32 by default)
   and a short life once empty, and signs a token for it as for `talkToken`. The first callToken binds the id to its
   conversation; one from another conversation is `INVALID`. Calls are remembered in memory for a day.
 - Taken out of the group, unpaired or blocked: out of that conversation's call rooms at once, as from its talk room;
