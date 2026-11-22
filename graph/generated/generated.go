@@ -170,6 +170,7 @@ type ComplexityRoot struct {
 		InviteToGroup      func(childComplexity int, group string, user string) int
 		LeaveGroup         func(childComplexity int, group string) int
 		PairingToken       func(childComplexity int) int
+		RecordCall         func(childComplexity int, call string, peer *string, group *string, on bool) int
 		RegisterPush       func(childComplexity int, token *string, notificationsEnabled bool) int
 		RemoveFromGroup    func(childComplexity int, group string, user string) int
 		RenewCertificate   func(childComplexity int, csr string, keyProtection model.KeyProtection) int
@@ -312,6 +313,7 @@ type MutationResolver interface {
 	SetPresenceVisible(ctx context.Context, visible bool) (bool, error)
 	TalkToken(ctx context.Context, peer *string, group *string) (*model.TalkToken, error)
 	CallToken(ctx context.Context, call string, peer *string, group *string) (*model.TalkToken, error)
+	RecordCall(ctx context.Context, call string, peer *string, group *string, on bool) (*model.CallRecording, error)
 }
 type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
@@ -901,6 +903,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.PairingToken(childComplexity), true
+	case "Mutation.recordCall":
+		if e.ComplexityRoot.Mutation.RecordCall == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_recordCall_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.RecordCall(childComplexity, args["call"].(string), args["peer"].(*string), args["group"].(*string), args["on"].(bool)), true
 	case "Mutation.registerPush":
 		if e.ComplexityRoot.Mutation.RegisterPush == nil {
 			break
@@ -2132,8 +2145,8 @@ extend type Mutation {
   A token to join call's own LiveKit room (phase 6, video calls), in the conversation with peer or group, after the
   same checks; call is 32 hex digits the caller's phone made and sent in its encrypted call invite, with the call's
   fresh media key. The first callToken binds the id to its conversation (INVALID for another one). The room takes at
-  most livekit.max_call_devices from config.json (32 by default). The server keeps the call (callRecording) unless
-  livekit.keep_calls is false. LIVE_OFF without LiveKit.
+  most livekit.max_call_devices from config.json (32 by default). The server keeps the call only while someone in it
+  asks (recordCall). LIVE_OFF without LiveKit.
   """
   callToken(call: ID!, peer: String, group: ID): TalkToken!
 }
@@ -2154,11 +2167,22 @@ type TalkToken {
 }
 
 # --- Saved calls (2026-11-22) --------------------------------------------------------------------------------------
-# See docs/messaging.md, "Saved calls". The server keeps every call (livekit.keep_calls, on by default): from the
-# call's first callToken it is in the call's room as a hidden participant and keeps each participant's audio and
-# video exactly as LiveKit carried them, still encrypted end to end with the call's key, and never deletes them. The
+# See docs/messaging.md, "Saved calls". The server keeps a call only while someone in it records (recordCall;
+# livekit.keep_calls, on by default, allows it): then it is in the call's room as a hidden participant and keeps
+# each participant's audio and video exactly as LiveKit carried them, still encrypted end to end with the call's key, and never deletes them. The
 # phones in the call download and decrypt them, without re-encoding. Codes: as callToken, plus RECORDING_OFF when
 # this server doesn't keep calls.
+
+extend type Mutation {
+  """
+  Keeps call on the server while someone in it records (2026-11-22, hen: only when a user records): on true the
+  caller asks for it, on false stops asking. The recorder joins the call's room on the first ask and leaves when
+  nobody asks any more (or the call empties). Phones show who records (the Recording badge, carried in the call's
+  own encrypted messages). The same checks as callToken; RECORDING_OFF when livekit.keep_calls is false. Answers the
+  call's saving as the caller sees it.
+  """
+  recordCall(call: ID!, peer: String, group: ID, on: Boolean!): CallRecording!
+}
 
 extend type Query {
   "A call's saved streams so far, for whoever may read them (who was in the call), and whether it is kept now."
@@ -2874,6 +2898,44 @@ func (ec *executionContext) field_Mutation_leaveGroup_args(ctx context.Context, 
 		return nil, err
 	}
 	args["group"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_recordCall_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "call",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNID2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["call"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "peer",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["peer"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "group",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOID2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["group"] = arg2
+	arg3, err := graphql.ProcessArgField(ctx, rawArgs, "on",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["on"] = arg3
 	return args, nil
 }
 
@@ -5796,6 +5858,50 @@ func (ec *executionContext) fieldContext_Mutation_callToken(ctx context.Context,
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_callToken_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_recordCall(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_recordCall(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RecordCall(ctx, fc.Args["call"].(string), fc.Args["peer"].(*string), fc.Args["group"].(*string), fc.Args["on"].(bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.CallRecording) graphql.Marshaler {
+			return ec.marshalNCallRecording2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐCallRecording(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_recordCall(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_CallRecording(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_recordCall_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -10165,6 +10271,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "callToken":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_callToken(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "recordCall":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_recordCall(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++

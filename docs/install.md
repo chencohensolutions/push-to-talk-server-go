@@ -105,8 +105,8 @@ server runs as before and talk goes by the clip path only.
 - **config.json**: `"livekit": {}` turns it on with the defaults; setup writes it for a new server. Fields:
   `binary` (default: `livekit-server.exe` / `livekit-server` beside ptt-server when it is there; `"none"` runs
   nothing), `config_file` (`livekit.yaml`), `keys_file` (`livekit.keys`), `url` (`http://127.0.0.1:7880`),
-  `tcp_port` (7881), `udp_port` (7882), `keep_calls` (true: the server keeps every call's streams, encrypted end
-  to end, forever; docs/messaging.md, "Saved calls"; each kept call takes disk, about 1 GB per hour of a 4-person
+  `tcp_port` (7881), `udp_port` (7882), `keep_calls` (true: the server may keep a call's streams while someone in
+  it records, encrypted end to end, forever; docs/messaging.md, "Saved calls"; each kept call takes disk, about 1 GB per hour of a 4-person
   video call), `max_call_devices` (32: the most devices in one call; it was 8 until
   2026-11-22). In a video call every device receives every other camera, so the server's upload grows with the
   square of the count: phones take a small simulcast layer for small tiles, but a full 32-device video call can

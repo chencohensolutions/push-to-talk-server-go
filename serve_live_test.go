@@ -296,8 +296,9 @@ func (r *fakeRoom) Disconnect() {
 }
 func (r *fakeRoom) RemoteParticipantCount() int { return r.others }
 
-// Every call is kept (2026-11-22, hen): callToken starts the recorder keeping the call, callRecording lists its
-// tracks to whoever may read them, and GET /blob reads a track. The recorder never fails a call.
+// A call is kept only while someone in it records (2026-11-22, hen): callToken alone keeps nothing; recordCall
+// starts the recorder and stops it when nobody asks any more; callRecording lists the tracks to whoever may read
+// them, and GET /blob reads a track. The recorder never fails a call.
 func TestCallsAreKept(t *testing.T) {
 	env, _ := newLiveEnv(t)
 	if !env.config.LiveKit.KeepsCalls() || env.recorder == nil {
@@ -326,8 +327,33 @@ func TestCallsAreKept(t *testing.T) {
 	}
 	select {
 	case <-joined:
+		t.Fatal("the recorder joined a call nobody records")
+	case <-time.After(300 * time.Millisecond):
+	}
+	const recordMutation = `mutation($c: ID!, $p: String, $on: Boolean!) { recordCall(call: $c, peer: $p, on: $on) { recording } }`
+	record := func(p *phone, peer string, on bool) bool {
+		r := env.graphql(t, p.client, recordMutation, map[string]any{"c": id, "p": peer, "on": on})
+		if errorCode(r) != "" {
+			t.Fatalf("recordCall %v by %s: %s", on, p.user, errorCode(r))
+		}
+		var got struct{ Recording bool }
+		json.Unmarshal(r.Data["recordCall"], &got)
+		return got.Recording
+	}
+	if !record(hen, "dana", true) {
+		t.Fatal("recordCall on: not recording")
+	}
+	select {
+	case <-joined:
 	case <-time.After(2 * time.Second):
 		t.Fatal("the recorder didn't join the call's room")
+	}
+	// dana records too; hen stopping leaves it kept for dana; dana stopping ends it.
+	if !record(dana, "hen", true) || !record(hen, "dana", false) {
+		t.Fatal("one of two stopping ended the keeping")
+	}
+	if r := env.graphql(t, eli.client, recordMutation, map[string]any{"c": id, "p": "hen", "on": true}); errorCode(r) != "NOT_PAIRED" {
+		t.Fatalf("recordCall by eli (not a contact): %s", errorCode(r))
 	}
 
 	// A track of the call, as the recorder would write it (its frames stay encrypted; the test writes bytes).
@@ -363,6 +389,10 @@ func TestCallsAreKept(t *testing.T) {
 	}
 	if n := env.relay.Blobs.Expire(time.Now().Add(365 * 24 * time.Hour)); n != 0 {
 		t.Fatalf("a kept call's track expired: %d", n)
+	}
+
+	if record(dana, "hen", false) {
+		t.Fatal("the last one stopping left it recording")
 	}
 
 	// serverInfo says calls are kept.

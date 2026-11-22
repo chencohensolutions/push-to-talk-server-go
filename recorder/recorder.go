@@ -60,6 +60,8 @@ type Recorder struct {
 
 	mu    sync.Mutex
 	calls map[string]*recording
+	// Who asks for each call to be kept now (Ask).
+	asks map[string]map[string]bool
 }
 
 // Room is the part of a LiveKit room the recorder uses.
@@ -192,6 +194,33 @@ func (r *Recorder) leaveIfEmpty(rec *recording) {
 	}
 }
 
+// Ask records that user wants call kept ([on]) or no longer does: the first ask starts keeping it (Start), and it
+// stops when nobody asks any more (2026-11-22, hen: the server keeps a call only while someone records it).
+func (r *Recorder) Ask(call, room string, conv Conversation, user string, on bool) (Status, error) {
+	r.mu.Lock()
+	if r.asks == nil {
+		r.asks = map[string]map[string]bool{}
+	}
+	if on {
+		if r.asks[call] == nil {
+			r.asks[call] = map[string]bool{}
+		}
+		r.asks[call][user] = true
+		r.mu.Unlock()
+		return r.Start(call, room, conv)
+	}
+	delete(r.asks[call], user)
+	left := len(r.asks[call])
+	if left == 0 {
+		delete(r.asks, call)
+	}
+	r.mu.Unlock()
+	if left > 0 {
+		return r.Status(call), nil
+	}
+	return r.Stop(call), nil
+}
+
 // Stop ends saving call: the recorder leaves its room, and each of its tracks is completed.
 func (r *Recorder) Stop(call string) Status {
 	r.mu.Lock()
@@ -205,6 +234,7 @@ func (r *Recorder) Stop(call string) Status {
 	}
 	rec.stopped = true
 	close(rec.stop)
+	delete(r.asks, call)
 	room := rec.room
 	r.mu.Unlock()
 	if room != nil {

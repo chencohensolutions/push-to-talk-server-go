@@ -14,7 +14,6 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/graph/model"
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
 	pb "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1"
-	"github.com/chencohensolutions/push-to-talk-server-go/recorder"
 )
 
 // TalkToken is the resolver for the talkToken field.
@@ -66,14 +65,6 @@ func (r *mutationResolver) CallToken(ctx context.Context, call string, peer *str
 			return nil, fmt.Errorf("LiveKit isn't answering")
 		}
 	}
-	if r.Recorder != nil {
-		// Every call is kept (2026-11-22, hen): the recorder is in the room before the first device.
-		conv := recorder.Conversation{Owner: d.User, Peer: deref(peer), Group: deref(group)}
-		if _, err := r.Recorder.Start(call, room, conv); err != nil {
-			log.Printf("callToken: keeping call %s: %v", call, err)
-			return nil, fmt.Errorf("LiveKit isn't answering")
-		}
-	}
 	now := r.Now()
 	identity := livekit.Identity(d.User, d.Number)
 	token, err := r.LiveKeys.JoinToken(identity, room, now)
@@ -83,6 +74,22 @@ func (r *mutationResolver) CallToken(ctx context.Context, call string, peer *str
 	log.Printf("Call %s: token for %s", call, identity)
 	return &model.TalkToken{Token: token, Room: room, Identity: identity, Path: "/rtc",
 		ExpiresAt: now.Add(livekit.TokenTTL)}, nil
+}
+
+// RecordCall is the resolver for the recordCall field.
+func (r *mutationResolver) RecordCall(ctx context.Context, call string, peer *string, group *string, on bool) (*model.CallRecording, error) {
+	room, conv, err := r.callConversation(ctx, call, peer, group)
+	if err != nil {
+		return nil, err
+	}
+	// The caller asks, or stops asking: the call is kept while anyone asks (Recorder.Ask).
+	s, err := r.Recorder.Ask(call, room, conv, conv.Owner, on)
+	if err != nil {
+		log.Printf("recordCall: keeping call %s: %v", call, err)
+		return nil, fmt.Errorf("LiveKit isn't answering")
+	}
+	log.Printf("Call %s: %s %s recording", call, conv.Owner, map[bool]string{true: "started", false: "stopped"}[on])
+	return r.callRecording(conv.Owner, call, s), nil
 }
 
 // CallRecording is the resolver for the callRecording field.

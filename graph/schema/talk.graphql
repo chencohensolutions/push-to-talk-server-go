@@ -17,8 +17,8 @@ extend type Mutation {
   A token to join call's own LiveKit room (phase 6, video calls), in the conversation with peer or group, after the
   same checks; call is 32 hex digits the caller's phone made and sent in its encrypted call invite, with the call's
   fresh media key. The first callToken binds the id to its conversation (INVALID for another one). The room takes at
-  most livekit.max_call_devices from config.json (32 by default). The server keeps the call (callRecording) unless
-  livekit.keep_calls is false. LIVE_OFF without LiveKit.
+  most livekit.max_call_devices from config.json (32 by default). The server keeps the call only while someone in it
+  asks (recordCall). LIVE_OFF without LiveKit.
   """
   callToken(call: ID!, peer: String, group: ID): TalkToken!
 }
@@ -39,11 +39,22 @@ type TalkToken {
 }
 
 # --- Saved calls (2026-11-22) --------------------------------------------------------------------------------------
-# See docs/messaging.md, "Saved calls". The server keeps every call (livekit.keep_calls, on by default): from the
-# call's first callToken it is in the call's room as a hidden participant and keeps each participant's audio and
-# video exactly as LiveKit carried them, still encrypted end to end with the call's key, and never deletes them. The
+# See docs/messaging.md, "Saved calls". The server keeps a call only while someone in it records (recordCall;
+# livekit.keep_calls, on by default, allows it): then it is in the call's room as a hidden participant and keeps
+# each participant's audio and video exactly as LiveKit carried them, still encrypted end to end with the call's key, and never deletes them. The
 # phones in the call download and decrypt them, without re-encoding. Codes: as callToken, plus RECORDING_OFF when
 # this server doesn't keep calls.
+
+extend type Mutation {
+  """
+  Keeps call on the server while someone in it records (2026-11-22, hen: only when a user records): on true the
+  caller asks for it, on false stops asking. The recorder joins the call's room on the first ask and leaves when
+  nobody asks any more (or the call empties). Phones show who records (the Recording badge, carried in the call's
+  own encrypted messages). The same checks as callToken; RECORDING_OFF when livekit.keep_calls is false. Answers the
+  call's saving as the caller sees it.
+  """
+  recordCall(call: ID!, peer: String, group: ID, on: Boolean!): CallRecording!
+}
 
 extend type Query {
   "A call's saved streams so far, for whoever may read them (who was in the call), and whether it is kept now."
