@@ -75,6 +75,19 @@ type server struct {
 	liveRestart chan struct{}
 }
 
+// removedUser drops what a removed user left besides its devices: its pending invites, so a user added again by the
+// same name doesn't find them counted against it (2026-11-22: hen, re-added, couldn't invite).
+func (s *server) removedUser(user string) {
+	if s.invites == nil {
+		return
+	}
+	if n, err := s.invites.Store.CancelAll(user); err != nil {
+		log.Printf("User %s removed, but its invites couldn't be canceled: %v", user, err)
+	} else if n > 0 {
+		log.Printf("User %s removed: canceled its %d pending invites", user, n)
+	}
+}
+
 // restartLiveKit asks livekit.Run to start LiveKit again, and says whether this server runs it.
 func (s *server) restartLiveKit() bool {
 	if s.liveRestart == nil {

@@ -58,7 +58,8 @@ Removed user hen and revoked 1 of its devices
   is the CN of the user's certificates and may become a file or folder name later.
 - `user remove` takes the user out of `users.json` (its certificates are refused from then on, since `identify`
   finds no user) and revokes all its devices, so a user added again by the same name doesn't get them back. A code
-  made for the user before is refused too (`enroll.Service.UserExists`).
+  made for the user before is refused too (`enroll.Service.UserExists`), and its pending invites are canceled, so a
+  user added again by the same name starts with none counted against it and the old links don't work.
 - Names are unique in any case: `user add Hen` is refused beside `hen` (`auth.Users.Add`), so two users can't look
   the same.
 - `users.json` also keeps each user's public identity key (`identity_key`), set by the first device's
