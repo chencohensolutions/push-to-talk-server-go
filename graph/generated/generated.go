@@ -38,6 +38,16 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	AppRelease struct {
+		ApkURL      func(childComplexity int) int
+		Notes       func(childComplexity int) int
+		PublishedAt func(childComplexity int) int
+		Sha256      func(childComplexity int) int
+		Size        func(childComplexity int) int
+		Tag         func(childComplexity int) int
+		Version     func(childComplexity int) int
+	}
+
 	CallRecording struct {
 		Call      func(childComplexity int) int
 		Recording func(childComplexity int) int
@@ -216,6 +226,7 @@ type ComplexityRoot struct {
 	}
 
 	Query struct {
+		AppRelease        func(childComplexity int) int
 		Blocked           func(childComplexity int) int
 		CallRecording     func(childComplexity int, call string, peer *string, group *string) int
 		Contacts          func(childComplexity int) int
@@ -306,6 +317,7 @@ type QueryResolver interface {
 	EnrollmentPreview(ctx context.Context, code string) (model.EnrollmentPreviewResult, error)
 	ServerInfo(ctx context.Context) (*model.ServerInfo, error)
 	Me(ctx context.Context) (*model.Me, error)
+	AppRelease(ctx context.Context) (*model.AppRelease, error)
 	Groups(ctx context.Context) ([]*model.Group, error)
 	Invites(ctx context.Context) ([]*model.Invite, error)
 	InvitePreview(ctx context.Context, code string) (model.InvitePreviewResult, error)
@@ -331,6 +343,49 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	ec := newExecutionContext(nil, e, nil)
 	_ = ec
 	switch typeName + "." + field {
+
+	case "AppRelease.apkUrl":
+		if e.ComplexityRoot.AppRelease.ApkURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AppRelease.ApkURL(childComplexity), true
+	case "AppRelease.notes":
+		if e.ComplexityRoot.AppRelease.Notes == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AppRelease.Notes(childComplexity), true
+	case "AppRelease.publishedAt":
+		if e.ComplexityRoot.AppRelease.PublishedAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AppRelease.PublishedAt(childComplexity), true
+	case "AppRelease.sha256":
+		if e.ComplexityRoot.AppRelease.Sha256 == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AppRelease.Sha256(childComplexity), true
+	case "AppRelease.size":
+		if e.ComplexityRoot.AppRelease.Size == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AppRelease.Size(childComplexity), true
+	case "AppRelease.tag":
+		if e.ComplexityRoot.AppRelease.Tag == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AppRelease.Tag(childComplexity), true
+	case "AppRelease.version":
+		if e.ComplexityRoot.AppRelease.Version == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AppRelease.Version(childComplexity), true
 
 	case "CallRecording.call":
 		if e.ComplexityRoot.CallRecording.Call == nil {
@@ -1091,6 +1146,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Presence.User(childComplexity), true
 
+	case "Query.appRelease":
+		if e.ComplexityRoot.Query.AppRelease == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Query.AppRelease(childComplexity), true
 	case "Query.blocked":
 		if e.ComplexityRoot.Query.Blocked == nil {
 			break
@@ -1463,6 +1524,36 @@ func newExecutionContext(
 }
 
 var sources = []*ast.Source{
+	{Name: "../schema/app.graphql", Input: `# --- App updates ----------------------------------------------------------------------------------------------------
+# See docs/install.md, "App updates". The server follows the app's GitHub releases once an hour and pushes
+# {"kind": "app_update"} to every phone when a new one is out, so phones don't ask GitHub on a timer. A phone reads
+# appRelease when the app opens and when that push arrives.
+
+extend type Query {
+  """
+  The app's latest release that the server has seen (pre-releases left out), or null when the server doesn't follow
+  the releases (app_releases "none") or hasn't read them yet. A phone compares version with its own, downloads apkUrl
+  and installs it only when the file's SHA-256 is sha256 and it is signed with the phone's own app key.
+  """
+  appRelease: AppRelease
+}
+
+type AppRelease {
+  "The release's tag: v1.0.3."
+  tag: String!
+  "The version in the APK's name: 1.0.3 (versionName)."
+  version: String!
+  "The APK's address (GitHub's release download), https."
+  apkUrl: String!
+  "The APK's size in bytes."
+  size: Int!
+  "The APK's SHA-256, lowercase hex, from the release's SHA256SUMS."
+  sha256: String!
+  "The release's notes, Markdown; null when it has none."
+  notes: String
+  publishedAt: Time!
+}
+`, BuiltIn: false},
 	{Name: "../schema/discovery.graphql", Input: `# Finding the server when its address changes (docs/discovery.md).
 
 extend type ServerInfo {
@@ -2032,9 +2123,9 @@ type LinkCode {
 
 extend type Mutation {
   """
-  A token to join the LiveKit room of the conversation with peer (a contact or fellow group member) or of group (one
-  of the two), for 10 minutes, as identity "user.device". The phone connects LiveKit's client to this server's
-  address with the path /rtc. LIVE_OFF when the server has no LiveKit.
+  A token to join the LiveKit room of the conversation with peer (a contact only: a fellow group member who isn't one
+  is reached in the group) or of group (one of the two), for 10 minutes, as identity "user.device". The phone
+  connects LiveKit's client to this server's address with the path /rtc. LIVE_OFF when the server has no LiveKit.
   """
   talkToken(peer: String, group: ID): TalkToken!
   """
@@ -2070,7 +2161,7 @@ type TalkToken {
 # this server doesn't keep calls.
 
 extend type Query {
-  "A call's saved streams so far, for whoever may read them (the call's conversation), and whether it is kept now."
+  "A call's saved streams so far, for whoever may read them (who was in the call), and whether it is kept now."
   callRecording(call: ID!, peer: String, group: ID): CallRecording!
 }
 
@@ -2119,6 +2210,26 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // childFields_* functions provide shared child field context lookups.
 // Each function is generated once per unique object type, deduplicating the
 // switch statements that were previously inlined in every fieldContext_* function.
+
+func (ec *executionContext) childFields_AppRelease(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "tag":
+		return ec.fieldContext_AppRelease_tag(ctx, field)
+	case "version":
+		return ec.fieldContext_AppRelease_version(ctx, field)
+	case "apkUrl":
+		return ec.fieldContext_AppRelease_apkUrl(ctx, field)
+	case "size":
+		return ec.fieldContext_AppRelease_size(ctx, field)
+	case "sha256":
+		return ec.fieldContext_AppRelease_sha256(ctx, field)
+	case "notes":
+		return ec.fieldContext_AppRelease_notes(ctx, field)
+	case "publishedAt":
+		return ec.fieldContext_AppRelease_publishedAt(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type AppRelease", field.Name)
+}
 
 func (ec *executionContext) childFields_CallRecording(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 	switch field.Name {
@@ -3095,6 +3206,167 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _AppRelease_tag(ctx context.Context, field graphql.CollectedField, obj *model.AppRelease) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AppRelease_tag(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Tag, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_AppRelease_tag(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AppRelease", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _AppRelease_version(ctx context.Context, field graphql.CollectedField, obj *model.AppRelease) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AppRelease_version(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Version, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_AppRelease_version(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AppRelease", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _AppRelease_apkUrl(ctx context.Context, field graphql.CollectedField, obj *model.AppRelease) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AppRelease_apkUrl(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ApkURL, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_AppRelease_apkUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AppRelease", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _AppRelease_size(ctx context.Context, field graphql.CollectedField, obj *model.AppRelease) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AppRelease_size(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Size, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
+			return ec.marshalNInt2int(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_AppRelease_size(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AppRelease", field, false, false, errors.New("field of type Int does not have child fields"))
+}
+
+func (ec *executionContext) _AppRelease_sha256(ctx context.Context, field graphql.CollectedField, obj *model.AppRelease) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AppRelease_sha256(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Sha256, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_AppRelease_sha256(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AppRelease", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _AppRelease_notes(ctx context.Context, field graphql.CollectedField, obj *model.AppRelease) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AppRelease_notes(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Notes, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_AppRelease_notes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AppRelease", field, false, false, errors.New("field of type String does not have child fields"))
+}
+
+func (ec *executionContext) _AppRelease_publishedAt(ctx context.Context, field graphql.CollectedField, obj *model.AppRelease) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AppRelease_publishedAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PublishedAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_AppRelease_publishedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AppRelease", field, false, false, errors.New("field of type Time does not have child fields"))
+}
 
 func (ec *executionContext) _CallRecording_call(ctx context.Context, field graphql.CollectedField, obj *model.CallRecording) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
@@ -6216,6 +6488,38 @@ func (ec *executionContext) fieldContext_Query_me(_ context.Context, field graph
 	return fc, nil
 }
 
+func (ec *executionContext) _Query_appRelease(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_appRelease(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Query().AppRelease(ctx)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.AppRelease) graphql.Marshaler {
+			return ec.marshalOAppRelease2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐAppRelease(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Query_appRelease(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_AppRelease(ctx, field)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_groups(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -8811,6 +9115,72 @@ func (ec *executionContext) _InvitePreviewResult(ctx context.Context, sel ast.Se
 
 // region    **************************** object.gotpl ****************************
 
+var appReleaseImplementors = []string{"AppRelease"}
+
+func (ec *executionContext) _AppRelease(ctx context.Context, sel ast.SelectionSet, obj *model.AppRelease) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, appReleaseImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("AppRelease")
+		case "tag":
+			out.Values[i] = ec._AppRelease_tag(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "version":
+			out.Values[i] = ec._AppRelease_version(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "apkUrl":
+			out.Values[i] = ec._AppRelease_apkUrl(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "size":
+			out.Values[i] = ec._AppRelease_size(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sha256":
+			out.Values[i] = ec._AppRelease_sha256(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "notes":
+			out.Values[i] = ec._AppRelease_notes(ctx, field, obj)
+		case "publishedAt":
+			out.Values[i] = ec._AppRelease_publishedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.Deferred, int32(min(len(deferred), math.MaxInt32)))
+
+	for label, dfs := range deferred {
+		ec.ProcessDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var callRecordingImplementors = []string{"CallRecording"}
 
 func (ec *executionContext) _CallRecording(ctx context.Context, sel ast.SelectionSet, obj *model.CallRecording) graphql.Marshaler {
@@ -10242,6 +10612,25 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "appRelease":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_appRelease(ctx, field)
 				return res
 			}
 
@@ -11885,6 +12274,13 @@ func (ec *executionContext) marshalN__TypeKind2string(ctx context.Context, sel a
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) marshalOAppRelease2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐAppRelease(ctx context.Context, sel ast.SelectionSet, v *model.AppRelease) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._AppRelease(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOBoolean2bool(ctx context.Context, v any) (bool, error) {

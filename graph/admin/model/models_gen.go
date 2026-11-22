@@ -6,6 +6,16 @@ import (
 	"time"
 )
 
+// What checkAppRelease found.
+type AppReleaseCheck struct {
+	Tag     string `json:"tag"`
+	Version string `json:"version"`
+	// The server hadn't seen this release before.
+	New bool `json:"new"`
+	// How many devices were pushed app_update (devices with an FCM token); 0 when nothing was sent.
+	Pushed int `json:"pushed"`
+}
+
 type EnrollmentCode struct {
 	Code      string    `json:"code"`
 	User      string    `json:"user"`

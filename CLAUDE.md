@@ -28,7 +28,7 @@ The docs describe what is built, and must be kept in step with the code in the s
   `push_kind`, the FCM data message, priorities, debounce), presence (`presence`, the `Presence` frame,
   `setPresenceVisible`), talk (floor control, `TalkStart`/`TalkState`/`ClipSegment`), live talk (`talkToken`, `/rtc`, rooms), calls (`callToken`), saved calls (`callRecording`, the recorder), blobs (`/blob/<id>`: clips,
   voice messages, attachments), the queue in `ptt.db`, linking (PROVISIONING) and what revocation does to a socket.
-- [docs/install.md](docs/install.md): `ptt-server setup`, LiveKit (`livekit`, its files, the program), the `fcm` setting and its service-account key, the Windows
+- [docs/install.md](docs/install.md): `ptt-server setup`, app updates (`app_releases`, `appRelease`, the `app_update` push), LiveKit (`livekit`, its files, the program), the `fcm` setting and its service-account key, the Windows
   service, ports, versions, and what Journal has that this server intentionally leaves out (media, search, faces,
   copies, peers and swaps, indexes, ONNX, vips, jxl, bundle downloads, installer, releases, self-update).
 
@@ -58,6 +58,7 @@ go run . user add <name> | user remove <name> | users              # admin comma
 go run . enroll-code <user> | devices [user] | revoke <serial>
 go run . id | discovery                           # this server's id; check the DHT and the router from here
 go run . livekit update [version]                 # fetch LiveKit's release, check it, swap it in, restart it
+go run . app-update [--push]                      # read the app's release now; push app_update if new (or always)
 ```
 
 After editing `proto/ptt.proto`, regenerate `proto/pttv1/ptt.pb.go` (committed). protoc comes from Maven Central,
@@ -73,7 +74,7 @@ bin/protoc --plugin=protoc-gen-go=bin/protoc-gen-go --go_out=. \
 
 - The admin commands read `config.json` and `admin.token` in the current folder (or beside the program), so run them
   from the server folder.
-- `config.json`, `certs/`, `users.json`, `devices.json`, `devices.revoked.json`, `pairs.json`, `groups.json`, `blobs/`, `livekit.yaml`, `livekit.keys`, `invites.json`,
+- `config.json`, `certs/`, `users.json`, `devices.json`, `devices.revoked.json`, `pairs.json`, `groups.json`, `blobs/`, `livekit.yaml`, `livekit.keys`, `invites.json`, `app-release.json`,
   `ptt.db`, `admin.token` and the FCM service-account key (`*-firebase-adminsdk-*.json`) are gitignored local state.
   `config.example.json` shows the shape. A second server for testing runs from its own folder with its own `port`
   and `admin_addr`, and `"port_mapping": false` so it leaves the router to the real one (docs/install.md).
@@ -129,6 +130,8 @@ fields); introspection is blocked too. Resolvers get the user with `auth.FromCon
 - `push`: FCM's HTTP v1 API (`fcm.go`: the service account, the RS256 JWT sign-in, standard library only) and the
   `Pusher` (the kinds, priorities and TTLs, the per-device debounce, retries, dropping gone tokens).
 - `proto`: `ptt.proto` and its generated Go code in `proto/pttv1` (google.golang.org/protobuf).
+- `apprelease`: follows the app's GitHub releases hourly (`app_releases`, `app-release.json`), answers `appRelease`
+  and has the `Pusher` send `app_update` to every phone for a new one (or on `ptt-server app-update --push`) (docs/install.md, "App updates").
 - `version`: `version/VERSION`.
 
 ## Conventions

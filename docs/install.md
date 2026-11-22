@@ -179,6 +179,36 @@ came before 1.0.0). `ptt-server version` prints it with the build's commit from 
 GitHub releases `v1.0.0` and on, with ptt-server built for each platform (`CGO_ENABLED=0 go build -trimpath`) and
 their SHA-256 sums.
 
+## App updates
+
+The server tells the phones when a new release of the Talk app is out, so no phone asks GitHub on a timer (2026-11-22,
+hen). Package `apprelease` reads `https://api.github.com/repos/<app_releases>/releases/latest` when the server starts
+and every hour after (one request for the whole server). GitHub's "latest" leaves out pre-releases, so the dev builds
+published as pre-releases are never offered. A release counts once it has its `talk-<version>.apk` and a
+`SHA256SUMS` line for it; until then it is tried again the next hour.
+
+The latest release seen is kept in `app-release.json` (`app_release_file`), so a restart doesn't announce it again.
+When the hourly read finds a release it hadn't seen, the server sends every device with an FCM token the push
+`app_update` (normal priority, kept a week; docs/messaging.md, "Push"). The first release a new server ever sees is
+kept without a push: a phone that needs it finds it when the app opens.
+
+`appRelease` (certificate required) answers the release: its tag, version, the APK's address on GitHub, size and
+SHA-256, and its notes; null before the first read or with the watch off. A phone reads it when the app opens and
+when `app_update` arrives. It downloads the APK from GitHub and installs it only when the file's SHA-256 matches and
+it is signed with the phone's own app key. Android asks the user to confirm the install.
+
+**By hand.** `ptt-server app-update` (run in the server folder, like the other admin commands) has the running server
+read the release now instead of at the next hour, and push `app_update` if it is new. `ptt-server app-update --push`
+pushes the latest release to every phone even when it was announced before: for phones that missed the push, or after
+a release's APK was replaced. Both print the release and how many devices were pushed. Restarting the server also
+reads the release at once, and pushes a new one, but it drops every connection and call for a few seconds and never
+pushes a release again.
+
+| config.json | Default | |
+|---|---|---|
+| `app_releases` | `chencohensolutions/push-to-talk-kmp` | The GitHub repository (owner/name) the app is released from; `"none"` turns the watch off (no `app_update`, `appRelease` null). |
+| `app_release_file` | `app-release.json` | The latest release seen. |
+
 ## What is not here from Journal
 
 journal-server-go has much this server intentionally leaves out: media storage, uploads and previews, search, faces,

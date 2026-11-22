@@ -22,6 +22,7 @@ import (
 	"github.com/99designs/gqlgen/graphql/handler/lru"
 	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
+	"github.com/chencohensolutions/push-to-talk-server-go/apprelease"
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	"github.com/chencohensolutions/push-to-talk-server-go/blobs"
 	"github.com/chencohensolutions/push-to-talk-server-go/contacts"
@@ -64,6 +65,8 @@ type server struct {
 	rtc      http.Handler
 	// Saves calls (recordCall); nil without LiveKit.
 	recorder *recorder.Recorder
+	// Follows the app's releases and pushes app_update to the phones; nil when app_releases is "none".
+	appReleases *apprelease.Watcher
 	// liveRestart restarts the livekit-server this server runs (restartLiveKit); nil when it runs none.
 	liveRestart chan struct{}
 }
@@ -106,6 +109,10 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 		go d.publisher.Run(running)
 	}
 	go s.relay.Run(running)
+	if s.appReleases != nil {
+		log.Printf("App releases: followed hourly at github.com/%s; phones are pushed app_update for a new one", config.AppReleases)
+		go s.appReleases.Run(running)
+	}
 	if binary := liveKitBinary(config); binary != "" {
 		s.liveRestart = make(chan struct{}, 1)
 		go livekit.Run(running, binary, config.LiveKit.ConfigFile, *s.liveKeys, s.liveRestart)
@@ -212,6 +219,15 @@ func openServer(config auth.AppConfig) (*server, error) {
 	} else {
 		log.Printf("Live talk: off (no livekit in config.json); talk goes by the clip path")
 	}
+	if config.AppReleasesOn() {
+		pusher := s.relay.Push
+		s.appReleases, err = apprelease.Open(config.AppReleases, config.AppReleaseFile, func(apprelease.Release) int {
+			return pusher.AppUpdate()
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to open the app release: %w", err)
+		}
+	}
 	if config.InvitesOn() {
 		invites, err := invite.Open(config.InvitesFile, time.Now)
 		if err != nil {
@@ -303,7 +319,8 @@ func (s *server) newMux() *http.ServeMux {
 func (s *server) newGraphQLServer() *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
 		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Invites: s.invites, Now: time.Now, LiveKeys: s.liveKeys, Recorder: s.recorder,
-			Version: version.String(),
+			AppReleases: s.appReleases,
+			Version:     version.String(),
 			Discovery: func() *model.ServerDiscovery {
 				if s.discovery == nil {
 					return nil

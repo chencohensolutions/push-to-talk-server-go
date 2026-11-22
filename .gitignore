@@ -56,3 +56,4 @@ smtp.password
 !/blobs/*.go
 livekit.keys
 livekit.yaml
+app-release.json

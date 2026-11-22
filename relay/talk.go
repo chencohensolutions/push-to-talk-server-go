@@ -91,7 +91,9 @@ func (r *Relay) conversation(from store.Device, peer, group string) ([]listener,
 		return nil, pb.SendResult_UNKNOWN_USER, "no such user"
 	case r.Book.Blocked(from.User, peer):
 		return nil, pb.SendResult_BLOCKED, "blocked"
-	case !r.Book.Paired(from.User, peer) && !r.ShareGroup(from.User, peer):
+	case !r.Book.Paired(from.User, peer):
+		// 2026-11-22 (hen): one-to-one talk, clips and calls are for contacts only. Sharing a group isn't enough: a
+		// group member who isn't a contact reaches the user inside the group.
 		return nil, pb.SendResult_NOT_PAIRED, "not a contact"
 	}
 	for _, user := range []string{peer, from.User} {

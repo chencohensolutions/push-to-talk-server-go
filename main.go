@@ -31,6 +31,8 @@ const usage = `usage:
                                       (as administrator); firewall makes only the rules
   ptt-server livekit update [version] put LiveKit's latest release (or that version) beside ptt-server, checked
                                       against its checksums, and have the running server restart LiveKit
+  ptt-server app-update [--push]      read the app's latest GitHub release now and push app_update to the phones
+                                      if it is new; --push pushes it even if it was announced before
 
 The commands but setup, service, id and discovery talk to the running server's admin API.
 `
