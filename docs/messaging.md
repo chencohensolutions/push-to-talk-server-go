@@ -93,7 +93,8 @@ Who may reach whom is in `pairs.json` (`pairs_file`; package `contacts`, written
   registrationId registeredAt current }]` is the caller's own user's enrolled devices (`registrationId` null until a
   device uploaded keys).
 
-Groups (phase 4) will add "shares a group" to who may reach whom.
+Members of one group may also send each other one-to-one envelopes, so they can hand out the group's sender keys,
+but one-to-one calls and talk stay for contacts (see Talk and Calls).
 
 ## Groups
 
@@ -158,7 +159,9 @@ the server makes, `IDENTITY_KEY_CHANGED` and `PAIRED`.
    `UNKNOWN_USER` when it isn't enrolled).
 2. Each ciphertext is at most 256 KB (`TOO_LARGE`); a frame is at most 4 MB, or the server closes the connection.
 3. The other user exists (`UNKNOWN_USER`), neither blocked the other (`BLOCKED`), and they are paired, or every
-   envelope for that user carries the same unused pairing token of that user (`NOT_PAIRED`).
+   envelope for that user carries the same unused pairing token of that user, or they share a group (`NOT_PAIRED`).
+   A call invite (`push_kind` `PUSH_CALL`) goes only to a contact: 2026-11-22 (hen), group members who aren't
+   contacts call each other in the group.
 4. The envelopes cover **exactly** the active devices of the recipient and the sender's other active devices, so all
    the sender's phones show what was sent (`STALE_DEVICES`, like Signal's mismatched devices). An envelope's optional
    `recipient_registration_id` must be the device's current one. The refusal lists the active devices of both users
@@ -266,9 +269,9 @@ Phase 5a, the clip path (2026-11-22). The server referees each conversation's fl
 audio is AES-256-GCM made by the talker's phone with a key that goes end to end in an encrypted "clip start" message
 (an ordinary Send), so the server stores and forwards ciphertext only. Frames on `/ws` (`proto/ptt.proto`):
 
-- **`TalkStart`** `{burst_id, peer | group}`: the phone takes the floor of a one-to-one conversation (a contact, or a
-  fellow group member) or a group (a member). `burst_id` is 32 lowercase hex digits made by the phone; it is the
-  clip's id too. The answer is a `TalkState`: `GRANTED`, `BUSY` (with who holds the floor) or `REFUSED` (`refusal` is
+- **`TalkStart`** `{burst_id, peer | group}`: the phone takes the floor of a one-to-one conversation (a contact only:
+  2026-11-22, hen, a fellow group member who isn't a contact is reached in the group) or a group (a member).
+  `burst_id` is 32 lowercase hex digits made by the phone; it is the clip's id too. The answer is a `TalkState`: `GRANTED`, `BUSY` (with who holds the floor) or `REFUSED` (`refusal` is
   `NOT_PAIRED`, `BLOCKED`, `NOT_MEMBER`, `UNKNOWN_USER` or `INVALID`). The same TalkStart again is GRANTED again.
 - Every other active device of the conversation (the other user's, the talker's own other devices; in a group every
   member's but those blocked either way) gets **`STARTED`**, live only. `peer` is the conversation as that device sees
@@ -337,8 +340,10 @@ home videos. It holds the ciphertext only, so a kept call can be played only by 
   when keeping began, and its tracks (blob id, identity, kind, codec, when it began, size, complete) that the caller
   may read. A phone reads each track with `GET /blob/<id>`, decrypts the frames with the call's key, and writes one
   Matroska file: a video and an audio track per person, lined up by `recordingStartedAt`, without re-encoding.
-- **Who may read a kept call.** Only the people in that conversation, over the same mTLS and permission checks as
-  every other blob. The server holds ciphertext, so it can never watch. (The app's own per-phone "Save this call"
+- **Who may read a kept call.** 2026-11-22 (hen): only the people who were in that call, meaning a device of theirs
+  sent a stream the recorder kept, and who are still in that conversation, over the same mTLS and permission checks
+  as every other blob. A group member who stayed out of the call, or joined the group later, isn't listed its tracks
+  by `callRecording` and is refused them on `/blob`. The server holds ciphertext, so it can never watch. (The app's own per-phone "Save this call"
   from phase 6b is separate.)
 - **Everyone in the call is told.** 2026-11-22 (hen): calls are never kept silently. `serverInfo.keepsCalls` says
   the server keeps calls, and while it is true every phone in a call shows a standing "This call is being saved"

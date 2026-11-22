@@ -19,6 +19,7 @@ import (
 	"github.com/chencohensolutions/push-to-talk-server-go/auth"
 	"github.com/chencohensolutions/push-to-talk-server-go/blobs"
 	"github.com/chencohensolutions/push-to-talk-server-go/livekit"
+	pb "github.com/chencohensolutions/push-to-talk-server-go/proto/pttv1"
 	"github.com/chencohensolutions/push-to-talk-server-go/recorder"
 	"github.com/chencohensolutions/push-to-talk-server-go/store"
 	lksdk "github.com/livekit/server-sdk-go/v2"
@@ -367,5 +368,90 @@ func TestCallsAreKept(t *testing.T) {
 	// serverInfo says calls are kept.
 	if r := env.graphql(t, hen.client, `{ serverInfo { keepsCalls } }`, nil); string(r.Data["serverInfo"]) != `{"keepsCalls":true}` {
 		t.Fatalf("serverInfo.keepsCalls: %s", r.Data["serverInfo"])
+	}
+}
+
+// 2026-11-22 (hen): one-to-one calls and talk are for contacts only, and a kept call is only for the people who were
+// in it. dana and eli share hen's group but aren't contacts: they still exchange one-to-one messages (the group's
+// sender keys travel that way) but can't call or talk to each other one to one, and only those who joined a group
+// call may list and download its tracks.
+func TestCallsAreForContactsAndKeptCallsForThoseInThem(t *testing.T) {
+	env, _ := newLiveEnv(t)
+	env.recorder.Join = func(url, token string, cb *lksdk.RoomCallback) (recorder.Room, error) {
+		return &fakeRoom{others: 1}, nil
+	}
+	env.addUsers(t, "hen", "dana", "eli")
+	hen, dana, eli := env.phone(t, "hen"), env.phone(t, "dana"), env.phone(t, "eli")
+	for _, p := range []*phone{hen, dana, eli} {
+		env.uploadKeys(t, p, ecKey())
+	}
+	henSocket, danaSocket := env.socket(t, hen), env.socket(t, dana)
+	env.pair(t, dana, []store.Device{dev(dana)}, hen, henSocket)
+	env.pair(t, eli, []store.Device{dev(eli)}, hen, henSocket)
+	g := env.createGroup(t, hen)
+	for _, p := range []*phone{dana, eli} {
+		if _, code := env.groupOp(t, hen, "inviteToGroup", g.ID, p.user); code != "" {
+			t.Fatalf("invite %s: %s", p.user, code)
+		}
+		if _, code := env.groupOp(t, p, "acceptGroupInvite", g.ID, ""); code != "" {
+			t.Fatalf("%s accepting: %s", p.user, code)
+		}
+	}
+
+	// A one-to-one message between the two group members goes through; a call invite doesn't.
+	if r := danaSocket.send(t, pb.Envelope_PREKEY_MESSAGE, "", dev(eli)); r.Status != pb.SendResult_ACCEPTED {
+		t.Fatalf("a message to a group member: %v %s", r.Status, r.Detail)
+	}
+	invite := &pb.Send{ClientId: "call-invite", PushKind: pb.PushKind_PUSH_CALL, Envelopes: []*pb.Envelope{{
+		RecipientUser: "eli", RecipientDevice: uint32(eli.number), Type: pb.Envelope_MESSAGE, Ciphertext: []byte("invite")}}}
+	danaSocket.write(t, &pb.Frame{Kind: &pb.Frame_Send{Send: invite}})
+	if r := danaSocket.next(t, "send_result").GetSendResult(); r.Status != pb.SendResult_NOT_PAIRED {
+		t.Fatalf("a call invite to a group member who isn't a contact: %v", r.Status)
+	}
+	const callMutation = `mutation($c: ID!, $p: String, $g: ID) { callToken(call: $c, peer: $p, group: $g) { room } }`
+	if r := env.graphql(t, dana.client, callMutation, map[string]any{"c": burstID(), "p": "eli"}); errorCode(r) != "NOT_PAIRED" {
+		t.Fatalf("callToken to a group member who isn't a contact: %s", errorCode(r))
+	}
+	if r := env.graphql(t, dana.client, `mutation { talkToken(peer: "eli") { token } }`, nil); errorCode(r) != "NOT_PAIRED" {
+		t.Fatalf("talkToken to a group member who isn't a contact: %s", errorCode(r))
+	}
+	// A contact may still call one to one.
+	if r := env.graphql(t, dana.client, callMutation, map[string]any{"c": burstID(), "p": "hen"}); errorCode(r) != "" {
+		t.Fatalf("callToken to a contact: %s", errorCode(r))
+	}
+
+	// A group call that hen and dana joined; eli is in the group but stayed out.
+	id := burstID()
+	if r := env.graphql(t, hen.client, callMutation, map[string]any{"c": id, "g": g.ID}); errorCode(r) != "" {
+		t.Fatalf("group callToken: %s", errorCode(r))
+	}
+	var tracks []string
+	for _, identity := range []string{"hen.1", "dana.1"} {
+		blob := burstID()
+		if err := env.recorder.Blobs.Create(blobs.Meta{ID: blob, Kind: blobs.Track, Owner: "hen", Group: g.ID,
+			Track: &blobs.TrackInfo{Call: id, Identity: identity, Media: "audio", Codec: "audio/opus"}}); err != nil {
+			t.Fatal(err)
+		}
+		env.recorder.Blobs.AppendRecord(blob, []byte("frame"), true)
+		tracks = append(tracks, blob)
+	}
+	const recQuery = `query($c: ID!, $g: ID) { callRecording(call: $c, group: $g) { tracks { blob } } }`
+	count := func(p *phone) int {
+		r := env.graphql(t, p.client, recQuery, map[string]any{"c": id, "g": g.ID})
+		if errorCode(r) != "" {
+			t.Fatalf("callRecording for %s: %s", p.user, errorCode(r))
+		}
+		var got struct{ Tracks []struct{ Blob string } }
+		json.Unmarshal(r.Data["callRecording"], &got)
+		return len(got.Tracks)
+	}
+	if count(hen) != 2 || count(dana) != 2 || count(eli) != 0 {
+		t.Fatalf("tracks listed: hen %d, dana %d, eli %d", count(hen), count(dana), count(eli))
+	}
+	if resp, _ := env.blobRequest(t, dana, "GET", tracks[0], nil, nil); resp.StatusCode != 200 {
+		t.Fatalf("dana, in the call, reading a track: %d", resp.StatusCode)
+	}
+	if resp, _ := env.blobRequest(t, eli, "GET", tracks[0], nil, nil); resp.StatusCode != 403 && resp.StatusCode != 404 {
+		t.Fatalf("eli, not in the call, reading a track: %d", resp.StatusCode)
 	}
 }

@@ -2032,9 +2032,9 @@ type LinkCode {
 
 extend type Mutation {
   """
-  A token to join the LiveKit room of the conversation with peer (a contact or fellow group member) or of group (one
-  of the two), for 10 minutes, as identity "user.device". The phone connects LiveKit's client to this server's
-  address with the path /rtc. LIVE_OFF when the server has no LiveKit.
+  A token to join the LiveKit room of the conversation with peer (a contact only: a fellow group member who isn't one
+  is reached in the group) or of group (one of the two), for 10 minutes, as identity "user.device". The phone
+  connects LiveKit's client to this server's address with the path /rtc. LIVE_OFF when the server has no LiveKit.
   """
   talkToken(peer: String, group: ID): TalkToken!
   """
@@ -2070,7 +2070,7 @@ type TalkToken {
 # this server doesn't keep calls.
 
 extend type Query {
-  "A call's saved streams so far, for whoever may read them (the call's conversation), and whether it is kept now."
+  "A call's saved streams so far, for whoever may read them (who was in the call), and whether it is kept now."
   callRecording(call: ID!, peer: String, group: ID): CallRecording!
 }
 
