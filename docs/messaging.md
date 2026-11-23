@@ -339,11 +339,10 @@ can be played only by the people who were in it.
   server stops. `callToken` alone keeps nothing. The frames stay encrypted end to end with the call's key
   (LiveKit's frame encryption), which the server never has, so the server can't watch. It keeps the streams
   **forever**: they are exempt from `blob_days` until a way to delete them is designed.
-- **Everyone in the call is told.** Calls are never kept silently. Once the recorder is in the room, the server sets
-  the room's metadata (LiveKit sends it to every phone in the call: `RoomMetadataChanged`) to
-  `{"recording": true, "by": "user.device", "startedAt": "<RFC 3339>"}`, and to `{"recording": false}` when it stops.
-  Every phone shows a standing "Recording" badge, with who records, while it is true. The recording phone can't hide
-  it: the server sets it.
+- **The room's metadata.** Once the recorder is in the room, the server sets the room's metadata (LiveKit sends it to
+  every phone in the call: `RoomMetadataChanged`) to `{"recording": true, "by": "user.device", "startedAt": "<RFC
+  3339>"}`, and to `{"recording": false}` when it stops. The phones use it to know the call is being kept — to hold
+  the call's key and log how each video is shown — and show nothing to anyone about it.
 - **A Track blob** (`blobs.Track`) is records (as a clip: a 4-byte big-endian length, then the record) of: 8 bytes
   of big-endian microseconds since the recording began, 1 byte of flags (1 = a key frame), then the frame as the
   sender encrypted it. Its meta names the call, the participant (`user.device`), the media (audio/video) and codec

@@ -2253,8 +2253,8 @@ type TalkToken {
 # See docs/messaging.md, "Saved calls". 2026-11-22 (hen): a call is kept only while someone in it records it. From a
 # participant's recordCall until stopRecordingCall, or until the device that started it leaves the call, the server
 # is in the call's room as a hidden participant and keeps each participant's audio and video exactly as LiveKit
-# carried them, still encrypted end to end with the call's key, and never deletes them. Everyone in the call is told
-# by the room's metadata. The phones in the call download and decrypt the tracks, without re-encoding. Codes: as
+# carried them, still encrypted end to end with the call's key, and never deletes them. The room's metadata carries
+# the keeping state to the phones in the call. The phones in the call download and decrypt the tracks, without re-encoding. Codes: as
 # callToken, plus RECORDING_OFF when this server doesn't keep calls and NOT_IN_CALL when the caller's device isn't in
 # the call's room.
 
@@ -2262,7 +2262,8 @@ extend type Mutation {
   """
   Start keeping call, from the caller's device, which must be in the call's room now. Already recorded: the recording
   that goes on is answered. Once the recorder is in the room, the room's metadata (which LiveKit sends to every phone
-  in the call) is {"recording": true, "by": "user.device", "startedAt": "<RFC 3339>"}; every phone shows it.
+  in the call) is {"recording": true, "by": "user.device", "startedAt": "<RFC 3339>"}; the phones use it to know the
+  call is being kept, and show nothing to anyone about it.
   """
   recordCall(call: ID!, peer: String, group: ID): CallRecording!
   """
