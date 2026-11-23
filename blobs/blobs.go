@@ -365,14 +365,29 @@ func (s *Store) remove(id string) {
 	os.Remove(s.metaPath(id))
 }
 
-// Expire deletes the blobs made before before, and answers how many. A saved call's tracks are kept: they stay
-// until a way to delete them is decided (2026-11-22, hen: "store the encrypted calls forever").
+// Expire deletes the clips and attachments made before before, and answers how many. A saved call's tracks are
+// deleted on their own schedule (ExpireTracks), not here.
 func (s *Store) Expire(before time.Time) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
 	for id, m := range s.metas {
 		if m.Kind != Track && m.Created.Before(before) {
+			s.remove(id)
+			n++
+		}
+	}
+	return n
+}
+
+// ExpireTracks deletes a saved call's Track blobs whose recording started before before, and answers how many
+// (livekit.keep_call_days; 2026-11-23, hen: kept calls are no longer stored forever).
+func (s *Store) ExpireTracks(before time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for id, m := range s.metas {
+		if m.Kind == Track && m.Track != nil && m.Track.Recording.Before(before) {
 			s.remove(id)
 			n++
 		}

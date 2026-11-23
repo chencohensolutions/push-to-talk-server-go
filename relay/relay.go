@@ -57,6 +57,8 @@ type Relay struct {
 	Blobs *blobs.Store
 	// How long a blob is kept (blob_days).
 	BlobTTL time.Duration
+	// How long a saved call's tracks are kept after recording starts (livekit.keep_call_days); 0 keeps them.
+	CallTTL time.Duration
 	// The LiveKit room API, to take cut-off devices out of rooms; nil without LiveKit.
 	Live *livekit.Client
 
@@ -481,6 +483,11 @@ func (r *Relay) Sweep() {
 	if r.Blobs != nil && r.BlobTTL > 0 {
 		if n := r.Blobs.Expire(r.Now().Add(-r.BlobTTL)); n > 0 {
 			log.Printf("Deleted %d clips and attachments older than %v", n, r.BlobTTL)
+		}
+	}
+	if r.Blobs != nil && r.CallTTL > 0 {
+		if n := r.Blobs.ExpireTracks(r.Now().Add(-r.CallTTL)); n > 0 {
+			log.Printf("Deleted %d kept-call tracks older than %v", n, r.CallTTL)
 		}
 	}
 	users, err := r.Store.KeyedUsers()

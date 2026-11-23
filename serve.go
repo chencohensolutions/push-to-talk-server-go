@@ -199,6 +199,9 @@ func openServer(config auth.AppConfig) (*server, error) {
 	}
 	s.relay.Blobs = blobStore
 	s.relay.BlobTTL = time.Duration(config.BlobDays) * 24 * time.Hour
+	if config.LiveKitOn() {
+		s.relay.CallTTL = time.Duration(config.LiveKit.KeepCallDays) * 24 * time.Hour
+	}
 	var sender push.Sender
 	if config.PushOn() {
 		fcm, err := push.LoadFCM(config.FCM.ServiceAccountFile, config.FCM.ProjectID, config.FCM.Endpoint)

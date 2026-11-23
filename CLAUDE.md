@@ -42,7 +42,7 @@ control and clips on `/ws`, `/blob`. Phase 5b, server side built: LiveKit beside
 setup writes `livekit.yaml` and `livekit.keys`), `/rtc`, `talkToken`, UDP 7882 and TCP 7881 in `serverPorts`. Phase 6, server side built: `callToken` (a room per call, `livekit.max_call_devices`, 32 by default); calls are
 signalled end to end. While someone in a call records it (`recordCall`, `stopRecordingCall`), the server keeps its encrypted
 streams (package `recorder`, `livekit.keep_calls`), which only the family in the call can decrypt; `callRecording`
-lists them.
+lists them, and the hourly sweep deletes them `livekit.keep_call_days` days (default 7) after recording starts.
 
 **Platforms.** The owner's server is a Windows PC, development happens on a Mac, and the server should run on
 Windows, macOS and Linux: no cgo, Windows-safe file names, per-OS files (`*_windows.go`, `*_other.go`). CI runs

@@ -337,8 +337,9 @@ can be played only by the people who were in it.
   arrive. Asking again answers the recording that goes on. `stopRecordingCall` (anyone in the room) stops it; it
   also stops when the device that started it leaves the room, when the room empties, after 4 hours, or when the
   server stops. `callToken` alone keeps nothing. The frames stay encrypted end to end with the call's key
-  (LiveKit's frame encryption), which the server never has, so the server can't watch. It keeps the streams
-  **forever**: they are exempt from `blob_days` until a way to delete them is designed.
+  (LiveKit's frame encryption), which the server never has, so the server can't watch. It keeps the streams for
+  `livekit.keep_call_days` days (default 7) after the recording starts; the hourly sweep then deletes them
+  (`blobs.ExpireTracks`), not `blob_days`.
 - **The room's metadata.** Once the recorder is in the room, the server sets the room's metadata (LiveKit sends it to
   every phone in the call: `RoomMetadataChanged`) to `{"recording": true, "by": "user.device", "startedAt": "<RFC
   3339>"}`, and to `{"recording": false}` when it stops. The phones use it to know the call is being kept — to hold

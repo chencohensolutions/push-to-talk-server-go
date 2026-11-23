@@ -42,7 +42,8 @@ type TalkToken {
 # See docs/messaging.md, "Saved calls". 2026-11-22 (hen): a call is kept only while someone in it records it. From a
 # participant's recordCall until stopRecordingCall, or until the device that started it leaves the call, the server
 # is in the call's room as a hidden participant and keeps each participant's audio and video exactly as LiveKit
-# carried them, still encrypted end to end with the call's key, and never deletes them. The room's metadata carries
+# carried them, still encrypted end to end with the call's key, and deletes them keep_call_days days (default 7)
+# after the recording starts. The room's metadata carries
 # the keeping state to the phones in the call. The phones in the call download and decrypt the tracks, without re-encoding. Codes: as
 # callToken, plus RECORDING_OFF when this server doesn't keep calls and NOT_IN_CALL when the caller's device isn't in
 # the call's room.
