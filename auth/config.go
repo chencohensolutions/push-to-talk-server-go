@@ -98,6 +98,9 @@ type LiveKitConfig struct {
 	// Whether the server may keep calls' streams, still encrypted end to end, while someone in the call records it
 	// (recordCall; default true; 2026-11-22, hen).
 	KeepCalls *bool `json:"keep_calls,omitempty"`
+	// Days a kept call's streams are held after its recording starts; the hourly sweep then deletes them
+	// (default 7; 2026-11-23, hen).
+	KeepCallDays int `json:"keep_call_days,omitempty"`
 }
 
 // KeepsCalls says whether the server keeps calls that someone records (livekit.keep_calls, default on).
@@ -105,6 +108,10 @@ func (l LiveKitConfig) KeepsCalls() bool { return l.KeepCalls == nil || *l.KeepC
 
 // DefaultMaxCallDevices is livekit.max_call_devices when config.json doesn't say: 32 (2026-11-22, hen; it was 8).
 const DefaultMaxCallDevices = 32
+
+// DefaultKeepCallDays is livekit.keep_call_days when config.json doesn't say: a kept call is deleted a week after
+// its recording starts (2026-11-23, hen).
+const DefaultKeepCallDays = 7
 
 // LiveKitOn says whether the live talk path is set up ("livekit" in config.json).
 func (c AppConfig) LiveKitOn() bool { return c.LiveKit != nil }
@@ -214,6 +221,9 @@ func (c AppConfig) WithDefaults() AppConfig {
 		}
 		if l.MaxCallDevices == 0 {
 			l.MaxCallDevices = DefaultMaxCallDevices
+		}
+		if l.KeepCallDays == 0 {
+			l.KeepCallDays = DefaultKeepCallDays
 		}
 		c.LiveKit = &l
 	}
