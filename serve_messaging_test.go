@@ -901,3 +901,43 @@ func TestTheSocketNeedsACertificate(t *testing.T) {
 		t.Fatalf("/ws without a certificate: %v %v", err, resp)
 	}
 }
+
+// An ephemeral Send (live typing's draft, 2026-11-23) reaches only the devices connected now: nothing is queued for
+// the others, and nothing comes when they connect later.
+func TestAnEphemeralSendIsNeverQueued(t *testing.T) {
+	env := newTestEnv(t)
+	env.addUsers(t, "hen")
+	handset, tablet, laptop := env.phone(t, "hen"), env.phone(t, "hen"), env.phone(t, "hen")
+	identity := ecKey()
+	env.uploadKeys(t, handset, identity)
+	env.uploadKeys(t, tablet, identity)
+	env.uploadKeys(t, laptop, identity)
+	phoneSocket, tabletSocket := env.socket(t, handset), env.socket(t, tablet)
+	send := &pb.Send{ClientId: "draft", Ephemeral: true}
+	for _, d := range []store.Device{dev(tablet), dev(laptop)} {
+		send.Envelopes = append(send.Envelopes, &pb.Envelope{RecipientUser: d.User, RecipientDevice: uint32(d.Number),
+			Type: pb.Envelope_MESSAGE, Ciphertext: []byte("draft")})
+	}
+	phoneSocket.write(t, &pb.Frame{Kind: &pb.Frame_Send{Send: send}})
+	if r := phoneSocket.next(t, "send_result").GetSendResult(); r.Status != pb.SendResult_ACCEPTED || len(r.EnvelopeIds) != 2 {
+		t.Fatalf("ephemeral send: %v", r)
+	}
+	if e := tabletSocket.envelope(t); string(e.Ciphertext) != "draft" || e.SenderUser != "hen" {
+		t.Fatalf("the connected tablet got %v", e)
+	}
+	if n, _ := env.store.QueueLength(dev(tablet)); n != 0 {
+		t.Fatalf("queued for the tablet: %d", n)
+	}
+	if n, _ := env.store.QueueLength(dev(laptop)); n != 0 {
+		t.Fatalf("queued for the laptop, not connected: %d", n)
+	}
+	// The laptop connects: nothing waits for it.
+	env.socket(t, laptop).quiet(t)
+	// The same Send without the flag is queued as always.
+	if r := phoneSocket.send(t, pb.Envelope_MESSAGE, "", dev(tablet), dev(laptop)); r.Status != pb.SendResult_ACCEPTED {
+		t.Fatalf("a plain send: %v", r)
+	}
+	if n, _ := env.store.QueueLength(dev(laptop)); n != 1 {
+		t.Fatalf("a plain send for the laptop: %d queued", n)
+	}
+}

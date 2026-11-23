@@ -262,7 +262,7 @@ func (r *Relay) route(from store.Device, send *pb.Send) *pb.SendResult {
 		if !slices.Contains(r.EnrolledDevices(from.User), int(e.GetRecipientDevice())) {
 			return refuse(pb.SendResult_UNKNOWN_USER, "device %d of %s isn't enrolled", e.GetRecipientDevice(), from.User)
 		}
-		return r.queue(from, envelopes, result)
+		return r.queue(from, envelopes, result, false)
 	}
 
 	token := ""
@@ -347,16 +347,17 @@ func (r *Relay) route(from store.Device, send *pb.Send) *pb.SendResult {
 		}
 		log.Printf("Pair request from %s to %s, by a pairing token", from.User, other)
 	}
-	return r.queue(from, envelopes, result)
+	return r.queue(from, envelopes, result, send.GetEphemeral() && token == "")
 }
 
-// queue stores the envelopes of an accepted Send and wakes the recipients' connections.
-func (r *Relay) queue(from store.Device, envelopes []*pb.Envelope, result *pb.SendResult) *pb.SendResult {
-	return r.queueIn(from, "", envelopes, result)
+// queue stores the envelopes of an accepted Send and wakes the recipients' connections; ephemeral ones only go to
+// the connections open now.
+func (r *Relay) queue(from store.Device, envelopes []*pb.Envelope, result *pb.SendResult, ephemeral bool) *pb.SendResult {
+	return r.queueIn(from, "", envelopes, result, ephemeral)
 }
 
 // queueIn is queue for envelopes of a group Send (group is its id; "" for any other Send).
-func (r *Relay) queueIn(from store.Device, group string, envelopes []*pb.Envelope, result *pb.SendResult) *pb.SendResult {
+func (r *Relay) queueIn(from store.Device, group string, envelopes []*pb.Envelope, result *pb.SendResult, ephemeral bool) *pb.SendResult {
 	now := r.Now()
 	queued := make([]store.Queued, 0, len(envelopes))
 	for _, e := range envelopes {
@@ -379,6 +380,14 @@ func (r *Relay) queueIn(from store.Device, group string, envelopes []*pb.Envelop
 		queued = append(queued, store.Queued{To: store.Device{User: out.RecipientUser, Number: int(out.RecipientDevice)},
 			ID: out.Id, Envelope: frame})
 		result.EnvelopeIds = append(result.EnvelopeIds, out.Id)
+	}
+	if ephemeral {
+		// Straight to the open connections, behind what they are sent already; nothing is stored.
+		for _, q := range queued {
+			r.liveBytes(q.To, q.Envelope)
+		}
+		result.Status = pb.SendResult_ACCEPTED
+		return result
 	}
 	if err := r.Store.Enqueue(queued, store.Limits{Envelopes: maxQueuedEnvelopes, Bytes: maxQueuedBytes}, now); err != nil {
 		result.EnvelopeIds = nil
