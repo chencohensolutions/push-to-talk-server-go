@@ -289,7 +289,9 @@ audio is AES-256-GCM made by the talker's phone with a key that goes end to end 
   dead without the server knowing yet).
 - **`ClipSegment`** `{burst_id, index, last, ciphertext}` from the talker, in order from 0 with no gaps, 1 byte to
   64 KB each (a burst may carry video too: push-to-video; a clip is at most 8 MB): the server appends it to the clip and forwards it to the conversation's connected devices. A segment
-  out of order, too large, or from anyone but the talker is answered `REFUSED` (`INVALID`).
+  out of order, too large, or from anyone but the talker is answered `REFUSED` (`INVALID`); one from the talker
+  that the clip can't take (out of order, too large) also ends the burst at once, `ENDED` with `DROPPED`, so the
+  floor isn't held until the 60 s limit (2026-11-23, hen).
 - **`TalkEnd`**, the last segment, 60 seconds, or the talker's connection dropping for 3 seconds ends the floor:
   every device of the conversation, the talker's too, gets **`ENDED`** with `RELEASED`, `TIMEOUT` or `DROPPED`. After
   a TalkEnd the clip waits up to 10 seconds for its last segment.

@@ -151,6 +151,14 @@ func (r *Relay) liveBytes(d store.Device, data []byte) bool {
 	}
 }
 
+// dropBurst ends a burst whose segment was refused (2026-11-23, hen: "something is blocking calling and sending"):
+// the clip can't go on, so its floor goes now (DROPPED) instead of being held until MaxBurst. err is the refusal's.
+func (r *Relay) dropBurst(b *burst, err error) error {
+	log.Printf("Talk: %s.%d's burst %s dropped: a segment was refused", b.talker.User, b.talker.Number, b.id)
+	r.endFloor(b, pb.TalkState_DROPPED)
+	return err
+}
+
 func talkFrame(s *pb.TalkState) *pb.Frame { return &pb.Frame{Kind: &pb.Frame_TalkState{TalkState: s}} }
 
 // talkStart answers a TalkStart from c's device.
@@ -253,15 +261,15 @@ func (r *Relay) clipSegment(ctx context.Context, c *conn, seg *pb.ClipSegment) e
 		return refuse("no burst of this device has this id")
 	case seg.GetIndex() != b.next:
 		r.talkMu.Unlock()
-		return refuse("segments go in order, with no gaps")
+		return r.dropBurst(b, refuse("segments go in order, with no gaps"))
 	case len(seg.GetCiphertext()) == 0 || len(seg.GetCiphertext()) > MaxSegmentBytes:
 		r.talkMu.Unlock()
-		return refuse("a segment holds 1 byte to 16 KB")
+		return r.dropBurst(b, refuse("a segment holds 1 byte to 16 KB"))
 	}
 	record, _ := proto.Marshal(&pb.ClipSegment{Index: seg.GetIndex(), Last: seg.GetLast(), Ciphertext: seg.GetCiphertext()})
 	if err := r.Blobs.AppendRecord(b.id, record, seg.GetLast()); err != nil {
 		r.talkMu.Unlock()
-		return refuse("the clip can't take it: " + err.Error())
+		return r.dropBurst(b, refuse("the clip can't take it: "+err.Error()))
 	}
 	b.next++
 	listeners := b.listeners

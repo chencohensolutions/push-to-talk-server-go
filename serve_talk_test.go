@@ -133,10 +133,6 @@ func TestTalkInAConversation(t *testing.T) {
 	if seg := danaSocket.segmentFrame(t); seg.Index != 0 || string(seg.Ciphertext) != "segment 0" || seg.BurstId != id {
 		t.Fatalf("the first segment, live: %v", seg)
 	}
-	henSocket.segment(t, id, 5, false)
-	if s := henSocket.talkState(t); s.Event != pb.TalkState_REFUSED {
-		t.Fatalf("a segment out of order: %v", s)
-	}
 	danaSocket.segment(t, id, 1, false)
 	if s := danaSocket.talkState(t); s.Event != pb.TalkState_REFUSED {
 		t.Fatalf("a segment from a listener: %v", s)
@@ -185,6 +181,40 @@ func TestTalkInAConversation(t *testing.T) {
 	danaSocket.ws.CloseNow()
 	if s := henSocket.talkState(t); s.Event != pb.TalkState_ENDED || s.EndReason != pb.TalkState_DROPPED || s.BurstId != second {
 		t.Fatalf("a burst whose talker dropped: %v", s)
+	}
+}
+
+// A segment out of order ends its burst at once (2026-11-23, hen: "something is blocking calling and sending"): the
+// floor is free again, not held until MaxBurst.
+func TestASegmentOutOfOrderEndsTheBurst(t *testing.T) {
+	env := newTestEnv(t)
+	env.addUsers(t, "hen", "dana")
+	hen, dana := env.phone(t, "hen"), env.phone(t, "dana")
+	env.uploadKeys(t, hen, ecKey())
+	env.uploadKeys(t, dana, ecKey())
+	henSocket, danaSocket := env.socket(t, hen), env.socket(t, dana)
+	env.pair(t, dana, []store.Device{dev(dana)}, hen, henSocket)
+	danaSocket.envelopeOf(t, pb.Envelope_PAIRED)
+
+	id := burstID()
+	if s := henSocket.talk(t, id, "dana", ""); s.Event != pb.TalkState_GRANTED {
+		t.Fatalf("talk: %v", s)
+	}
+	danaSocket.talkState(t) // STARTED
+	henSocket.segment(t, id, 0, false)
+	danaSocket.segmentFrame(t)
+	henSocket.segment(t, id, 2, false)
+	if s := henSocket.talkState(t); s.Event != pb.TalkState_REFUSED {
+		t.Fatalf("a segment with a gap: %v", s)
+	}
+	if s := henSocket.talkState(t); s.Event != pb.TalkState_ENDED || s.EndReason != pb.TalkState_DROPPED || s.BurstId != id {
+		t.Fatalf("the talker's ENDED after the refusal: %v", s)
+	}
+	if s := danaSocket.talkState(t); s.Event != pb.TalkState_ENDED || s.EndReason != pb.TalkState_DROPPED {
+		t.Fatalf("the listener's ENDED after the refusal: %v", s)
+	}
+	if s := danaSocket.talk(t, burstID(), "hen", ""); s.Event != pb.TalkState_GRANTED {
+		t.Fatalf("the floor right after: %v", s)
 	}
 }
 
