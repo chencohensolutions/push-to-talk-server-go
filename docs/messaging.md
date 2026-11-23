@@ -170,6 +170,11 @@ the server makes, `IDENTITY_KEY_CHANGED` and `PAIRED`.
 5. Every recipient device's queue has room (`QUEUE_FULL`: 10000 envelopes or 256 MB). Then all envelopes are queued
    in one transaction, or none.
 
+**Ephemeral Sends** (`ephemeral: true`, 2026-11-23, hen: live typing sends a draft as it is written) pass the same
+checks, but their envelopes go only to the recipient devices with `/ws` open now, behind what those connections are
+sent already: they are never queued (rule 5 doesn't apply), never pushed, and a device that isn't connected, or whose
+live queue is full, misses them. A pair request (an envelope with a routing token) is never ephemeral.
+
 The server fills in `id` (32 hex digits), `sender_user`, `sender_device` (from the certificate) and
 `server_timestamp`, removes `routing_token` and `recipient_registration_id`, and answers `ACCEPTED` with the ids in
 the order of the envelopes.

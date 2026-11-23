@@ -118,7 +118,7 @@ func (r *Relay) routeGroup(from store.Device, send *pb.Send, result *pb.SendResu
 		result.Status = pb.SendResult_ACCEPTED
 		return result
 	}
-	return r.queueIn(from, g.ID, envelopesOut, result)
+	return r.queueIn(from, g.ID, envelopesOut, result, send.GetEphemeral())
 }
 
 // AnnounceGroup queues a GROUP_CHANGED envelope about group g, made by user by, to every enrolled device of g's

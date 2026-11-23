@@ -115,6 +115,9 @@ message Send {
   // In a group Send: the devices the envelope is for, by user, with the registration ids the sender's sessions have
   // (0 skips that check).
   repeated UserDevices group_devices = 5;
+  // Live only (2026-11-23, hen: live typing, a draft as it is written): delivered to the recipient devices that have
+  // /ws open now, never queued and never pushed; a device that isn't connected misses it. The checks are a Send's.
+  bool ephemeral = 6;
 }
 
 // The kinds of wake-up a Send asks for. The FCM data message carries only the kind's name ("message", "sync",

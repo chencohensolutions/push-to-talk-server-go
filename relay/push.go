@@ -10,7 +10,8 @@ import (
 // no /ws open with the push the Send asked for, and answers what became of it.
 func (r *Relay) Send(from store.Device, send *pb.Send) *pb.SendResult {
 	result := r.route(from, send)
-	if result.GetStatus() != pb.SendResult_ACCEPTED {
+	if result.GetStatus() != pb.SendResult_ACCEPTED || send.GetEphemeral() {
+		// An ephemeral Send wakes nobody: it went only to the connections open.
 		return result
 	}
 	kind := PushKind(send.GetPushKind())

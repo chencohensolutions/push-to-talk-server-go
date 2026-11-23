@@ -135,6 +135,22 @@ func (r *Relay) live(d store.Device, frame *pb.Frame) bool {
 	}
 }
 
+// liveBytes is live for a frame already marshalled (an ephemeral Send's envelope).
+func (r *Relay) liveBytes(d store.Device, data []byte) bool {
+	r.mu.Lock()
+	c := r.conns[d]
+	r.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	select {
+	case c.live <- data:
+		return true
+	default:
+		return false
+	}
+}
+
 func talkFrame(s *pb.TalkState) *pb.Frame { return &pb.Frame{Kind: &pb.Frame_TalkState{TalkState: s}} }
 
 // talkStart answers a TalkStart from c's device.

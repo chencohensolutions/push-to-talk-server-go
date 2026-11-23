@@ -844,7 +844,10 @@ type Send struct {
 	Group string `protobuf:"bytes,4,opt,name=group,proto3" json:"group,omitempty"`
 	// In a group Send: the devices the envelope is for, by user, with the registration ids the sender's sessions have
 	// (0 skips that check).
-	GroupDevices  []*UserDevices `protobuf:"bytes,5,rep,name=group_devices,json=groupDevices,proto3" json:"group_devices,omitempty"`
+	GroupDevices []*UserDevices `protobuf:"bytes,5,rep,name=group_devices,json=groupDevices,proto3" json:"group_devices,omitempty"`
+	// Live only (2026-11-23, hen: live typing, a draft as it is written): delivered to the recipient devices that have
+	// /ws open now, never queued and never pushed; a device that isn't connected misses it. The checks are a Send's.
+	Ephemeral     bool `protobuf:"varint,6,opt,name=ephemeral,proto3" json:"ephemeral,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -912,6 +915,13 @@ func (x *Send) GetGroupDevices() []*UserDevices {
 		return x.GroupDevices
 	}
 	return nil
+}
+
+func (x *Send) GetEphemeral() bool {
+	if x != nil {
+		return x.Ephemeral
+	}
+	return false
 }
 
 type SendResult struct {
@@ -1681,13 +1691,14 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\x06PAIRED\x10\x06\x12\x11\n" +
 	"\rGROUP_CHANGED\x10\a\"\x17\n" +
 	"\x03Ack\x12\x10\n" +
-	"\x03ids\x18\x01 \x03(\tR\x03ids\"\xd2\x01\n" +
+	"\x03ids\x18\x01 \x03(\tR\x03ids\"\xf0\x01\n" +
 	"\x04Send\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12.\n" +
 	"\tenvelopes\x18\x02 \x03(\v2\x10.ptt.v1.EnvelopeR\tenvelopes\x12-\n" +
 	"\tpush_kind\x18\x03 \x01(\x0e2\x10.ptt.v1.PushKindR\bpushKind\x12\x14\n" +
 	"\x05group\x18\x04 \x01(\tR\x05group\x128\n" +
-	"\rgroup_devices\x18\x05 \x03(\v2\x13.ptt.v1.UserDevicesR\fgroupDevices\"\xf5\x02\n" +
+	"\rgroup_devices\x18\x05 \x03(\v2\x13.ptt.v1.UserDevicesR\fgroupDevices\x12\x1c\n" +
+	"\tephemeral\x18\x06 \x01(\bR\tephemeral\"\xf5\x02\n" +
 	"\n" +
 	"SendResult\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x121\n" +
