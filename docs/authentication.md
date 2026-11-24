@@ -118,6 +118,11 @@ only the address it went to. So a device enrolls only by a link its user receive
 - The mail holds the same `ptt://enroll?code=…&server=…&fingerprint=…&key=…&address=…` link as the QR code (below),
   built by the running server from its own discovery (`enrollmail.go`), and the server, id and code to type when the
   mail app doesn't open `ptt://` links. The app's Enroll screen takes the link pasted (its Paste button).
+- The link to tap is its web form (2026-11-24, hen: Gmail drops `ptt://` links):
+  `https://chencohensolutions.github.io/push-to-talk-kmp/enroll#code=…&server=…`, the app repo's GitHub Pages. The
+  words after `#` are the `ptt://` link's own and never reach GitHub (a browser keeps the fragment); the page opens
+  Talk with them ("Open in Talk", an Android intent with the latest release as its fallback), and the app reads the
+  web form as the `ptt://` link too (its AppLinks). The `ptt://` link stays in the mail below it.
 - The code is the same one-time, 10-minute code, kept hashed in memory. If the mail can't be sent, the code is
   dropped at once and the command says why (no `mail-login` yet, or the grant was revoked).
 - A user without an email gets no code: `enroll-code` says to give it one with `user email`.
