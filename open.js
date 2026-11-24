@@ -1,10 +1,10 @@
 // Talk's link pages (2026-11-24): the words after # are a ptt:// link's own (never sent to this site). "Open in
-// Talk" hands them to the app; without it, the latest release is one tap away.
+// Talk" hands them to the app; without it, the latest APK downloads in one tap (talk.apk on the newest release).
 (function () {
   var kind = document.documentElement.getAttribute('data-kind');
   var words = location.hash.replace(/^#/, '');
   var app = 'ptt://' + kind + '?' + words;
-  var release = 'https://github.com/chencohensolutions/push-to-talk-kmp/releases/latest';
+  var release = 'https://github.com/chencohensolutions/push-to-talk-kmp/releases/latest/download/talk.apk';
   var android = /Android/i.test(navigator.userAgent);
   var open = document.getElementById('open');
   var link = document.getElementById('link');
