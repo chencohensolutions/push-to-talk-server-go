@@ -44,7 +44,7 @@ func (s *server) mailEnrollment() func(user auth.User, code string, expiresAt ti
 
 // webPages is the app repo's GitHub Pages, where a link's web form opens Talk (2026-11-24, hen: Gmail drops ptt://
 // links, so the mail's link couldn't be tapped).
-const webPages = "https://chencohensolutions.github.io/push-to-talk-kmp/"
+const webPages = "https://chencohensolutions.github.io/push-to-talk-server-go/"
 
 // webLink is a ptt://<kind>?<query> link's web form, <webPages><kind>#<query>: the words after # stay in the phone
 // (a browser never sends the fragment), and the page there hands them to Talk. Any other text is left as it is.
