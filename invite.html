@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="he" dir="rtl" data-kind="invite">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Talk</title>
+<style>
+  :root { --bg: #f4f4f2; --fg: #1b1f1e; --muted: #5d6664; --coral: #e85050; --card: #fff; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #101413; --fg: #e8ecea; --muted: #9aa4a1; --card: #1b2120; } }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+  main { max-width: 460px; margin: 0 auto; padding: 40px 20px; }
+  h1 { font-size: 28px; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 0 0 20px; }
+  a.button, button { display: block; width: 100%; box-sizing: border-box; text-align: center; padding: 16px; border-radius: 999px; font: inherit; font-weight: 600; text-decoration: none; margin-bottom: 12px; border: 0; cursor: pointer; }
+  a.primary { background: var(--coral); color: #fff; }
+  a.secondary, button { background: var(--card); color: var(--fg); border: 1px solid #c9cfcd; }
+  code { display: block; direction: ltr; text-align: left; word-break: break-all; background: var(--card); padding: 12px; border-radius: 12px; font-size: 12px; color: var(--muted); margin: 8px 0 12px; }
+  .en { direction: ltr; text-align: left; margin-top: 32px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Talk</h1>
+  <p>הוזמנתם ל-Talk. פתחו את הקישור בטלפון: Talk יירשם בשרת ויוסיף אתכם לאנשי הקשר של מי שהזמין.</p>
+  <p id="missing" hidden>הקישור חסר. פתחו שוב את הקישור המלא מההודעה.</p>
+  <a id="open" class="button primary" href="#">פתיחה ב-Talk</a>
+  <a class="button secondary" href="https://github.com/chencohensolutions/push-to-talk-kmp/releases/latest">אין לכם את Talk? הורדה</a>
+  <p>אם לא נפתח, העתיקו את הקישור והדביקו אותו ב-Talk:</p>
+  <code id="link"></code>
+  <button id="copy" data-done="הועתק">העתקת הקישור</button>
+  <p class="en">You've been invited to Talk. Open this on your phone: Talk enrolls with the server and adds you and your friend to each other's contacts.</p>
+</main>
+<script src="open.js"></script>
+</body>
+</html>
