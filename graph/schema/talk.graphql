@@ -14,6 +14,13 @@ extend type Mutation {
   """
   talkToken(peer: String, group: ID): TalkToken!
   """
+  Deletes a push the server's recorder kept for members who weren't in the talk room (docs/messaging.md, "Talk
+  buffer"), at once, whoever has or hasn't read it: only its talker may (2026-11-25, hen: the sender can take back a
+  push nobody heard live yet). The phones that already have it are told by an end-to-end delete, like a message's.
+  NOT_FOUND when there is no such buffer of the caller's.
+  """
+  deleteTalkBuffer(id: ID!): Boolean!
+  """
   A token to join call's own LiveKit room (phase 6, video calls), in the conversation with peer or group, after the
   same checks; call is 32 hex digits the caller's phone made and sent in its encrypted call invite, with the call's
   fresh media key. The first callToken binds the id to its conversation (INVALID for another one). The room takes at

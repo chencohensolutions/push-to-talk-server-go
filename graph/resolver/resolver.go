@@ -34,6 +34,8 @@ type Resolver struct {
 	// Keeps every call without re-encoding it (callToken starts it, callRecording lists it); nil without LiveKit or
 	// with livekit.keep_calls false.
 	Recorder *recorder.Recorder
+	// The talk buffer's recorder (2026-11-25): told of each talk room a phone asks for; nil without LiveKit.
+	TalkBuffers *recorder.TalkBuffers
 	// Follows the app's releases (appRelease); nil when config.json turns it off.
 	AppReleases *apprelease.Watcher
 	// The server's build, shown by serverInfo.

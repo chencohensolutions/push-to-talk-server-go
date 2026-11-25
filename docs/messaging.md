@@ -461,5 +461,11 @@ is still live or ended at most 5 s ago. Older than that (a phone that was offlin
 it downloads in the background and shows in the chat as a voice or video message bubble, a missed push at its own
 time, with a usual message notification; it plays on a tap. The same for audio and video, one to one and in groups.
 
+**The sender's bubble, and taking a push back.** A push someone didn't hear live shows on the sender's phone too, as a
+voice or video message bubble made from its own recording, with its state (waiting, delivered, played; per member in
+a group). The sender can delete it for everyone before or after it is played: deleteTalkBuffer(id) (its talker only)
+removes the server's buffer at once, and an end-to-end delete, as for a message, removes it from the phones that
+already have it. A push everyone heard live makes no bubble (unless the chat keeps pushes).
+
 **Groups.** Members with the group chat open are in its room live; the others get the buffer and a push. Opening a
 group doesn't warm its members (no silent group warm-up) unless hen asks for it.

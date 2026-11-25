@@ -101,6 +101,9 @@ type LiveKitConfig struct {
 	// Days a kept call's streams are held after its recording starts; the hourly sweep then deletes them
 	// (default 7; 2026-11-23, hen).
 	KeepCallDays int `json:"keep_call_days,omitempty"`
+	// Hours a push kept for members who weren't in its talk room is held when not all of them read it (default 24;
+	// 2026-11-25, hen: the talk buffer).
+	TalkBufferHours int `json:"talk_buffer_hours,omitempty"`
 }
 
 // KeepsCalls says whether the server keeps calls that someone records (livekit.keep_calls, default on).
@@ -108,6 +111,9 @@ func (l LiveKitConfig) KeepsCalls() bool { return l.KeepCalls == nil || *l.KeepC
 
 // DefaultMaxCallDevices is livekit.max_call_devices when config.json doesn't say: 32 (2026-11-22, hen; it was 8).
 const DefaultMaxCallDevices = 32
+
+// DefaultTalkBufferHours is livekit.talk_buffer_hours when config.json doesn't say.
+const DefaultTalkBufferHours = 24
 
 // DefaultKeepCallDays is livekit.keep_call_days when config.json doesn't say: a kept call is deleted a week after
 // its recording starts (2026-11-23, hen).

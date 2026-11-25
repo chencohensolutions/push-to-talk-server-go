@@ -40,6 +40,9 @@ message Frame {
     TalkEnd talk_end = 12;
     // Device to server: this device got a STARTED and will play the burst, so it needs no wake-up for it.
     TalkAck talk_ack = 13;
+    // Server to device: a push this device's user wasn't in the talk room for, kept for them in a growing blob by the
+    // server's recorder (docs/messaging.md, "Talk buffer"). Queued like an envelope's news: live, and pushed.
+    BufferedTalk buffered_talk = 14;
   }
 }
 
@@ -222,6 +225,23 @@ message TalkEnd {
 
 message TalkAck {
   string burst_id = 1;
+}
+
+// A push kept for a member who wasn't in the room: GET /blob/<blob_id> (track records, still encrypted end to end
+// with the talker's room key) as it grows, until it is complete.
+message BufferedTalk {
+  string blob_id = 1;
+  // The talker's LiveKit identity, "user.device".
+  string talker = 2;
+  // The conversation as the receiving device sees it: the talker for one to one, or the group.
+  string peer = 3;
+  string group = 4;
+  // "audio" or "video".
+  string media = 5;
+  // The track's codec (audio/red, audio/opus, video/vp8, video/h264, video/h265).
+  string codec = 6;
+  // When the push began, Unix milliseconds (the server's clock).
+  int64 started_at = 7;
 }
 
 message TalkState {

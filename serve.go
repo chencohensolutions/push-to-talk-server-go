@@ -67,6 +67,8 @@ type server struct {
 	rtc      http.Handler
 	// Saves calls (recordCall); nil without LiveKit.
 	recorder *recorder.Recorder
+	// The talk buffer's recorder; nil without LiveKit.
+	talkBuffers *recorder.TalkBuffers
 	// Follows the app's releases and pushes app_update to the phones; nil when app_releases is "none".
 	appReleases *apprelease.Watcher
 	// Sends the enrollment links (config.json "gmail"); nil when the server sends no mail or can't.
@@ -140,6 +142,9 @@ func serve(ctx context.Context, config auth.AppConfig, stopped func()) {
 		if s.recorder != nil {
 			s.recorder.StopAll() // the saved calls' tracks are completed
 		}
+		if s.talkBuffers != nil {
+			s.talkBuffers.StopAll()
+		}
 		stop() // a second Ctrl+C now ends the process the usual way
 		log.Printf("Stopping: removing the port mapping (Ctrl+C again to stop now)")
 		select {
@@ -201,6 +206,11 @@ func openServer(config auth.AppConfig) (*server, error) {
 	s.relay.BlobTTL = time.Duration(config.BlobDays) * 24 * time.Hour
 	if config.LiveKitOn() {
 		s.relay.CallTTL = time.Duration(config.LiveKit.KeepCallDays) * 24 * time.Hour
+		hours := config.LiveKit.TalkBufferHours
+		if hours <= 0 {
+			hours = auth.DefaultTalkBufferHours
+		}
+		s.relay.TalkBufferTTL = time.Duration(hours) * time.Hour
 	}
 	var sender push.Sender
 	if config.PushOn() {
@@ -236,6 +246,9 @@ func openServer(config auth.AppConfig) (*server, error) {
 		if s.recorder != nil {
 			s.recorder.Changed = recordingShown(s.relay.Live)
 		}
+		// The talk buffer (2026-11-25, hen): the recorder in each talk room keeps pushes for members not in it.
+		s.talkBuffers = &recorder.TalkBuffers{Keys: keys, URL: config.LiveKit.URL, Blobs: s.relay.Blobs, Tell: s.relay.TellBuffered}
+		log.Printf("Talk buffer: pushes kept for members away from the talk room, %d h at most", int(s.relay.TalkBufferTTL.Hours()))
 		s.rtc = httputil.NewSingleHostReverseProxy(target)
 		log.Printf("Live talk: on, through LiveKit at %s (media on UDP %d and TCP %d)", config.LiveKit.URL,
 			config.LiveKit.UDPPort, config.LiveKit.TCPPort)
@@ -353,7 +366,7 @@ func (s *server) newMux() *http.ServeMux {
 
 func (s *server) newGraphQLServer() *handler.Server {
 	srv := handler.New(generated.NewExecutableSchema(generated.Config{
-		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Invites: s.invites, Now: time.Now, LiveKeys: s.liveKeys, Recorder: s.recorder,
+		Resolvers: &resolver.Resolver{Enrollment: s.enrollment, Users: s.users, Relay: s.relay, Invites: s.invites, Now: time.Now, LiveKeys: s.liveKeys, Recorder: s.recorder, TalkBuffers: s.talkBuffers,
 			AppReleases: s.appReleases,
 			Version:     version.String(),
 			Discovery: func() *model.ServerDiscovery {
