@@ -419,3 +419,42 @@ Who is paired with whom and who blocked whom, who sends to whom and when, how bi
 each device's FCM token, when each user is connected, and the IP addresses. Google sees that a device was woken, when,
 and the kind (`message` or `sync`), nothing else. Never the content: text, receipts, typing, sync messages and key
 messages are all ciphertext of the same kinds.
+
+## Talk buffer: the server buffer for pushes (2026-11-25, hen: "server buffer", "send each push once")
+
+A push goes out once, into the chat's talk room. Whoever isn't in the room gets it from the server's buffer, so the
+phone never uploads a second copy.
+
+**Sending.** Nobody waits to send, and there is no "Waiting for …" anywhere: in a one-to-one chat and in a group,
+every talker has a floor of their own (a group no longer has one floor for all). A press unmutes the microphone track
+(and, for video, the camera track) already published, muted, in the room. A hardware button pressed with no room
+joined records on the phone from the press, and that backlog goes into the room as soon as it is joined, so no first
+words are lost. The phone uploads no clip by default; the older clip upload stays only as a setting, "Send through
+the server when they're away" (off), for a server without the buffer.
+
+**The recorder in the room.** ptt-server's recorder (package recorder, as for saved calls) joins a chat's talk room as
+a hidden participant right after the first phone joins it (on its talk token), so it is there before any press. It
+subscribes every talker's microphone and camera (the best video layer) and sends nothing.
+
+**What it buffers.** For each push (a talker's track from unmute to mute), while any of the chat's members isn't in
+the room with that track subscribed (the other user of a one-to-one chat; in a group, each member), the recorder
+writes the push's frames, still encrypted end to end with the talker's room key (which the server never has), into a
+growing blob of kind TalkBuffer, in the saved calls' track record format (microseconds since the push began, a key
+frame flag, the frame). When nobody is missing, nothing is written. The blob's readers are the members who weren't in
+the room (the relay's rules apply: pairing, blocks, group membership).
+
+**Telling the absent.** Each of those members' devices gets a BufferedTalk frame on /ws (proto/ptt.proto: blob id,
+the push's burst id, the talker's user.device, the chat (peer or group), audio and/or video, when it began) and, when
+not connected, a talk push (the existing kinds), so a sleeping phone wakes for it.
+
+**Keeping.** The buffer goes when every reader has read it to its end, or after livekit.talk_buffer_hours (default
+24). It is not the kept-in-chat copy: each phone keeps a push in its chat (Keep voice / Keep video) from what it played
+(the sender from what it sent); never a second upload.
+
+**Playing.** The phone reads /blob/<id> as it grows, decrypts each frame with the talker's key (the talk key ring sent
+end to end when it joined; the saved calls' decryption), and plays it through Opus and the video decoders with the
+usual catch-up until live. If the same push is also heard live in the room, it plays once: whichever is live wins,
+never both, and the picture never flips between the two (the last frame stays until the next draws).
+
+**Groups.** Members with the group chat open are in its room live; the others get the buffer and a push. Opening a
+group doesn't warm its members (no silent group warm-up) unless hen asks for it.
