@@ -242,6 +242,9 @@ message BufferedTalk {
   string codec = 6;
   // When the push began, Unix milliseconds (the server's clock).
   int64 started_at = 7;
+  // The talker's burst (its floor) this push belongs to, when one is held: the clip id its "clip start" message
+  // names, so the phone plays it as that burst.
+  string burst_id = 8;
 }
 
 message TalkState {

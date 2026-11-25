@@ -1484,7 +1484,10 @@ type BufferedTalk struct {
 	// The track's codec (audio/red, audio/opus, video/vp8, video/h264, video/h265).
 	Codec string `protobuf:"bytes,6,opt,name=codec,proto3" json:"codec,omitempty"`
 	// When the push began, Unix milliseconds (the server's clock).
-	StartedAt     int64 `protobuf:"varint,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	StartedAt int64 `protobuf:"varint,7,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	// The talker's burst (its floor) this push belongs to, when one is held: the clip id its "clip start" message
+	// names, so the phone plays it as that burst.
+	BurstId       string `protobuf:"bytes,8,opt,name=burst_id,json=burstId,proto3" json:"burst_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1566,6 +1569,13 @@ func (x *BufferedTalk) GetStartedAt() int64 {
 		return x.StartedAt
 	}
 	return 0
+}
+
+func (x *BufferedTalk) GetBurstId() string {
+	if x != nil {
+		return x.BurstId
+	}
+	return ""
 }
 
 type TalkState struct {
@@ -1867,7 +1877,7 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\aTalkEnd\x12\x19\n" +
 	"\bburst_id\x18\x01 \x01(\tR\aburstId\"$\n" +
 	"\aTalkAck\x12\x19\n" +
-	"\bburst_id\x18\x01 \x01(\tR\aburstId\"\xb4\x01\n" +
+	"\bburst_id\x18\x01 \x01(\tR\aburstId\"\xcf\x01\n" +
 	"\fBufferedTalk\x12\x17\n" +
 	"\ablob_id\x18\x01 \x01(\tR\x06blobId\x12\x16\n" +
 	"\x06talker\x18\x02 \x01(\tR\x06talker\x12\x12\n" +
@@ -1876,7 +1886,8 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\x05media\x18\x05 \x01(\tR\x05media\x12\x14\n" +
 	"\x05codec\x18\x06 \x01(\tR\x05codec\x12\x1d\n" +
 	"\n" +
-	"started_at\x18\a \x01(\x03R\tstartedAt\"\x9a\x04\n" +
+	"started_at\x18\a \x01(\x03R\tstartedAt\x12\x19\n" +
+	"\bburst_id\x18\b \x01(\tR\aburstId\"\x9a\x04\n" +
 	"\tTalkState\x12-\n" +
 	"\x05event\x18\x01 \x01(\x0e2\x17.ptt.v1.TalkState.EventR\x05event\x12\x19\n" +
 	"\bburst_id\x18\x02 \x01(\tR\aburstId\x12\x1f\n" +

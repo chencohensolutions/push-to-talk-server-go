@@ -30,7 +30,8 @@ func (r *Relay) TellBuffered(b recorder.Buffered) {
 			peer = b.Conv.Owner // the talker, from the reader's side
 		}
 		frame := &pb.Frame{Kind: &pb.Frame_BufferedTalk{BufferedTalk: &pb.BufferedTalk{BlobId: b.Blob, Talker: b.Talker,
-			Peer: peer, Group: b.Conv.Group, Media: b.Media, Codec: b.Codec, StartedAt: b.Started.UnixMilli()}}}
+			Peer: peer, Group: b.Conv.Group, Media: b.Media, Codec: b.Codec, StartedAt: b.Started.UnixMilli(),
+			BurstId: r.burstOf(b.Conv.Owner, b.Conv.Peer, b.Conv.Group)}}}
 		for n := range active {
 			d := store.Device{User: user, Number: n}
 			if !r.live(d, frame) && r.Push != nil {
@@ -38,4 +39,15 @@ func (r *Relay) TellBuffered(b recorder.Buffered) {
 			}
 		}
 	}
+}
+
+// burstOf is the burst talker holds now in the conversation with peer or group, or "".
+func (r *Relay) burstOf(talker, peer, group string) string {
+	key := floorKey(talker, peer, group) + ">" + talker
+	r.talkMu.Lock()
+	defer r.talkMu.Unlock()
+	if b := r.floors[key]; b != nil {
+		return b.id
+	}
+	return ""
 }
