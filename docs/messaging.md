@@ -456,5 +456,10 @@ end to end when it joined; the saved calls' decryption), and plays it through Op
 usual catch-up until live. If the same push is also heard live in the room, it plays once: whichever is live wins,
 never both, and the picture never flips between the two (the last frame stays until the next draws).
 
+**Fresh pushes only play by themselves.** A phone that learns of a buffered push plays it with catch-up only if the push
+is still live or ended at most 5 s ago. Older than that (a phone that was offline for hours), it never plays by itself:
+it downloads in the background and shows in the chat as a voice or video message bubble, a missed push at its own
+time, with a usual message notification; it plays on a tap. The same for audio and video, one to one and in groups.
+
 **Groups.** Members with the group chat open are in its room live; the others get the buffer and a push. Opening a
 group doesn't warm its members (no silent group warm-up) unless hen asks for it.
