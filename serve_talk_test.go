@@ -83,7 +83,7 @@ func records(t *testing.T, data []byte) []*pb.ClipSegment {
 }
 
 // Phase 5a from the server's side: a talker takes the floor of a conversation, the other side is told and gets the
-// segments live, a second talker meanwhile is busy, and the clip can be read back over /blob, also while it grows.
+// segments live, and the clip can be read back over /blob, also while it grows.
 func TestTalkInAConversation(t *testing.T) {
 	env := newTestEnv(t)
 	env.addUsers(t, "hen", "dana", "eli")
@@ -111,9 +111,6 @@ func TestTalkInAConversation(t *testing.T) {
 		t.Fatalf("the listener's STARTED: %v", started)
 	}
 	danaSocket.write(t, &pb.Frame{Kind: &pb.Frame_TalkAck{TalkAck: &pb.TalkAck{BurstId: id}}})
-	if s := danaSocket.talk(t, burstID(), "hen", ""); s.Event != pb.TalkState_BUSY || s.TalkerUser != "hen" {
-		t.Fatalf("talking over hen: %v", s)
-	}
 
 	// A reader that follows the clip while it grows.
 	follow := make(chan []byte, 1)
@@ -243,9 +240,24 @@ func TestTalkInAGroup(t *testing.T) {
 			t.Fatalf("a member's STARTED: %v", st)
 		}
 	}
+	// Another member talks at the same time (2026-11-25, hen: no single floor in a group either).
+	noaID := burstID()
+	if s := noaSocket.talk(t, noaID, "", g.ID); s.Event != pb.TalkState_GRANTED {
+		t.Fatalf("a second talker in the group: %v", s)
+	}
+	for _, s := range []*socket{henSocket, danaSocket} {
+		if st := s.talkState(t); st.Event != pb.TalkState_STARTED || st.TalkerUser != "noa" {
+			t.Fatalf("the second talker's STARTED: %v", st)
+		}
+	}
+	noaSocket.write(t, &pb.Frame{Kind: &pb.Frame_TalkEnd{TalkEnd: &pb.TalkEnd{BurstId: noaID}}})
+	danaSocket.talkState(t) // noa's ENDED
 	danaSocket.write(t, &pb.Frame{Kind: &pb.Frame_TalkEnd{TalkEnd: &pb.TalkEnd{BurstId: id}}})
-	if st := noaSocket.talkState(t); st.Event != pb.TalkState_ENDED {
-		t.Fatalf("a member's ENDED: %v", st)
+	for {
+		st := noaSocket.talkState(t)
+		if st.Event == pb.TalkState_ENDED && st.BurstId == id {
+			break
+		}
 	}
 	env.groupOp(t, hen, "removeFromGroup", g.ID, "noa")
 	if s := noaSocket.talk(t, burstID(), "", g.ID); s.Event != pb.TalkState_REFUSED || s.Refusal != pb.SendResult_NOT_MEMBER {
@@ -318,5 +330,44 @@ func TestBlobUpload(t *testing.T) {
 	}
 	if resp, _ := env.blobRequest(t, dana, http.MethodPut, id, map[string]string{relay.HeaderOffset: "0"}, body); resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("PUT over someone else's blob: %d", resp.StatusCode)
+	}
+}
+
+// One to one, both talk at once (2026-11-25, hen): each has a floor of their own, and each hears the other.
+func TestTalkBothAtOnceOneToOne(t *testing.T) {
+	env := newTestEnv(t)
+	env.addUsers(t, "hen", "dana")
+	hen, dana := env.phone(t, "hen"), env.phone(t, "dana")
+	for _, p := range []*phone{hen, dana} {
+		env.uploadKeys(t, p, ecKey())
+	}
+	henSocket, danaSocket := env.socket(t, hen), env.socket(t, dana)
+	env.pair(t, dana, []store.Device{dev(dana)}, hen, henSocket)
+	danaSocket.envelopeOf(t, pb.Envelope_PAIRED)
+
+	henID, danaID := burstID(), burstID()
+	if s := henSocket.talk(t, henID, "dana", ""); s.Event != pb.TalkState_GRANTED {
+		t.Fatalf("hen talks: %v", s)
+	}
+	if st := danaSocket.talkState(t); st.Event != pb.TalkState_STARTED || st.BurstId != henID {
+		t.Fatalf("dana's STARTED: %v", st)
+	}
+	if s := danaSocket.talk(t, danaID, "hen", ""); s.Event != pb.TalkState_GRANTED {
+		t.Fatalf("dana talks while hen does: %v", s)
+	}
+	if st := henSocket.talkState(t); st.Event != pb.TalkState_STARTED || st.BurstId != danaID || st.TalkerUser != "dana" {
+		t.Fatalf("hen's STARTED: %v", st)
+	}
+	henSocket.segment(t, henID, 0, false)
+	if seg := danaSocket.segmentFrame(t); seg.BurstId != henID {
+		t.Fatalf("hen's segment at dana: %v", seg)
+	}
+	danaSocket.segment(t, danaID, 0, false)
+	if seg := henSocket.segmentFrame(t); seg.BurstId != danaID {
+		t.Fatalf("dana's segment at hen: %v", seg)
+	}
+	// A second burst of the same talker still waits for their first.
+	if s := henSocket.talk(t, burstID(), "dana", ""); s.Event != pb.TalkState_BUSY || s.TalkerUser != "hen" {
+		t.Fatalf("hen twice: %v", s)
 	}
 }

@@ -24,6 +24,9 @@ const (
 	Sync
 	// Message: a message the user is notified of; high priority where notifications are on.
 	Message
+	// Warm (2026-11-24, hen): someone opened a chat with this user; the phone joins its talk room quietly. High
+	// priority where notifications are on, kept 60 seconds. Less urgent than a talk burst or a call.
+	Warm
 	// Talk (phase 5a) and Call (phase 5b): high priority where notifications are on, kept 30 seconds.
 	Talk
 	Call
@@ -39,6 +42,8 @@ func (k Kind) String() string {
 		return "talk"
 	case Call:
 		return "call"
+	case Warm:
+		return "warm"
 	}
 	return "none"
 }
@@ -50,6 +55,8 @@ func (k Kind) wake(notifications bool) Wake {
 		return Wake{Kind: k.String(), High: notifications}
 	case Talk, Call:
 		return Wake{Kind: k.String(), High: notifications, TTL: 30 * time.Second}
+	case Warm:
+		return Wake{Kind: k.String(), High: notifications, TTL: 60 * time.Second}
 	}
 	return Wake{Kind: Sync.String(), TTL: 24 * time.Hour}
 }

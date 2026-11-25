@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,10 @@ func (r *Relay) MayRead(user string, m blobs.Meta) bool { return r.mayRead(user,
 // its group now. Blocks apply. A kept call's track is only for the people who were in that call (joinedCall).
 func (r *Relay) mayRead(user string, m blobs.Meta) bool {
 	if m.Kind == blobs.Track && !r.joinedCall(user, m) {
+		return false
+	}
+	// A talk buffer is for the members it was kept for (still a member, not blocking the talker), and its talker.
+	if m.Kind == blobs.TalkBuffer && user != m.Owner && !slices.Contains(m.Readers, user) {
 		return false
 	}
 	switch {
@@ -112,7 +117,7 @@ func (r *Relay) ServeBlob(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodHead {
 			return
 		}
-		r.getBlob(w, req, m)
+		r.getBlob(w, req, m, user.Name)
 	default:
 		w.Header().Set("Allow", "GET, HEAD, PUT")
 		http.Error(w, "GET, HEAD or PUT", http.StatusMethodNotAllowed)
@@ -176,7 +181,7 @@ func (r *Relay) putBlob(w http.ResponseWriter, req *http.Request, from store.Dev
 	}
 }
 
-func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta) {
+func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta, user string) {
 	offset := int64(0)
 	if text, ok := strings.CutPrefix(req.Header.Get("Range"), "bytes="); ok {
 		start, _, _ := strings.Cut(text, "-")
@@ -211,7 +216,7 @@ func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta) 
 		return
 	}
 	// A clip or a saved call's track: send what is there, then follow it until its last record.
-	if m.Kind == blobs.Track {
+	if m.Kind == blobs.Track || m.Kind == blobs.TalkBuffer {
 		w.Header().Set("Content-Type", "application/vnd.ptt.track")
 	} else {
 		w.Header().Set("Content-Type", "application/vnd.ptt.clip")
@@ -232,7 +237,9 @@ func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta) 
 			return
 		}
 		if now.Complete {
-			io.Copy(w, f) // what arrived with the last record
+			if _, err := io.Copy(w, f); err == nil && m.Kind == blobs.TalkBuffer && r.Blobs.ReadToEnd(m.ID, user) {
+				log.Printf("Talk buffer %s: read by all its members, deleted", m.ID)
+			}
 			return
 		}
 		select {

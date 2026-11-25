@@ -32,6 +32,20 @@ func (r *mutationResolver) TalkToken(ctx context.Context, peer *string, group *s
 	if status != 0 {
 		return nil, coded(status.String(), "%s", detail)
 	}
+	// The recorder goes into the room too, so it is there before any press, and keeps pushes for members away.
+	if r.TalkBuffers != nil {
+		conv := recorder.Conversation{Owner: d.User, Peer: deref(peer), Group: deref(group)}
+		user, other, groupID := d.User, deref(peer), deref(group)
+		r.TalkBuffers.Watch(room, conv, func() []string {
+			if groupID == "" {
+				return []string{user, other}
+			}
+			if g, ok := r.Relay.Groups.Get(groupID); ok {
+				return g.Members
+			}
+			return nil
+		})
+	}
 	now := r.Now()
 	identity := livekit.Identity(d.User, d.Number)
 	token, err := r.LiveKeys.JoinToken(identity, room, now)
@@ -40,6 +54,21 @@ func (r *mutationResolver) TalkToken(ctx context.Context, peer *string, group *s
 	}
 	return &model.TalkToken{Token: token, Room: room, Identity: identity, Path: "/rtc",
 		ExpiresAt: now.Add(livekit.TokenTTL)}, nil
+}
+
+// DeleteTalkBuffer is the resolver for the deleteTalkBuffer field.
+func (r *mutationResolver) DeleteTalkBuffer(ctx context.Context, id string) (bool, error) {
+	d, err := r.caller(ctx)
+	if err != nil {
+		return false, err
+	}
+	m, ok := r.Relay.Blobs.Get(id)
+	if !ok || m.Kind != blobs.TalkBuffer || m.Owner != d.User {
+		return false, coded("NOT_FOUND", "no such talk buffer of yours")
+	}
+	r.Relay.Blobs.Delete(id)
+	log.Printf("Talk buffer %s: deleted by its talker %s.%d", id, d.User, d.Number)
+	return true, nil
 }
 
 // CallToken is the resolver for the callToken field.

@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -43,6 +44,9 @@ const (
 	// Track: one participant's audio or video in a saved call, as the server's recorder received it from LiveKit
 	// (still encrypted end to end with the call's key): records of a timestamp, flags and one frame (package recorder).
 	Track Kind = "track"
+	// TalkBuffer: one push kept for the members who weren't in its talk room (package recorder, "Talk buffer"), in
+	// a Track's record format; Readers may read it, and it goes once they all have (or after the buffer's hours).
+	TalkBuffer Kind = "talk_buffer"
 )
 
 // TrackInfo is what a Track blob holds: whose stream, which, and when it began.
@@ -71,8 +75,11 @@ type Meta struct {
 	Size     int64     `json:"size"`
 	Complete bool      `json:"complete"`
 	Created  time.Time `json:"created_at"`
-	// For a Track: the stream it holds.
+	// For a Track: the stream it holds. For a TalkBuffer too (Call is the talk room).
 	Track *TrackInfo `json:"track,omitempty"`
+	// For a TalkBuffer: the users it was kept for, and those who have read it to its end.
+	Readers []string `json:"readers,omitempty"`
+	Read    []string `json:"read,omitempty"`
 
 	writing bool // an upload is going on
 }
@@ -214,12 +221,12 @@ func (s *Store) AppendRecord(id string, record []byte, last bool) error {
 	switch {
 	case !ok:
 		return ErrNotFound
-	case m.Kind != Clip && m.Kind != Track:
+	case m.Kind != Clip && m.Kind != Track && m.Kind != TalkBuffer:
 		return fmt.Errorf("blob %s isn't a clip or a track", id)
 	case m.Complete:
 		return ErrComplete
 	case m.Kind == Clip && m.Size+4+int64(len(record)) > MaxClipBytes,
-		m.Kind == Track && m.Size+4+int64(len(record)) > MaxTrackBytes:
+		(m.Kind == Track || m.Kind == TalkBuffer) && m.Size+4+int64(len(record)) > MaxTrackBytes:
 		return ErrTooLarge
 	}
 	f, err := os.OpenFile(s.dataPath(id), os.O_WRONLY|os.O_APPEND, 0o600)
@@ -372,7 +379,43 @@ func (s *Store) Expire(before time.Time) int {
 	defer s.mu.Unlock()
 	n := 0
 	for id, m := range s.metas {
-		if m.Kind != Track && m.Created.Before(before) {
+		if m.Kind != Track && m.Kind != TalkBuffer && m.Created.Before(before) {
+			s.remove(id)
+			n++
+		}
+	}
+	return n
+}
+
+// ReadToEnd notes that user read TalkBuffer id to its end, and deletes it once every reader has; it answers whether
+// it was deleted.
+func (s *Store) ReadToEnd(id, user string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.metas[id]
+	if !ok || m.Kind != TalkBuffer || !m.Complete {
+		return false
+	}
+	if !slices.Contains(m.Read, user) {
+		m.Read = append(m.Read, user)
+		s.saveMeta(m)
+	}
+	for _, r := range m.Readers {
+		if !slices.Contains(m.Read, r) {
+			return false
+		}
+	}
+	s.remove(id)
+	return true
+}
+
+// ExpireTalkBuffers deletes the TalkBuffers made before before (livekit.talk_buffer_hours), and answers how many.
+func (s *Store) ExpireTalkBuffers(before time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for id, m := range s.metas {
+		if m.Kind == TalkBuffer && m.Created.Before(before) {
 			s.remove(id)
 			n++
 		}

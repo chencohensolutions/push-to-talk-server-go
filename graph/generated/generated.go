@@ -166,6 +166,7 @@ type ComplexityRoot struct {
 		CreateInvite       func(childComplexity int, email *string) int
 		CreateLinkCode     func(childComplexity int) int
 		DeleteGroup        func(childComplexity int, group string) int
+		DeleteTalkBuffer   func(childComplexity int, id string) int
 		EnrollDevice       func(childComplexity int, input model.EnrollDeviceInput) int
 		EnrollWithInvite   func(childComplexity int, input model.InviteEnrollInput) int
 		InviteToGroup      func(childComplexity int, group string, user string) int
@@ -319,6 +320,7 @@ type MutationResolver interface {
 	RegisterPush(ctx context.Context, token *string, notificationsEnabled bool) (bool, error)
 	SetPresenceVisible(ctx context.Context, visible bool) (bool, error)
 	TalkToken(ctx context.Context, peer *string, group *string) (*model.TalkToken, error)
+	DeleteTalkBuffer(ctx context.Context, id string) (bool, error)
 	CallToken(ctx context.Context, call string, peer *string, group *string) (*model.TalkToken, error)
 	RecordCall(ctx context.Context, call string, peer *string, group *string) (*model.CallRecording, error)
 	StopRecordingCall(ctx context.Context, call string, peer *string, group *string) (*model.CallRecording, error)
@@ -868,6 +870,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.DeleteGroup(childComplexity, args["group"].(string)), true
+	case "Mutation.deleteTalkBuffer":
+		if e.ComplexityRoot.Mutation.DeleteTalkBuffer == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_deleteTalkBuffer_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.DeleteTalkBuffer(childComplexity, args["id"].(string)), true
 	case "Mutation.enrollDevice":
 		if e.ComplexityRoot.Mutation.EnrollDevice == nil {
 			break
@@ -2225,6 +2238,13 @@ extend type Mutation {
   """
   talkToken(peer: String, group: ID): TalkToken!
   """
+  Deletes a push the server's recorder kept for members who weren't in the talk room (docs/messaging.md, "Talk
+  buffer"), at once, whoever has or hasn't read it: only its talker may (2026-11-25, hen: the sender can take back a
+  push nobody heard live yet). The phones that already have it are told by an end-to-end delete, like a message's.
+  NOT_FOUND when there is no such buffer of the caller's.
+  """
+  deleteTalkBuffer(id: ID!): Boolean!
+  """
   A token to join call's own LiveKit room (phase 6, video calls), in the conversation with peer or group, after the
   same checks; call is 32 hex digits the caller's phone made and sent in its encrypted call invite, with the call's
   fresh media key. The first callToken binds the id to its conversation (INVALID for another one). The room takes at
@@ -2940,6 +2960,20 @@ func (ec *executionContext) field_Mutation_deleteGroup_args(ctx context.Context,
 		return nil, err
 	}
 	args["group"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_deleteTalkBuffer_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNID2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
 	return args, nil
 }
 
@@ -6061,6 +6095,50 @@ func (ec *executionContext) fieldContext_Mutation_talkToken(ctx context.Context,
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_talkToken_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_deleteTalkBuffer(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_deleteTalkBuffer(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().DeleteTalkBuffer(ctx, fc.Args["id"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_deleteTalkBuffer(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_deleteTalkBuffer_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -10654,6 +10732,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "talkToken":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_talkToken(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deleteTalkBuffer":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_deleteTalkBuffer(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++

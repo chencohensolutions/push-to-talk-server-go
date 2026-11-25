@@ -50,6 +50,8 @@ func PushKind(k pb.PushKind) push.Kind {
 		return push.Talk
 	case pb.PushKind_PUSH_CALL:
 		return push.Call
+	case pb.PushKind_PUSH_WARM:
+		return push.Warm
 	}
 	return push.Sync
 }

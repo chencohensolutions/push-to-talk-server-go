@@ -59,6 +59,8 @@ type Relay struct {
 	BlobTTL time.Duration
 	// How long a saved call's tracks are kept after recording starts (livekit.keep_call_days); 0 keeps them.
 	CallTTL time.Duration
+	// How long a talk buffer is kept when not all its readers read it (livekit.talk_buffer_hours).
+	TalkBufferTTL time.Duration
 	// The LiveKit room API, to take cut-off devices out of rooms; nil without LiveKit.
 	Live *livekit.Client
 
@@ -497,6 +499,11 @@ func (r *Relay) Sweep() {
 	if r.Blobs != nil && r.CallTTL > 0 {
 		if n := r.Blobs.ExpireTracks(r.Now().Add(-r.CallTTL)); n > 0 {
 			log.Printf("Deleted %d kept-call tracks older than %v", n, r.CallTTL)
+		}
+	}
+	if r.Blobs != nil && r.TalkBufferTTL > 0 {
+		if n := r.Blobs.ExpireTalkBuffers(r.Now().Add(-r.TalkBufferTTL)); n > 0 {
+			log.Printf("Deleted %d talk buffers older than %v", n, r.TalkBufferTTL)
 		}
 	}
 	users, err := r.Store.KeyedUsers()
