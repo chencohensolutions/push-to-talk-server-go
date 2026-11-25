@@ -240,9 +240,24 @@ func TestTalkInAGroup(t *testing.T) {
 			t.Fatalf("a member's STARTED: %v", st)
 		}
 	}
+	// Another member talks at the same time (2026-11-25, hen: no single floor in a group either).
+	noaID := burstID()
+	if s := noaSocket.talk(t, noaID, "", g.ID); s.Event != pb.TalkState_GRANTED {
+		t.Fatalf("a second talker in the group: %v", s)
+	}
+	for _, s := range []*socket{henSocket, danaSocket} {
+		if st := s.talkState(t); st.Event != pb.TalkState_STARTED || st.TalkerUser != "noa" {
+			t.Fatalf("the second talker's STARTED: %v", st)
+		}
+	}
+	noaSocket.write(t, &pb.Frame{Kind: &pb.Frame_TalkEnd{TalkEnd: &pb.TalkEnd{BurstId: noaID}}})
+	danaSocket.talkState(t) // noa's ENDED
 	danaSocket.write(t, &pb.Frame{Kind: &pb.Frame_TalkEnd{TalkEnd: &pb.TalkEnd{BurstId: id}}})
-	if st := noaSocket.talkState(t); st.Event != pb.TalkState_ENDED {
-		t.Fatalf("a member's ENDED: %v", st)
+	for {
+		st := noaSocket.talkState(t)
+		if st.Event == pb.TalkState_ENDED && st.BurstId == id {
+			break
+		}
 	}
 	env.groupOp(t, hen, "removeFromGroup", g.ID, "noa")
 	if s := noaSocket.talk(t, burstID(), "", g.ID); s.Event != pb.TalkState_REFUSED || s.Refusal != pb.SendResult_NOT_MEMBER {
