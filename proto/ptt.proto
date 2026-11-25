@@ -121,7 +121,7 @@ message Send {
 }
 
 // The kinds of wake-up a Send asks for. The FCM data message carries only the kind's name ("message", "sync",
-// "talk", "call"), nothing else.
+// "talk", "call", "warm"), nothing else.
 enum PushKind {
   // Taken as PUSH_SYNC.
   PUSH_KIND_UNSPECIFIED = 0;
@@ -137,6 +137,10 @@ enum PushKind {
   PUSH_TALK = 4;
   // A ringing call (phase 5b): high priority (notifications on), kept 30 seconds.
   PUSH_CALL = 5;
+  // Someone opened a chat with this user (2026-11-24, hen): the phone joins the chat's talk room quietly, showing
+  // nothing, so a push that follows starts at once. High priority (notifications on), kept 60 seconds. Android may
+  // demote high-priority pushes that end in no notification.
+  PUSH_WARM = 6;
 }
 
 message SendResult {

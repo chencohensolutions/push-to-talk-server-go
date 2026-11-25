@@ -28,7 +28,7 @@ const (
 )
 
 // The kinds of wake-up a Send asks for. The FCM data message carries only the kind's name ("message", "sync",
-// "talk", "call"), nothing else.
+// "talk", "call", "warm"), nothing else.
 type PushKind int32
 
 const (
@@ -46,6 +46,10 @@ const (
 	PushKind_PUSH_TALK PushKind = 4
 	// A ringing call (phase 5b): high priority (notifications on), kept 30 seconds.
 	PushKind_PUSH_CALL PushKind = 5
+	// Someone opened a chat with this user (2026-11-24, hen): the phone joins the chat's talk room quietly, showing
+	// nothing, so a push that follows starts at once. High priority (notifications on), kept 60 seconds. Android may
+	// demote high-priority pushes that end in no notification.
+	PushKind_PUSH_WARM PushKind = 6
 )
 
 // Enum value maps for PushKind.
@@ -57,6 +61,7 @@ var (
 		3: "PUSH_NONE",
 		4: "PUSH_TALK",
 		5: "PUSH_CALL",
+		6: "PUSH_WARM",
 	}
 	PushKind_value = map[string]int32{
 		"PUSH_KIND_UNSPECIFIED": 0,
@@ -65,6 +70,7 @@ var (
 		"PUSH_NONE":             3,
 		"PUSH_TALK":             4,
 		"PUSH_CALL":             5,
+		"PUSH_WARM":             6,
 	}
 )
 
@@ -1777,14 +1783,15 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\x04last\x18\x03 \x01(\bR\x04last\x12\x1e\n" +
 	"\n" +
 	"ciphertext\x18\x04 \x01(\fR\n" +
-	"ciphertext*s\n" +
+	"ciphertext*\x82\x01\n" +
 	"\bPushKind\x12\x19\n" +
 	"\x15PUSH_KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tPUSH_SYNC\x10\x01\x12\x10\n" +
 	"\fPUSH_MESSAGE\x10\x02\x12\r\n" +
 	"\tPUSH_NONE\x10\x03\x12\r\n" +
 	"\tPUSH_TALK\x10\x04\x12\r\n" +
-	"\tPUSH_CALL\x10\x05BHZFgithub.com/chencohensolutions/push-to-talk-server-go/proto/pttv1;pttv1b\x06proto3"
+	"\tPUSH_CALL\x10\x05\x12\r\n" +
+	"\tPUSH_WARM\x10\x06BHZFgithub.com/chencohensolutions/push-to-talk-server-go/proto/pttv1;pttv1b\x06proto3"
 
 var (
 	file_proto_ptt_proto_rawDescOnce sync.Once

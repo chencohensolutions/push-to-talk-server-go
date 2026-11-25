@@ -216,12 +216,17 @@ remove`) clears its token at once, and a token FCM answers as gone (`404` / `UNR
 | `PUSH_MESSAGE` | `message` | `sync` |
 | `PUSH_NONE` | nothing | nothing |
 | `PUSH_TALK`, `PUSH_CALL` (phases 5a and 5b) | `talk`, `call` | `sync` |
+| `PUSH_WARM` (2026-11-24) | `warm` | `sync` |
 
 The server can't read the ciphertext, so the sending phone says what it is: `PUSH_MESSAGE` for a message the
 recipient is notified of (text, a voice message, a message in a chat that isn't muted), `PUSH_SYNC` for what must
 reach a sleeping phone but shows nothing (delivery and read receipts, contact and group changes, a muted chat, key
 messages, the PAIRED and pair-request flow), and `PUSH_NONE` for what is stale by the time a phone wakes up
-(typing). A Send that leaves it unset is `sync`. The envelopes the server makes (`PAIRED`, `IDENTITY_KEY_CHANGED`)
+(typing). `PUSH_WARM` (2026-11-24, hen) is the end-to-end "ready" a phone sends when its user opens a chat: the
+other phone joins that chat's talk room quietly, showing nothing, so a push that follows starts at once; it is high
+priority where notifications are on and kept 60 seconds, less urgent than `talk` and `call` in the debounce. Android
+may demote high-priority pushes that end in no notification (the app logs the priority each one arrived at). A Send
+that leaves it unset is `sync`. The envelopes the server makes (`PAIRED`, `IDENTITY_KEY_CHANGED`)
 push `sync`; Presence frames are never queued and never push.
 
 **What FCM gets.** One message per device:

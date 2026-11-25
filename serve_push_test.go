@@ -487,3 +487,38 @@ func TestPresence(t *testing.T) {
 		}
 	}
 }
+
+// Opening a chat warms the other phone (2026-11-24, hen): a "warm" push at high priority where notifications are on,
+// kept 60 seconds, for the other user only (the sender's own devices get a sync at most); normal priority with
+// notifications off.
+func TestAWarmPushIsHighPriorityAndShort(t *testing.T) {
+	env, fcm := newPushEnv(t)
+	_, henTablet, danaPhone, henSocket, tabletSocket, danaSocket := pushedPair(t, env)
+	env.registerPush(t, danaPhone, "dana-token", true)
+	env.registerPush(t, henTablet, "tablet-token", true)
+	env.closeSocket(t, danaSocket, danaPhone)
+	env.closeSocket(t, tabletSocket, henTablet)
+	henSocket.sendKind(t, pb.PushKind_PUSH_WARM, dev(danaPhone), dev(henTablet))
+	got := map[string]fcmMessage{}
+	for range 2 {
+		m := fcm.next(t)
+		got[m.Token] = m
+	}
+	if m := got["dana-token"]; len(m.Data) != 1 || m.Data["kind"] != "warm" || m.Android.Priority != "HIGH" ||
+		m.Android.TTL != "60s" || m.Android.CollapseKey != "warm" {
+		t.Fatalf("dana's warm push: %+v", m)
+	}
+	if m := got["tablet-token"]; m.Data["kind"] != "sync" || m.Android.Priority != "NORMAL" {
+		t.Fatalf("hen's own tablet: %+v", m)
+	}
+
+	// Notifications off: normal priority.
+	time.Sleep(pushWindow + 50*time.Millisecond)
+	env.registerPush(t, danaPhone, "dana-token", false)
+	henSocket.sendKind(t, pb.PushKind_PUSH_WARM, dev(danaPhone), dev(henTablet))
+	for range 2 {
+		if m := fcm.next(t); m.Token == "dana-token" && (m.Data["kind"] != "warm" || m.Android.Priority != "NORMAL") {
+			t.Fatalf("a warm push with notifications off: %+v", m)
+		}
+	}
+}
