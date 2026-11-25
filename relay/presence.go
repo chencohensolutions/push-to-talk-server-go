@@ -16,6 +16,8 @@ type Presence struct {
 	User     string
 	Online   bool
 	LastSeen time.Time
+	// While online: whether they can hear talk now (HEAR_UNSPECIFIED when not said, or hidden).
+	Hear pb.Hear
 }
 
 // presenceHidden says whether user hides their presence (and so sees nobody's).
@@ -46,6 +48,8 @@ func (r *Relay) Presences(caller string, users []string) []Presence {
 			p.Online = r.online[user]
 			if !p.Online {
 				p.LastSeen = r.lastSeen[user]
+			} else if !r.hearHidden(user) {
+				p.Hear = r.hear[user]
 			}
 			r.mu.Unlock()
 		}
@@ -78,11 +82,33 @@ func (r *Relay) disconnected(user string) {
 	}
 	last := r.online[user]
 	delete(r.online, user)
+	delete(r.hear, user)
 	seen := time.Now().UTC().Truncate(presenceRounding) // the wall clock: last seen is for people
 	r.lastSeen[user] = seen
 	r.mu.Unlock()
 	if last {
 		go r.announcePresence(&pb.Presence{User: user, LastSeen: seen.UnixMilli()})
+	}
+}
+
+// hearHidden says whether user hides their can-hear state (setHearVisible).
+func (r *Relay) hearHidden(user string) bool {
+	u := r.Users.Find(user)
+	return u == nil || u.HearHidden
+}
+
+// setHear notes what user's phone says of whether they can hear talk now (a HearState frame), and tells their
+// contacts when it changed. The latest word from any of their devices stands.
+func (r *Relay) setHear(user string, hear pb.Hear) {
+	if hear < pb.Hear_HEAR_UNSPECIFIED || hear > pb.Hear_HEAR_IN_CALL {
+		hear = pb.Hear_HEAR_UNSPECIFIED
+	}
+	r.mu.Lock()
+	changed := r.online[user] && r.hear[user] != hear
+	r.hear[user] = hear
+	r.mu.Unlock()
+	if changed && !r.hearHidden(user) {
+		go r.announcePresence(&pb.Presence{User: user, Online: true, Hear: hear})
 	}
 }
 

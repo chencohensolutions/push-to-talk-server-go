@@ -277,6 +277,19 @@ A small "who is connected" signal, only between contacts (paired, neither blocke
   works both ways: a user who hides theirs is shown to everyone as offline with no `lastSeen`, gets no Presence
   frames, and sees every contact the same way.
 
+### Can hear (2026-11-25, hen: "who can hear you")
+
+While online, a user may also show whether they can hear a push now. Their phone sends **`HearState {hear}`** on
+`/ws` when it changes: `HEAR_OK` (talk plays out loud), `HEAR_SILENT` (ringer silent or vibrate, or the talk or media
+volume at 0: pushes are saved for later), `HEAR_DND` (Do Not Disturb), `HEAR_IN_CALL` (a phone call). The server keeps
+the latest word from any of the user's devices, in memory only, forgets it when their last device disconnects, and
+sends a `Presence` frame with `hear` to their contacts when it changed (under the same rules as presence). The
+`presence` query answers it as `hear` (`OK`, `SILENT`, `DND`, `IN_CALL`; null when not said, offline or hidden).
+**`setHearVisible(visible)`** (`hear_hidden` in `users.json`; `me.hearVisible`; shown unless set) hides it from
+contacts; unlike presence it hides one way only. The server only passes the word on: what a phone does with it
+(badges, the chips while pushing) and whether a push was heard (an end-to-end message between the phones) are the
+app's.
+
 ## Talk
 
 Phase 5a, the clip path (2026-11-22). The server referees each conversation's floor and keeps each burst's clip; the
@@ -287,6 +300,9 @@ audio is AES-256-GCM made by the talker's phone with a key that goes end to end 
   2026-11-22, hen, a fellow group member who isn't a contact is reached in the group) or a group (a member).
   `burst_id` is 32 lowercase hex digits made by the phone; it is the clip's id too. The answer is a `TalkState`: `GRANTED`, `BUSY` (with who holds the floor) or `REFUSED` (`refusal` is
   `NOT_PAIRED`, `BLOCKED`, `NOT_MEMBER`, `UNKNOWN_USER` or `INVALID`). The same TalkStart again is GRANTED again.
+  **`urgent`** (2026-11-25, hen: "urgent push") marks the push urgent: the server passes it on in `STARTED` and does
+  nothing else with it; the listener's phone decides whether it plays through Do Not Disturb (its own setting per
+  contact).
 - Each talker has a floor of their own, so everyone may talk at once, one to one (2026-11-25, hen: "both parties to
   be able to transmit simultaneously") and in a group (the same day: no "Waiting for" anywhere): `BUSY` means only
   that the same user's other burst is still going.

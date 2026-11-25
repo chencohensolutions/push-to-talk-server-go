@@ -47,6 +47,7 @@ type burst struct {
 	started   time.Time
 	next      uint32 // the index the next segment must have
 	ended     bool   // the floor is let go
+	urgent    bool   // TalkStart.urgent, passed on in STARTED
 	acked     map[store.Device]bool
 	timers    []*time.Timer
 }
@@ -207,7 +208,7 @@ func (r *Relay) talkStart(ctx context.Context, c *conn, start *pb.TalkStart) err
 		return refuse(pb.SendResult_INVALID, "this burst id was used")
 	}
 	b := &burst{id: start.GetBurstId(), key: key, talker: from, peer: start.GetPeer(), group: start.GetGroup(),
-		listeners: listeners, started: r.Now(), acked: map[store.Device]bool{}}
+		listeners: listeners, started: r.Now(), acked: map[store.Device]bool{}, urgent: start.GetUrgent()}
 	r.floors[key] = b
 	r.bursts[b.id] = b
 	b.timers = append(b.timers, time.AfterFunc(MaxBurst, func() { r.endFloor(b, pb.TalkState_TIMEOUT) }))
@@ -220,7 +221,7 @@ func (r *Relay) talkStart(ctx context.Context, c *conn, start *pb.TalkStart) err
 	}
 	for _, l := range listeners {
 		started := &pb.TalkState{Event: pb.TalkState_STARTED, BurstId: b.id, TalkerUser: from.User,
-			TalkerDevice: uint32(from.Number), Peer: l.peer, Group: b.group, StartedAt: b.started.UnixMilli()}
+			TalkerDevice: uint32(from.Number), Peer: l.peer, Group: b.group, StartedAt: b.started.UnixMilli(), Urgent: b.urgent}
 		if !r.live(l.device, talkFrame(started)) {
 			r.Push.Queued(l.device, push.Talk)
 			continue

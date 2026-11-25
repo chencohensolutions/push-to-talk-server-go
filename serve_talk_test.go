@@ -371,3 +371,37 @@ func TestTalkBothAtOnceOneToOne(t *testing.T) {
 		t.Fatalf("hen twice: %v", s)
 	}
 }
+
+// An urgent push (2026-11-25, hen): TalkStart.urgent comes to the listeners in STARTED.
+func TestUrgentTalkIsMarkedForTheListeners(t *testing.T) {
+	env := newTestEnv(t)
+	env.addUsers(t, "hen", "dana")
+	hen, dana := env.phone(t, "hen"), env.phone(t, "dana")
+	for _, p := range []*phone{hen, dana} {
+		env.uploadKeys(t, p, ecKey())
+	}
+	henSocket, danaSocket := env.socket(t, hen), env.socket(t, dana)
+	env.pair(t, dana, []store.Device{dev(dana)}, hen, henSocket)
+	danaSocket.envelopeOf(t, pb.Envelope_PAIRED)
+
+	id := burstID()
+	henSocket.write(t, &pb.Frame{Kind: &pb.Frame_TalkStart{TalkStart: &pb.TalkStart{BurstId: id, Peer: "dana", Urgent: true}}})
+	if s := henSocket.talkState(t); s.Event != pb.TalkState_GRANTED {
+		t.Fatalf("urgent talk: %v", s)
+	}
+	if s := danaSocket.talkState(t); s.Event != pb.TalkState_STARTED || !s.Urgent {
+		t.Fatalf("the listener's STARTED: %v", s)
+	}
+	henSocket.write(t, &pb.Frame{Kind: &pb.Frame_TalkEnd{TalkEnd: &pb.TalkEnd{BurstId: id}}})
+	henSocket.talkState(t)
+	danaSocket.talkState(t)
+
+	// Not urgent: STARTED says so.
+	id = burstID()
+	if s := henSocket.talk(t, id, "dana", ""); s.Event != pb.TalkState_GRANTED {
+		t.Fatalf("talk: %v", s)
+	}
+	if s := danaSocket.talkState(t); s.Urgent {
+		t.Fatalf("a plain push marked urgent: %v", s)
+	}
+}

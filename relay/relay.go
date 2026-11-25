@@ -72,6 +72,8 @@ type Relay struct {
 	// The users with a device connected now, and when the others were last (Presence), since the server started.
 	online   map[string]bool
 	lastSeen map[string]time.Time
+	// hear is what each online user's phone last said of whether they can hear talk (HearState).
+	hear map[string]pb.Hear
 
 	// Talk: the floor of each conversation held now, and the bursts whose clip is still open, by id.
 	talkMu sync.Mutex
@@ -84,7 +86,7 @@ type Relay struct {
 // New is a relay over these stores.
 func New(users *auth.Users, registry *enroll.Registry, st *store.Store, book *contacts.Book, queueTTL time.Duration, now func() time.Time) *Relay {
 	return &Relay{Users: users, Registry: registry, Store: st, Book: book, QueueTTL: queueTTL, Now: now,
-		conns: map[store.Device]*conn{}, online: map[string]bool{}, lastSeen: map[string]time.Time{},
+		conns: map[store.Device]*conn{}, online: map[string]bool{}, lastSeen: map[string]time.Time{}, hear: map[string]pb.Hear{},
 		floors: map[string]*burst{}, bursts: map[string]*burst{}, calls: map[string]call{}}
 }
 

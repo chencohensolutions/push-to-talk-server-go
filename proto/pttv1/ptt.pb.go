@@ -101,6 +101,66 @@ func (PushKind) EnumDescriptor() ([]byte, []int) {
 	return file_proto_ptt_proto_rawDescGZIP(), []int{0}
 }
 
+// Whether a user can hear a push now (2026-11-25, hen: "who can hear you").
+type Hear int32
+
+const (
+	Hear_HEAR_UNSPECIFIED Hear = 0
+	// Talk plays out loud.
+	Hear_HEAR_OK Hear = 1
+	// The ringer is silent or on vibrate, or the talk or media volume is at 0: pushes are saved for later.
+	Hear_HEAR_SILENT Hear = 2
+	// Do Not Disturb is on.
+	Hear_HEAR_DND Hear = 3
+	// In a phone call.
+	Hear_HEAR_IN_CALL Hear = 4
+)
+
+// Enum value maps for Hear.
+var (
+	Hear_name = map[int32]string{
+		0: "HEAR_UNSPECIFIED",
+		1: "HEAR_OK",
+		2: "HEAR_SILENT",
+		3: "HEAR_DND",
+		4: "HEAR_IN_CALL",
+	}
+	Hear_value = map[string]int32{
+		"HEAR_UNSPECIFIED": 0,
+		"HEAR_OK":          1,
+		"HEAR_SILENT":      2,
+		"HEAR_DND":         3,
+		"HEAR_IN_CALL":     4,
+	}
+)
+
+func (x Hear) Enum() *Hear {
+	p := new(Hear)
+	*p = x
+	return p
+}
+
+func (x Hear) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (Hear) Descriptor() protoreflect.EnumDescriptor {
+	return file_proto_ptt_proto_enumTypes[1].Descriptor()
+}
+
+func (Hear) Type() protoreflect.EnumType {
+	return &file_proto_ptt_proto_enumTypes[1]
+}
+
+func (x Hear) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use Hear.Descriptor instead.
+func (Hear) EnumDescriptor() ([]byte, []int) {
+	return file_proto_ptt_proto_rawDescGZIP(), []int{1}
+}
+
 type Envelope_Type int32
 
 const (
@@ -160,11 +220,11 @@ func (x Envelope_Type) String() string {
 }
 
 func (Envelope_Type) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_ptt_proto_enumTypes[1].Descriptor()
+	return file_proto_ptt_proto_enumTypes[2].Descriptor()
 }
 
 func (Envelope_Type) Type() protoreflect.EnumType {
-	return &file_proto_ptt_proto_enumTypes[1]
+	return &file_proto_ptt_proto_enumTypes[2]
 }
 
 func (x Envelope_Type) Number() protoreflect.EnumNumber {
@@ -241,11 +301,11 @@ func (x SendResult_Status) String() string {
 }
 
 func (SendResult_Status) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_ptt_proto_enumTypes[2].Descriptor()
+	return file_proto_ptt_proto_enumTypes[3].Descriptor()
 }
 
 func (SendResult_Status) Type() protoreflect.EnumType {
-	return &file_proto_ptt_proto_enumTypes[2]
+	return &file_proto_ptt_proto_enumTypes[3]
 }
 
 func (x SendResult_Status) Number() protoreflect.EnumNumber {
@@ -305,11 +365,11 @@ func (x TalkState_Event) String() string {
 }
 
 func (TalkState_Event) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_ptt_proto_enumTypes[3].Descriptor()
+	return file_proto_ptt_proto_enumTypes[4].Descriptor()
 }
 
 func (TalkState_Event) Type() protoreflect.EnumType {
-	return &file_proto_ptt_proto_enumTypes[3]
+	return &file_proto_ptt_proto_enumTypes[4]
 }
 
 func (x TalkState_Event) Number() protoreflect.EnumNumber {
@@ -318,7 +378,7 @@ func (x TalkState_Event) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TalkState_Event.Descriptor instead.
 func (TalkState_Event) EnumDescriptor() ([]byte, []int) {
-	return file_proto_ptt_proto_rawDescGZIP(), []int{15, 0}
+	return file_proto_ptt_proto_rawDescGZIP(), []int{16, 0}
 }
 
 type TalkState_EndReason int32
@@ -360,11 +420,11 @@ func (x TalkState_EndReason) String() string {
 }
 
 func (TalkState_EndReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_proto_ptt_proto_enumTypes[4].Descriptor()
+	return file_proto_ptt_proto_enumTypes[5].Descriptor()
 }
 
 func (TalkState_EndReason) Type() protoreflect.EnumType {
-	return &file_proto_ptt_proto_enumTypes[4]
+	return &file_proto_ptt_proto_enumTypes[5]
 }
 
 func (x TalkState_EndReason) Number() protoreflect.EnumNumber {
@@ -373,7 +433,7 @@ func (x TalkState_EndReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TalkState_EndReason.Descriptor instead.
 func (TalkState_EndReason) EnumDescriptor() ([]byte, []int) {
-	return file_proto_ptt_proto_rawDescGZIP(), []int{15, 1}
+	return file_proto_ptt_proto_rawDescGZIP(), []int{16, 1}
 }
 
 type Frame struct {
@@ -394,6 +454,7 @@ type Frame struct {
 	//	*Frame_TalkEnd
 	//	*Frame_TalkAck
 	//	*Frame_BufferedTalk
+	//	*Frame_HearState
 	Kind          isFrame_Kind `protobuf_oneof:"kind"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -562,6 +623,15 @@ func (x *Frame) GetBufferedTalk() *BufferedTalk {
 	return nil
 }
 
+func (x *Frame) GetHearState() *HearState {
+	if x != nil {
+		if x, ok := x.Kind.(*Frame_HearState); ok {
+			return x.HearState
+		}
+	}
+	return nil
+}
+
 type isFrame_Kind interface {
 	isFrame_Kind()
 }
@@ -640,6 +710,12 @@ type Frame_BufferedTalk struct {
 	BufferedTalk *BufferedTalk `protobuf:"bytes,14,opt,name=buffered_talk,json=bufferedTalk,proto3,oneof"`
 }
 
+type Frame_HearState struct {
+	// Device to server: whether this device's user can hear talk now (docs/messaging.md, "Can hear"). Sent when it
+	// changes; the server shows it to contacts in Presence (hear), unless the user hides it (setHearVisible).
+	HearState *HearState `protobuf:"bytes,15,opt,name=hear_state,json=hearState,proto3,oneof"`
+}
+
 func (*Frame_Envelope) isFrame_Kind() {}
 
 func (*Frame_Ack) isFrame_Kind() {}
@@ -667,6 +743,8 @@ func (*Frame_TalkEnd) isFrame_Kind() {}
 func (*Frame_TalkAck) isFrame_Kind() {}
 
 func (*Frame_BufferedTalk) isFrame_Kind() {}
+
+func (*Frame_HearState) isFrame_Kind() {}
 
 type Envelope struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1263,7 +1341,9 @@ type Presence struct {
 	User   string                 `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
 	Online bool                   `protobuf:"varint,2,opt,name=online,proto3" json:"online,omitempty"`
 	// When offline: when the user was last connected, milliseconds since 1970 (UTC), rounded down to 5 minutes.
-	LastSeen      int64 `protobuf:"varint,3,opt,name=last_seen,json=lastSeen,proto3" json:"last_seen,omitempty"`
+	LastSeen int64 `protobuf:"varint,3,opt,name=last_seen,json=lastSeen,proto3" json:"last_seen,omitempty"`
+	// While online: whether they can hear talk now, as their phone last said (HEAR_UNSPECIFIED: not said, or hidden).
+	Hear          Hear `protobuf:"varint,4,opt,name=hear,proto3,enum=ptt.v1.Hear" json:"hear,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1319,20 +1399,73 @@ func (x *Presence) GetLastSeen() int64 {
 	return 0
 }
 
+func (x *Presence) GetHear() Hear {
+	if x != nil {
+		return x.Hear
+	}
+	return Hear_HEAR_UNSPECIFIED
+}
+
+type HearState struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Hear          Hear                   `protobuf:"varint,1,opt,name=hear,proto3,enum=ptt.v1.Hear" json:"hear,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *HearState) Reset() {
+	*x = HearState{}
+	mi := &file_proto_ptt_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *HearState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*HearState) ProtoMessage() {}
+
+func (x *HearState) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_ptt_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use HearState.ProtoReflect.Descriptor instead.
+func (*HearState) Descriptor() ([]byte, []int) {
+	return file_proto_ptt_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *HearState) GetHear() Hear {
+	if x != nil {
+		return x.Hear
+	}
+	return Hear_HEAR_UNSPECIFIED
+}
+
 // A talker's phone takes the floor of one conversation: a contact (peer) or a group (group), one of the two.
 type TalkStart struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 32 hex digits, made by the phone; the clip's id too, and what the encrypted "clip start" message names.
-	BurstId       string `protobuf:"bytes,1,opt,name=burst_id,json=burstId,proto3" json:"burst_id,omitempty"`
-	Peer          string `protobuf:"bytes,2,opt,name=peer,proto3" json:"peer,omitempty"`
-	Group         string `protobuf:"bytes,3,opt,name=group,proto3" json:"group,omitempty"`
+	BurstId string `protobuf:"bytes,1,opt,name=burst_id,json=burstId,proto3" json:"burst_id,omitempty"`
+	Peer    string `protobuf:"bytes,2,opt,name=peer,proto3" json:"peer,omitempty"`
+	Group   string `protobuf:"bytes,3,opt,name=group,proto3" json:"group,omitempty"`
+	// An urgent push (2026-11-25, hen): plays through Do Not Disturb where the listener allowed it for the talker.
+	Urgent        bool `protobuf:"varint,4,opt,name=urgent,proto3" json:"urgent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TalkStart) Reset() {
 	*x = TalkStart{}
-	mi := &file_proto_ptt_proto_msgTypes[11]
+	mi := &file_proto_ptt_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1344,7 +1477,7 @@ func (x *TalkStart) String() string {
 func (*TalkStart) ProtoMessage() {}
 
 func (x *TalkStart) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ptt_proto_msgTypes[11]
+	mi := &file_proto_ptt_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1357,7 +1490,7 @@ func (x *TalkStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TalkStart.ProtoReflect.Descriptor instead.
 func (*TalkStart) Descriptor() ([]byte, []int) {
-	return file_proto_ptt_proto_rawDescGZIP(), []int{11}
+	return file_proto_ptt_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TalkStart) GetBurstId() string {
@@ -1381,6 +1514,13 @@ func (x *TalkStart) GetGroup() string {
 	return ""
 }
 
+func (x *TalkStart) GetUrgent() bool {
+	if x != nil {
+		return x.Urgent
+	}
+	return false
+}
+
 type TalkEnd struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BurstId       string                 `protobuf:"bytes,1,opt,name=burst_id,json=burstId,proto3" json:"burst_id,omitempty"`
@@ -1390,7 +1530,7 @@ type TalkEnd struct {
 
 func (x *TalkEnd) Reset() {
 	*x = TalkEnd{}
-	mi := &file_proto_ptt_proto_msgTypes[12]
+	mi := &file_proto_ptt_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1402,7 +1542,7 @@ func (x *TalkEnd) String() string {
 func (*TalkEnd) ProtoMessage() {}
 
 func (x *TalkEnd) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ptt_proto_msgTypes[12]
+	mi := &file_proto_ptt_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1415,7 +1555,7 @@ func (x *TalkEnd) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TalkEnd.ProtoReflect.Descriptor instead.
 func (*TalkEnd) Descriptor() ([]byte, []int) {
-	return file_proto_ptt_proto_rawDescGZIP(), []int{12}
+	return file_proto_ptt_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TalkEnd) GetBurstId() string {
@@ -1434,7 +1574,7 @@ type TalkAck struct {
 
 func (x *TalkAck) Reset() {
 	*x = TalkAck{}
-	mi := &file_proto_ptt_proto_msgTypes[13]
+	mi := &file_proto_ptt_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1446,7 +1586,7 @@ func (x *TalkAck) String() string {
 func (*TalkAck) ProtoMessage() {}
 
 func (x *TalkAck) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ptt_proto_msgTypes[13]
+	mi := &file_proto_ptt_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1459,7 +1599,7 @@ func (x *TalkAck) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TalkAck.ProtoReflect.Descriptor instead.
 func (*TalkAck) Descriptor() ([]byte, []int) {
-	return file_proto_ptt_proto_rawDescGZIP(), []int{13}
+	return file_proto_ptt_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *TalkAck) GetBurstId() string {
@@ -1494,7 +1634,7 @@ type BufferedTalk struct {
 
 func (x *BufferedTalk) Reset() {
 	*x = BufferedTalk{}
-	mi := &file_proto_ptt_proto_msgTypes[14]
+	mi := &file_proto_ptt_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1506,7 +1646,7 @@ func (x *BufferedTalk) String() string {
 func (*BufferedTalk) ProtoMessage() {}
 
 func (x *BufferedTalk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ptt_proto_msgTypes[14]
+	mi := &file_proto_ptt_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1519,7 +1659,7 @@ func (x *BufferedTalk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BufferedTalk.ProtoReflect.Descriptor instead.
 func (*BufferedTalk) Descriptor() ([]byte, []int) {
-	return file_proto_ptt_proto_rawDescGZIP(), []int{14}
+	return file_proto_ptt_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *BufferedTalk) GetBlobId() string {
@@ -1594,14 +1734,16 @@ type TalkState struct {
 	Refusal SendResult_Status `protobuf:"varint,8,opt,name=refusal,proto3,enum=ptt.v1.SendResult_Status" json:"refusal,omitempty"`
 	Detail  string            `protobuf:"bytes,9,opt,name=detail,proto3" json:"detail,omitempty"`
 	// When the floor was granted, milliseconds since 1970 (UTC).
-	StartedAt     int64 `protobuf:"varint,10,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	StartedAt int64 `protobuf:"varint,10,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	// With STARTED: the talker marked the push urgent (TalkStart.urgent).
+	Urgent        bool `protobuf:"varint,11,opt,name=urgent,proto3" json:"urgent,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TalkState) Reset() {
 	*x = TalkState{}
-	mi := &file_proto_ptt_proto_msgTypes[15]
+	mi := &file_proto_ptt_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1613,7 +1755,7 @@ func (x *TalkState) String() string {
 func (*TalkState) ProtoMessage() {}
 
 func (x *TalkState) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ptt_proto_msgTypes[15]
+	mi := &file_proto_ptt_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1626,7 +1768,7 @@ func (x *TalkState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TalkState.ProtoReflect.Descriptor instead.
 func (*TalkState) Descriptor() ([]byte, []int) {
-	return file_proto_ptt_proto_rawDescGZIP(), []int{15}
+	return file_proto_ptt_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *TalkState) GetEvent() TalkState_Event {
@@ -1699,6 +1841,13 @@ func (x *TalkState) GetStartedAt() int64 {
 	return 0
 }
 
+func (x *TalkState) GetUrgent() bool {
+	if x != nil {
+		return x.Urgent
+	}
+	return false
+}
+
 // One piece of a clip: AES-256-GCM ciphertext made by the talker's phone with the clip key (its nonce is the index;
 // its authenticated data binds the clip id, the index and the last flag). The server can't open it.
 type ClipSegment struct {
@@ -1716,7 +1865,7 @@ type ClipSegment struct {
 
 func (x *ClipSegment) Reset() {
 	*x = ClipSegment{}
-	mi := &file_proto_ptt_proto_msgTypes[16]
+	mi := &file_proto_ptt_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1728,7 +1877,7 @@ func (x *ClipSegment) String() string {
 func (*ClipSegment) ProtoMessage() {}
 
 func (x *ClipSegment) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_ptt_proto_msgTypes[16]
+	mi := &file_proto_ptt_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1741,7 +1890,7 @@ func (x *ClipSegment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClipSegment.ProtoReflect.Descriptor instead.
 func (*ClipSegment) Descriptor() ([]byte, []int) {
-	return file_proto_ptt_proto_rawDescGZIP(), []int{16}
+	return file_proto_ptt_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ClipSegment) GetBurstId() string {
@@ -1776,7 +1925,7 @@ var File_proto_ptt_proto protoreflect.FileDescriptor
 
 const file_proto_ptt_proto_rawDesc = "" +
 	"\n" +
-	"\x0fproto/ptt.proto\x12\x06ptt.v1\"\xa5\x05\n" +
+	"\x0fproto/ptt.proto\x12\x06ptt.v1\"\xd9\x05\n" +
 	"\x05Frame\x12.\n" +
 	"\benvelope\x18\x01 \x01(\v2\x10.ptt.v1.EnvelopeH\x00R\benvelope\x12\x1f\n" +
 	"\x03ack\x18\x02 \x01(\v2\v.ptt.v1.AckH\x00R\x03ack\x12\"\n" +
@@ -1796,7 +1945,9 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\fclip_segment\x18\v \x01(\v2\x13.ptt.v1.ClipSegmentH\x00R\vclipSegment\x12,\n" +
 	"\btalk_end\x18\f \x01(\v2\x0f.ptt.v1.TalkEndH\x00R\atalkEnd\x12,\n" +
 	"\btalk_ack\x18\r \x01(\v2\x0f.ptt.v1.TalkAckH\x00R\atalkAck\x12;\n" +
-	"\rbuffered_talk\x18\x0e \x01(\v2\x14.ptt.v1.BufferedTalkH\x00R\fbufferedTalkB\x06\n" +
+	"\rbuffered_talk\x18\x0e \x01(\v2\x14.ptt.v1.BufferedTalkH\x00R\fbufferedTalk\x122\n" +
+	"\n" +
+	"hear_state\x18\x0f \x01(\v2\x11.ptt.v1.HearStateH\x00R\thearStateB\x06\n" +
 	"\x04kind\"\xc2\x04\n" +
 	"\bEnvelope\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n" +
@@ -1865,15 +2016,19 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\x04Pong\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\x04R\x02id\"\f\n" +
 	"\n" +
-	"QueueEmpty\"S\n" +
+	"QueueEmpty\"u\n" +
 	"\bPresence\x12\x12\n" +
 	"\x04user\x18\x01 \x01(\tR\x04user\x12\x16\n" +
 	"\x06online\x18\x02 \x01(\bR\x06online\x12\x1b\n" +
-	"\tlast_seen\x18\x03 \x01(\x03R\blastSeen\"P\n" +
+	"\tlast_seen\x18\x03 \x01(\x03R\blastSeen\x12 \n" +
+	"\x04hear\x18\x04 \x01(\x0e2\f.ptt.v1.HearR\x04hear\"-\n" +
+	"\tHearState\x12 \n" +
+	"\x04hear\x18\x01 \x01(\x0e2\f.ptt.v1.HearR\x04hear\"h\n" +
 	"\tTalkStart\x12\x19\n" +
 	"\bburst_id\x18\x01 \x01(\tR\aburstId\x12\x12\n" +
 	"\x04peer\x18\x02 \x01(\tR\x04peer\x12\x14\n" +
-	"\x05group\x18\x03 \x01(\tR\x05group\"$\n" +
+	"\x05group\x18\x03 \x01(\tR\x05group\x12\x16\n" +
+	"\x06urgent\x18\x04 \x01(\bR\x06urgent\"$\n" +
 	"\aTalkEnd\x12\x19\n" +
 	"\bburst_id\x18\x01 \x01(\tR\aburstId\"$\n" +
 	"\aTalkAck\x12\x19\n" +
@@ -1887,7 +2042,7 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\x05codec\x18\x06 \x01(\tR\x05codec\x12\x1d\n" +
 	"\n" +
 	"started_at\x18\a \x01(\x03R\tstartedAt\x12\x19\n" +
-	"\bburst_id\x18\b \x01(\tR\aburstId\"\x9a\x04\n" +
+	"\bburst_id\x18\b \x01(\tR\aburstId\"\xb2\x04\n" +
 	"\tTalkState\x12-\n" +
 	"\x05event\x18\x01 \x01(\x0e2\x17.ptt.v1.TalkState.EventR\x05event\x12\x19\n" +
 	"\bburst_id\x18\x02 \x01(\tR\aburstId\x12\x1f\n" +
@@ -1902,7 +2057,8 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\x06detail\x18\t \x01(\tR\x06detail\x12\x1d\n" +
 	"\n" +
 	"started_at\x18\n" +
-	" \x01(\x03R\tstartedAt\"Z\n" +
+	" \x01(\x03R\tstartedAt\x12\x16\n" +
+	"\x06urgent\x18\v \x01(\bR\x06urgent\"Z\n" +
 	"\x05Event\x12\x15\n" +
 	"\x11EVENT_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aGRANTED\x10\x01\x12\b\n" +
@@ -1929,7 +2085,13 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\tPUSH_NONE\x10\x03\x12\r\n" +
 	"\tPUSH_TALK\x10\x04\x12\r\n" +
 	"\tPUSH_CALL\x10\x05\x12\r\n" +
-	"\tPUSH_WARM\x10\x06BHZFgithub.com/chencohensolutions/push-to-talk-server-go/proto/pttv1;pttv1b\x06proto3"
+	"\tPUSH_WARM\x10\x06*Z\n" +
+	"\x04Hear\x12\x14\n" +
+	"\x10HEAR_UNSPECIFIED\x10\x00\x12\v\n" +
+	"\aHEAR_OK\x10\x01\x12\x0f\n" +
+	"\vHEAR_SILENT\x10\x02\x12\f\n" +
+	"\bHEAR_DND\x10\x03\x12\x10\n" +
+	"\fHEAR_IN_CALL\x10\x04BHZFgithub.com/chencohensolutions/push-to-talk-server-go/proto/pttv1;pttv1b\x06proto3"
 
 var (
 	file_proto_ptt_proto_rawDescOnce sync.Once
@@ -1943,62 +2105,67 @@ func file_proto_ptt_proto_rawDescGZIP() []byte {
 	return file_proto_ptt_proto_rawDescData
 }
 
-var file_proto_ptt_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_proto_ptt_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_proto_ptt_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
+var file_proto_ptt_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_proto_ptt_proto_goTypes = []any{
 	(PushKind)(0),            // 0: ptt.v1.PushKind
-	(Envelope_Type)(0),       // 1: ptt.v1.Envelope.Type
-	(SendResult_Status)(0),   // 2: ptt.v1.SendResult.Status
-	(TalkState_Event)(0),     // 3: ptt.v1.TalkState.Event
-	(TalkState_EndReason)(0), // 4: ptt.v1.TalkState.EndReason
-	(*Frame)(nil),            // 5: ptt.v1.Frame
-	(*Envelope)(nil),         // 6: ptt.v1.Envelope
-	(*Ack)(nil),              // 7: ptt.v1.Ack
-	(*Send)(nil),             // 8: ptt.v1.Send
-	(*SendResult)(nil),       // 9: ptt.v1.SendResult
-	(*UserDevices)(nil),      // 10: ptt.v1.UserDevices
-	(*ActiveDevice)(nil),     // 11: ptt.v1.ActiveDevice
-	(*Ping)(nil),             // 12: ptt.v1.Ping
-	(*Pong)(nil),             // 13: ptt.v1.Pong
-	(*QueueEmpty)(nil),       // 14: ptt.v1.QueueEmpty
-	(*Presence)(nil),         // 15: ptt.v1.Presence
-	(*TalkStart)(nil),        // 16: ptt.v1.TalkStart
-	(*TalkEnd)(nil),          // 17: ptt.v1.TalkEnd
-	(*TalkAck)(nil),          // 18: ptt.v1.TalkAck
-	(*BufferedTalk)(nil),     // 19: ptt.v1.BufferedTalk
-	(*TalkState)(nil),        // 20: ptt.v1.TalkState
-	(*ClipSegment)(nil),      // 21: ptt.v1.ClipSegment
+	(Hear)(0),                // 1: ptt.v1.Hear
+	(Envelope_Type)(0),       // 2: ptt.v1.Envelope.Type
+	(SendResult_Status)(0),   // 3: ptt.v1.SendResult.Status
+	(TalkState_Event)(0),     // 4: ptt.v1.TalkState.Event
+	(TalkState_EndReason)(0), // 5: ptt.v1.TalkState.EndReason
+	(*Frame)(nil),            // 6: ptt.v1.Frame
+	(*Envelope)(nil),         // 7: ptt.v1.Envelope
+	(*Ack)(nil),              // 8: ptt.v1.Ack
+	(*Send)(nil),             // 9: ptt.v1.Send
+	(*SendResult)(nil),       // 10: ptt.v1.SendResult
+	(*UserDevices)(nil),      // 11: ptt.v1.UserDevices
+	(*ActiveDevice)(nil),     // 12: ptt.v1.ActiveDevice
+	(*Ping)(nil),             // 13: ptt.v1.Ping
+	(*Pong)(nil),             // 14: ptt.v1.Pong
+	(*QueueEmpty)(nil),       // 15: ptt.v1.QueueEmpty
+	(*Presence)(nil),         // 16: ptt.v1.Presence
+	(*HearState)(nil),        // 17: ptt.v1.HearState
+	(*TalkStart)(nil),        // 18: ptt.v1.TalkStart
+	(*TalkEnd)(nil),          // 19: ptt.v1.TalkEnd
+	(*TalkAck)(nil),          // 20: ptt.v1.TalkAck
+	(*BufferedTalk)(nil),     // 21: ptt.v1.BufferedTalk
+	(*TalkState)(nil),        // 22: ptt.v1.TalkState
+	(*ClipSegment)(nil),      // 23: ptt.v1.ClipSegment
 }
 var file_proto_ptt_proto_depIdxs = []int32{
-	6,  // 0: ptt.v1.Frame.envelope:type_name -> ptt.v1.Envelope
-	7,  // 1: ptt.v1.Frame.ack:type_name -> ptt.v1.Ack
-	8,  // 2: ptt.v1.Frame.send:type_name -> ptt.v1.Send
-	9,  // 3: ptt.v1.Frame.send_result:type_name -> ptt.v1.SendResult
-	12, // 4: ptt.v1.Frame.ping:type_name -> ptt.v1.Ping
-	13, // 5: ptt.v1.Frame.pong:type_name -> ptt.v1.Pong
-	14, // 6: ptt.v1.Frame.queue_empty:type_name -> ptt.v1.QueueEmpty
-	15, // 7: ptt.v1.Frame.presence:type_name -> ptt.v1.Presence
-	16, // 8: ptt.v1.Frame.talk_start:type_name -> ptt.v1.TalkStart
-	20, // 9: ptt.v1.Frame.talk_state:type_name -> ptt.v1.TalkState
-	21, // 10: ptt.v1.Frame.clip_segment:type_name -> ptt.v1.ClipSegment
-	17, // 11: ptt.v1.Frame.talk_end:type_name -> ptt.v1.TalkEnd
-	18, // 12: ptt.v1.Frame.talk_ack:type_name -> ptt.v1.TalkAck
-	19, // 13: ptt.v1.Frame.buffered_talk:type_name -> ptt.v1.BufferedTalk
-	1,  // 14: ptt.v1.Envelope.type:type_name -> ptt.v1.Envelope.Type
-	6,  // 15: ptt.v1.Send.envelopes:type_name -> ptt.v1.Envelope
-	0,  // 16: ptt.v1.Send.push_kind:type_name -> ptt.v1.PushKind
-	10, // 17: ptt.v1.Send.group_devices:type_name -> ptt.v1.UserDevices
-	2,  // 18: ptt.v1.SendResult.status:type_name -> ptt.v1.SendResult.Status
-	10, // 19: ptt.v1.SendResult.devices:type_name -> ptt.v1.UserDevices
-	11, // 20: ptt.v1.UserDevices.devices:type_name -> ptt.v1.ActiveDevice
-	3,  // 21: ptt.v1.TalkState.event:type_name -> ptt.v1.TalkState.Event
-	4,  // 22: ptt.v1.TalkState.end_reason:type_name -> ptt.v1.TalkState.EndReason
-	2,  // 23: ptt.v1.TalkState.refusal:type_name -> ptt.v1.SendResult.Status
-	24, // [24:24] is the sub-list for method output_type
-	24, // [24:24] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	7,  // 0: ptt.v1.Frame.envelope:type_name -> ptt.v1.Envelope
+	8,  // 1: ptt.v1.Frame.ack:type_name -> ptt.v1.Ack
+	9,  // 2: ptt.v1.Frame.send:type_name -> ptt.v1.Send
+	10, // 3: ptt.v1.Frame.send_result:type_name -> ptt.v1.SendResult
+	13, // 4: ptt.v1.Frame.ping:type_name -> ptt.v1.Ping
+	14, // 5: ptt.v1.Frame.pong:type_name -> ptt.v1.Pong
+	15, // 6: ptt.v1.Frame.queue_empty:type_name -> ptt.v1.QueueEmpty
+	16, // 7: ptt.v1.Frame.presence:type_name -> ptt.v1.Presence
+	18, // 8: ptt.v1.Frame.talk_start:type_name -> ptt.v1.TalkStart
+	22, // 9: ptt.v1.Frame.talk_state:type_name -> ptt.v1.TalkState
+	23, // 10: ptt.v1.Frame.clip_segment:type_name -> ptt.v1.ClipSegment
+	19, // 11: ptt.v1.Frame.talk_end:type_name -> ptt.v1.TalkEnd
+	20, // 12: ptt.v1.Frame.talk_ack:type_name -> ptt.v1.TalkAck
+	21, // 13: ptt.v1.Frame.buffered_talk:type_name -> ptt.v1.BufferedTalk
+	17, // 14: ptt.v1.Frame.hear_state:type_name -> ptt.v1.HearState
+	2,  // 15: ptt.v1.Envelope.type:type_name -> ptt.v1.Envelope.Type
+	7,  // 16: ptt.v1.Send.envelopes:type_name -> ptt.v1.Envelope
+	0,  // 17: ptt.v1.Send.push_kind:type_name -> ptt.v1.PushKind
+	11, // 18: ptt.v1.Send.group_devices:type_name -> ptt.v1.UserDevices
+	3,  // 19: ptt.v1.SendResult.status:type_name -> ptt.v1.SendResult.Status
+	11, // 20: ptt.v1.SendResult.devices:type_name -> ptt.v1.UserDevices
+	12, // 21: ptt.v1.UserDevices.devices:type_name -> ptt.v1.ActiveDevice
+	1,  // 22: ptt.v1.Presence.hear:type_name -> ptt.v1.Hear
+	1,  // 23: ptt.v1.HearState.hear:type_name -> ptt.v1.Hear
+	4,  // 24: ptt.v1.TalkState.event:type_name -> ptt.v1.TalkState.Event
+	5,  // 25: ptt.v1.TalkState.end_reason:type_name -> ptt.v1.TalkState.EndReason
+	3,  // 26: ptt.v1.TalkState.refusal:type_name -> ptt.v1.SendResult.Status
+	27, // [27:27] is the sub-list for method output_type
+	27, // [27:27] is the sub-list for method input_type
+	27, // [27:27] is the sub-list for extension type_name
+	27, // [27:27] is the sub-list for extension extendee
+	0,  // [0:27] is the sub-list for field type_name
 }
 
 func init() { file_proto_ptt_proto_init() }
@@ -2021,14 +2188,15 @@ func file_proto_ptt_proto_init() {
 		(*Frame_TalkEnd)(nil),
 		(*Frame_TalkAck)(nil),
 		(*Frame_BufferedTalk)(nil),
+		(*Frame_HearState)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_ptt_proto_rawDesc), len(file_proto_ptt_proto_rawDesc)),
-			NumEnums:      5,
-			NumMessages:   17,
+			NumEnums:      6,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

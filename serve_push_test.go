@@ -522,3 +522,57 @@ func TestAWarmPushIsHighPriorityAndShort(t *testing.T) {
 		}
 	}
 }
+
+// Who can hear you (2026-11-25, hen): a phone says whether its user can hear talk now (HearState); contacts get it in
+// Presence (a frame when it changes, and the presence query), unless the user hides it (setHearVisible).
+func TestCanHear(t *testing.T) {
+	env := newTestEnv(t)
+	henPhone, _, danaPhone, henSocket, _, danaSocket := pushedPair(t, env)
+	hearOf := func(p *phone, user string) string {
+		t.Helper()
+		r := env.graphql(t, p.client, `query($u: [String!]!) { presence(users: $u) { user hear } }`, map[string]any{"u": []string{user}})
+		var out []struct{ Hear *string }
+		if err := json.Unmarshal(r.Data["presence"], &out); err != nil || len(out) != 1 {
+			t.Fatalf("presence: %s %+v", r.Data["presence"], r.Errors)
+		}
+		if out[0].Hear == nil {
+			return ""
+		}
+		return *out[0].Hear
+	}
+	if got := hearOf(danaPhone, "hen"); got != "" {
+		t.Fatalf("not said yet: %q", got)
+	}
+	henSocket.write(t, &pb.Frame{Kind: &pb.Frame_HearState{HearState: &pb.HearState{Hear: pb.Hear_HEAR_DND}}})
+	if f := danaSocket.next(t, "presence").GetPresence(); f.User != "hen" || !f.Online || f.Hear != pb.Hear_HEAR_DND {
+		t.Fatalf("the can-hear frame: %v", f)
+	}
+	if got := hearOf(danaPhone, "hen"); got != "DND" {
+		t.Fatalf("hen in Do Not Disturb: %q", got)
+	}
+	// The same again sends nothing; a change does.
+	henSocket.write(t, &pb.Frame{Kind: &pb.Frame_HearState{HearState: &pb.HearState{Hear: pb.Hear_HEAR_DND}}})
+	henSocket.write(t, &pb.Frame{Kind: &pb.Frame_HearState{HearState: &pb.HearState{Hear: pb.Hear_HEAR_SILENT}}})
+	if f := danaSocket.next(t, "presence").GetPresence(); f.Hear != pb.Hear_HEAR_SILENT {
+		t.Fatalf("silent: %v", f)
+	}
+
+	// hen hides it: the query shows nothing, and no frame goes for a change.
+	r := env.graphql(t, henPhone.client, `mutation { setHearVisible(visible: false) }`, nil)
+	if string(r.Data["setHearVisible"]) != "false" {
+		t.Fatalf("setHearVisible: %+v", r)
+	}
+	if r := env.graphql(t, henPhone.client, `{ me { hearVisible } }`, nil); string(r.Data["me"]) != `{"hearVisible":false}` {
+		t.Fatalf("me: %s", r.Data["me"])
+	}
+	if got := hearOf(danaPhone, "hen"); got != "" {
+		t.Fatalf("hidden: %q", got)
+	}
+	henSocket.write(t, &pb.Frame{Kind: &pb.Frame_HearState{HearState: &pb.HearState{Hear: pb.Hear_HEAR_OK}}})
+	time.Sleep(200 * time.Millisecond)
+	for len(danaSocket.frames) > 0 {
+		if f := <-danaSocket.frames; kindOf(f) == "presence" {
+			t.Fatalf("a can-hear frame while hen hides it: %v", f)
+		}
+	}
+}

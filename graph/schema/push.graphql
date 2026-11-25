@@ -19,6 +19,11 @@ extend type Mutation {
   user who hides theirs sees nobody's. Visible unless set. Answers the setting now.
   """
   setPresenceVisible(visible: Boolean!): Boolean!
+  """
+  Shows or hides from its contacts whether the caller's user can hear talk now (Presence.hear: silent, Do Not
+  Disturb, in a call). Shown unless set; hidden only one way. Answers the setting now.
+  """
+  setHearVisible(visible: Boolean!): Boolean!
 }
 
 extend type Query {
@@ -33,6 +38,8 @@ extend type Query {
 extend type Me {
   "The user shows their presence to contacts (setPresenceVisible)."
   presenceVisible: Boolean!
+  "The user shows contacts whether they can hear talk now (setHearVisible)."
+  hearVisible: Boolean!
   "The calling device has an FCM token registered (registerPush)."
   pushRegistered: Boolean!
   "The calling device registered notifications as on."
@@ -50,4 +57,18 @@ type Presence {
   online: Boolean!
   "When offline: when the user was last connected, rounded down to 5 minutes; null when unknown (not since the server started) or hidden."
   lastSeen: Time
+  "While online: whether they can hear talk now, as their phone last said; null when not said or hidden."
+  hear: Hear
+}
+
+"Whether a user can hear a push now (the HearState frame; docs/messaging.md, \"Can hear\")."
+enum Hear {
+  "Talk plays out loud."
+  OK
+  "The ringer is silent or on vibrate, or the talk or media volume is at 0: pushes are saved for later."
+  SILENT
+  "Do Not Disturb is on."
+  DND
+  "In a phone call."
+  IN_CALL
 }

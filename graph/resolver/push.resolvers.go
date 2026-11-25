@@ -48,6 +48,18 @@ func (r *mutationResolver) SetPresenceVisible(ctx context.Context, visible bool)
 	return visible, nil
 }
 
+// SetHearVisible is the resolver for the setHearVisible field.
+func (r *mutationResolver) SetHearVisible(ctx context.Context, visible bool) (bool, error) {
+	caller, err := r.caller(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := r.Users.SetHearHidden(caller.User, !visible); err != nil {
+		return false, err
+	}
+	return visible, nil
+}
+
 // Presence is the resolver for the presence field.
 func (r *queryResolver) Presence(ctx context.Context, users []string) ([]*model.Presence, error) {
 	caller, err := r.caller(ctx)
@@ -59,7 +71,7 @@ func (r *queryResolver) Presence(ctx context.Context, users []string) ([]*model.
 	}
 	out := []*model.Presence{}
 	for _, p := range r.Relay.Presences(caller.User, users) {
-		m := &model.Presence{User: p.User, Online: p.Online}
+		m := &model.Presence{User: p.User, Online: p.Online, Hear: hearModel(p.Hear)}
 		if !p.LastSeen.IsZero() {
 			seen := p.LastSeen
 			m.LastSeen = &seen
