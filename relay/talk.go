@@ -181,6 +181,11 @@ func (r *Relay) talkStart(ctx context.Context, c *conn, start *pb.TalkStart) err
 		return refuse(status, detail)
 	}
 	key := floorKey(from.User, start.GetPeer(), start.GetGroup())
+	if start.GetGroup() == "" {
+		// One to one, both may talk at once (2026-11-25, hen: "both parties to be able to transmit simultaneously"):
+		// each talker has a floor of their own; a group still has one.
+		key += ">" + from.User
+	}
 
 	r.talkMu.Lock()
 	if b := r.bursts[start.GetBurstId()]; b != nil {

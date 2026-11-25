@@ -287,6 +287,9 @@ audio is AES-256-GCM made by the talker's phone with a key that goes end to end 
   2026-11-22, hen, a fellow group member who isn't a contact is reached in the group) or a group (a member).
   `burst_id` is 32 lowercase hex digits made by the phone; it is the clip's id too. The answer is a `TalkState`: `GRANTED`, `BUSY` (with who holds the floor) or `REFUSED` (`refusal` is
   `NOT_PAIRED`, `BLOCKED`, `NOT_MEMBER`, `UNKNOWN_USER` or `INVALID`). The same TalkStart again is GRANTED again.
+- One to one, each talker has a floor of their own, so both users may talk at once (2026-11-25, hen: "both parties to
+  be able to transmit simultaneously"): `BUSY` there means only that the same user's other burst is still going. A
+  group still has one floor for everyone.
 - Every other active device of the conversation (the other user's, the talker's own other devices; in a group every
   member's but those blocked either way) gets **`STARTED`**, live only. `peer` is the conversation as that device sees
   it. A device answers with a **`TalkAck`** when it will play the burst. A device without `/ws` gets a `talk` push at
