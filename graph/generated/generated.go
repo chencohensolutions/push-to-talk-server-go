@@ -148,6 +148,7 @@ type ComplexityRoot struct {
 		DeviceNumber         func(childComplexity int) int
 		DisplayName          func(childComplexity int) int
 		Email                func(childComplexity int) int
+		HearVisible          func(childComplexity int) int
 		IdentityKey          func(childComplexity int) int
 		NotificationsEnabled func(childComplexity int) int
 		PresenceVisible      func(childComplexity int) int
@@ -179,6 +180,7 @@ type ComplexityRoot struct {
 		RenewCertificate   func(childComplexity int, csr string, keyProtection model.KeyProtection) int
 		ReplaceIdentityKey func(childComplexity int, identityKey string) int
 		RevokeMyDevice     func(childComplexity int, deviceNumber int) int
+		SetHearVisible     func(childComplexity int, visible bool) int
 		SetPresenceVisible func(childComplexity int, visible bool) int
 		StopRecordingCall  func(childComplexity int, call string, peer *string, group *string) int
 		TalkToken          func(childComplexity int, peer *string, group *string) int
@@ -228,6 +230,7 @@ type ComplexityRoot struct {
 	}
 
 	Presence struct {
+		Hear     func(childComplexity int) int
 		LastSeen func(childComplexity int) int
 		Online   func(childComplexity int) int
 		User     func(childComplexity int) int
@@ -319,6 +322,7 @@ type MutationResolver interface {
 	Unblock(ctx context.Context, user string) (bool, error)
 	RegisterPush(ctx context.Context, token *string, notificationsEnabled bool) (bool, error)
 	SetPresenceVisible(ctx context.Context, visible bool) (bool, error)
+	SetHearVisible(ctx context.Context, visible bool) (bool, error)
 	TalkToken(ctx context.Context, peer *string, group *string) (*model.TalkToken, error)
 	DeleteTalkBuffer(ctx context.Context, id string) (bool, error)
 	CallToken(ctx context.Context, call string, peer *string, group *string) (*model.TalkToken, error)
@@ -739,6 +743,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Me.Email(childComplexity), true
+	case "Me.hearVisible":
+		if e.ComplexityRoot.Me.HearVisible == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Me.HearVisible(childComplexity), true
 	case "Me.identityKey":
 		if e.ComplexityRoot.Me.IdentityKey == nil {
 			break
@@ -1008,6 +1018,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RevokeMyDevice(childComplexity, args["deviceNumber"].(int)), true
+	case "Mutation.setHearVisible":
+		if e.ComplexityRoot.Mutation.SetHearVisible == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_setHearVisible_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.SetHearVisible(childComplexity, args["visible"].(bool)), true
 	case "Mutation.setPresenceVisible":
 		if e.ComplexityRoot.Mutation.SetPresenceVisible == nil {
 			break
@@ -1213,6 +1234,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.PrekeyCount.RefillBelow(childComplexity), true
 
+	case "Presence.hear":
+		if e.ComplexityRoot.Presence.Hear == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Presence.Hear(childComplexity), true
 	case "Presence.lastSeen":
 		if e.ComplexityRoot.Presence.LastSeen == nil {
 			break
@@ -2054,6 +2081,11 @@ extend type Mutation {
   user who hides theirs sees nobody's. Visible unless set. Answers the setting now.
   """
   setPresenceVisible(visible: Boolean!): Boolean!
+  """
+  Shows or hides from its contacts whether the caller's user can hear talk now (Presence.hear: silent, Do Not
+  Disturb, in a call). Shown unless set; hidden only one way. Answers the setting now.
+  """
+  setHearVisible(visible: Boolean!): Boolean!
 }
 
 extend type Query {
@@ -2068,6 +2100,8 @@ extend type Query {
 extend type Me {
   "The user shows their presence to contacts (setPresenceVisible)."
   presenceVisible: Boolean!
+  "The user shows contacts whether they can hear talk now (setHearVisible)."
+  hearVisible: Boolean!
   "The calling device has an FCM token registered (registerPush)."
   pushRegistered: Boolean!
   "The calling device registered notifications as on."
@@ -2085,6 +2119,20 @@ type Presence {
   online: Boolean!
   "When offline: when the user was last connected, rounded down to 5 minutes; null when unknown (not since the server started) or hidden."
   lastSeen: Time
+  "While online: whether they can hear talk now, as their phone last said; null when not said or hidden."
+  hear: Hear
+}
+
+"Whether a user can hear a push now (the HearState frame; docs/messaging.md, \"Can hear\")."
+enum Hear {
+  "Talk plays out loud."
+  OK
+  "The ringer is silent or on vibrate, or the talk or media volume is at 0: pushes are saved for later."
+  SILENT
+  "Do Not Disturb is on."
+  DND
+  "In a phone call."
+  IN_CALL
 }
 `, BuiltIn: false},
 	{Name: "../schema/schema.graphql", Input: `# --- Authentication -----------------------------------------------------------
@@ -2531,6 +2579,8 @@ func (ec *executionContext) childFields_Me(ctx context.Context, field graphql.Co
 		return ec.fieldContext_Me_identityKey(ctx, field)
 	case "presenceVisible":
 		return ec.fieldContext_Me_presenceVisible(ctx, field)
+	case "hearVisible":
+		return ec.fieldContext_Me_hearVisible(ctx, field)
 	case "pushRegistered":
 		return ec.fieldContext_Me_pushRegistered(ctx, field)
 	case "notificationsEnabled":
@@ -2627,6 +2677,8 @@ func (ec *executionContext) childFields_Presence(ctx context.Context, field grap
 		return ec.fieldContext_Presence_online(ctx, field)
 	case "lastSeen":
 		return ec.fieldContext_Presence_lastSeen(ctx, field)
+	case "hear":
+		return ec.fieldContext_Presence_hear(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type Presence", field.Name)
 }
@@ -3200,6 +3252,20 @@ func (ec *executionContext) field_Mutation_revokeMyDevice_args(ctx context.Conte
 		return nil, err
 	}
 	args["deviceNumber"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_setHearVisible_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "visible",
+		func(ctx context.Context, v any) (bool, error) {
+			return ec.unmarshalNBoolean2bool(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["visible"] = arg0
 	return args, nil
 }
 
@@ -5009,6 +5075,29 @@ func (ec *executionContext) fieldContext_Me_presenceVisible(_ context.Context, f
 	return graphql.NewScalarFieldContext("Me", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
 
+func (ec *executionContext) _Me_hearVisible(ctx context.Context, field graphql.CollectedField, obj *model.Me) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Me_hearVisible(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.HearVisible, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Me_hearVisible(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Me", field, false, false, errors.New("field of type Boolean does not have child fields"))
+}
+
 func (ec *executionContext) _Me_pushRegistered(ctx context.Context, field graphql.CollectedField, obj *model.Me) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6057,6 +6146,50 @@ func (ec *executionContext) fieldContext_Mutation_setPresenceVisible(ctx context
 	return fc, nil
 }
 
+func (ec *executionContext) _Mutation_setHearVisible(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_setHearVisible(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().SetHearVisible(ctx, fc.Args["visible"].(bool))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_setHearVisible(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_setHearVisible_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Mutation_talkToken(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -6930,6 +7063,29 @@ func (ec *executionContext) _Presence_lastSeen(ctx context.Context, field graphq
 }
 func (ec *executionContext) fieldContext_Presence_lastSeen(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Presence", field, false, false, errors.New("field of type Time does not have child fields"))
+}
+
+func (ec *executionContext) _Presence_hear(ctx context.Context, field graphql.CollectedField, obj *model.Presence) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Presence_hear(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Hear, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Hear) graphql.Marshaler {
+			return ec.marshalOHear2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐHear(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Presence_hear(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Presence", field, false, false, errors.New("field of type Hear does not have child fields"))
 }
 
 func (ec *executionContext) _Query_enrollmentPreview(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -10516,6 +10672,11 @@ func (ec *executionContext) _Me(ctx context.Context, sel ast.SelectionSet, obj *
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "hearVisible":
+			out.Values[i] = ec._Me_hearVisible(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "pushRegistered":
 			out.Values[i] = ec._Me_pushRegistered(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -10725,6 +10886,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "setPresenceVisible":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_setPresenceVisible(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "setHearVisible":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_setHearVisible(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -11122,6 +11290,8 @@ func (ec *executionContext) _Presence(ctx context.Context, sel ast.SelectionSet,
 			}
 		case "lastSeen":
 			out.Values[i] = ec._Presence_lastSeen(ctx, field, obj)
+		case "hear":
+			out.Values[i] = ec._Presence_hear(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -12930,6 +13100,22 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	_ = ctx
 	res := graphql.MarshalBoolean(*v)
 	return res
+}
+
+func (ec *executionContext) unmarshalOHear2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐHear(ctx context.Context, v any) (*model.Hear, error) {
+	if v == nil {
+		return nil, nil
+	}
+	var res = new(model.Hear)
+	err := res.UnmarshalGQL(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOHear2ᚖgithubᚗcomᚋchencohensolutionsᚋpushᚑtoᚑtalkᚑserverᚑgoᚋgraphᚋmodelᚐHear(ctx context.Context, sel ast.SelectionSet, v *model.Hear) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return v
 }
 
 func (ec *executionContext) unmarshalOID2ᚖstring(ctx context.Context, v any) (*string, error) {

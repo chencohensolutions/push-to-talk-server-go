@@ -223,6 +223,8 @@ type Me struct {
 	IdentityKey *string `json:"identityKey,omitempty"`
 	// The user shows their presence to contacts (setPresenceVisible).
 	PresenceVisible bool `json:"presenceVisible"`
+	// The user shows contacts whether they can hear talk now (setHearVisible).
+	HearVisible bool `json:"hearVisible"`
 	// The calling device has an FCM token registered (registerPush).
 	PushRegistered bool `json:"pushRegistered"`
 	// The calling device registered notifications as on.
@@ -296,6 +298,8 @@ type Presence struct {
 	Online bool `json:"online"`
 	// When offline: when the user was last connected, rounded down to 5 minutes; null when unknown (not since the server started) or hidden.
 	LastSeen *time.Time `json:"lastSeen,omitempty"`
+	// While online: whether they can hear talk now, as their phone last said; null when not said or hidden.
+	Hear *Hear `json:"hear,omitempty"`
 }
 
 type Query struct {
@@ -456,6 +460,70 @@ func (e *EnrollmentRejectedReason) UnmarshalJSON(b []byte) error {
 }
 
 func (e EnrollmentRejectedReason) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+// Whether a user can hear a push now (the HearState frame; docs/messaging.md, "Can hear").
+type Hear string
+
+const (
+	// Talk plays out loud.
+	HearOk Hear = "OK"
+	// The ringer is silent or on vibrate, or the talk or media volume is at 0: pushes are saved for later.
+	HearSilent Hear = "SILENT"
+	// Do Not Disturb is on.
+	HearDnd Hear = "DND"
+	// In a phone call.
+	HearInCall Hear = "IN_CALL"
+)
+
+var AllHear = []Hear{
+	HearOk,
+	HearSilent,
+	HearDnd,
+	HearInCall,
+}
+
+func (e Hear) IsValid() bool {
+	switch e {
+	case HearOk, HearSilent, HearDnd, HearInCall:
+		return true
+	}
+	return false
+}
+
+func (e Hear) String() string {
+	return string(e)
+}
+
+func (e *Hear) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = Hear(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid Hear", str)
+	}
+	return nil
+}
+
+func (e Hear) MarshalGQL(w io.Writer) {
+	fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *Hear) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e Hear) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

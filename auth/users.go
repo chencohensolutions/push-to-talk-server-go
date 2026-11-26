@@ -40,6 +40,9 @@ type User struct {
 	// The user hides their presence (online now, last seen) from their contacts, and so sees nobody's
 	// (setPresenceVisible; docs/messaging.md, "Presence").
 	PresenceHidden bool `json:"presence_hidden,omitempty"`
+	// The user hides whether they can hear talk now (silent, Do Not Disturb, in a call) from their contacts
+	// (setHearVisible; docs/messaging.md, "Can hear"). Shown unless set.
+	HearHidden bool `json:"hear_hidden,omitempty"`
 }
 
 // ErrUserExists and ErrUnknownUser are what Add and Remove refuse.
@@ -405,6 +408,27 @@ func (u *Users) SetPresenceHidden(name string, hidden bool) error {
 		u.users[i].PresenceHidden = hidden
 		if err := u.save(); err != nil {
 			u.users[i].PresenceHidden = !hidden
+			return err
+		}
+		return nil
+	}
+	return fmt.Errorf("%w: %s", ErrUnknownUser, name)
+}
+
+// SetHearHidden hides or shows name's can-hear state from their contacts (setHearVisible).
+func (u *Users) SetHearHidden(name string, hidden bool) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for i := range u.users {
+		if u.users[i].Name != name {
+			continue
+		}
+		if u.users[i].HearHidden == hidden {
+			return nil
+		}
+		u.users[i].HearHidden = hidden
+		if err := u.save(); err != nil {
+			u.users[i].HearHidden = !hidden
 			return err
 		}
 		return nil

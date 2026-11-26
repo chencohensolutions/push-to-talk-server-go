@@ -119,10 +119,11 @@ func (r *queryResolver) Me(ctx context.Context) (*model.Me, error) {
 	}
 	device := r.device(ctx)
 	me := &model.Me{User: user.Name, DeviceNumber: device.DeviceNumber, DeviceName: device.Name,
-		PresenceVisible: !user.PresenceHidden, PushRegistered: device.FCMToken != "",
+		PresenceVisible: !user.PresenceHidden, HearVisible: !user.HearHidden, PushRegistered: device.FCMToken != "",
 		NotificationsEnabled: device.NotificationsEnabled}
 	if current := r.Users.Find(user.Name); current != nil {
 		me.PresenceVisible = !current.PresenceHidden
+		me.HearVisible = !current.HearHidden
 		me.IdentityKey = encodeOrNil(current.IdentityKey)
 		me.DisplayName = nonEmpty(current.DisplayName)
 		me.Email = nonEmpty(current.Email)

@@ -259,8 +259,10 @@ func (r *Relay) read(ctx context.Context, c *conn) error {
 			r.talkEnd(c, f.TalkEnd)
 		case *pb.Frame_TalkAck:
 			r.talkAck(c, f.TalkAck)
+		case *pb.Frame_HearState:
+			r.setHear(c.device.User, f.HearState.GetHear())
 		default:
-			c.ws.Close(websocket.StatusPolicyViolation, "a device sends Send, Ack, Ping, Pong and the talk frames")
+			c.ws.Close(websocket.StatusPolicyViolation, "a device sends Send, Ack, Ping, Pong, HearState and the talk frames")
 			return nil
 		}
 	}
