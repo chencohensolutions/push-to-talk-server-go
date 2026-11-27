@@ -445,11 +445,12 @@ phone never uploads a second copy.
 
 **Sending.** Nobody waits to send, and there is no "Waiting for …" anywhere: in a one-to-one chat and in a group,
 every talker has a floor of their own (a group no longer has one floor for all). A press unmutes the microphone track
-(and, for video, the camera track) already published, muted, in the room. A press the room can't carry (the
-phone isn't in the room yet, as with a hardware button or the floating window right after it opens; the room failed
-or was lost) goes by the clip path instead, from the moment before the press, so no first words are lost and nothing
-is shown live that reaches nobody (2026-11-27). Otherwise the phone uploads no clip by default; the older clip upload
-stays as a setting, "Send through the server when they're away" (off), for a server without the buffer.
+(and, for video, the camera track) already published, muted, in the room. A press the room can't take yet (the
+phone isn't in the room, as with a hardware button or the floating window right after it opens) waits for the room,
+shown on the phone as connecting, and goes live when the room has it; what is said before isn't sent, and a room
+that can't be reached or is lost ends the press (2026-11-27, hen: "livekit only"). The phone asks for the floor only
+once its voice is live in the room. It uploads no clip by default; the older clip upload stays as a setting, "Send
+through the server when they're away" (off), for a server without the buffer.
 
 **The recorder in the room.** ptt-server's recorder (package recorder, as for saved calls) joins a chat's talk room as
 a hidden participant right after the first phone joins it (on its talk token), so it is there before any press. It
