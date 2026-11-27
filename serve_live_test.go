@@ -170,7 +170,7 @@ func TestLiveTalkTokensAndRooms(t *testing.T) {
 	}
 	json.Unmarshal(payload, &claims)
 	if claims.Iss != fake.keys.Key || claims.Sub != got.Identity || claims.Video.Room != got.Room || !claims.Video.RoomJoin ||
-		claims.Video.RoomAdmin || claims.Video.CanPublishData == nil || *claims.Video.CanPublishData ||
+		claims.Video.RoomAdmin || claims.Video.CanPublishData == nil || !*claims.Video.CanPublishData ||
 		time.Until(time.Unix(claims.Exp, 0)) > livekit.TokenTTL {
 		t.Fatalf("the token's claims: %s", payload)
 	}
