@@ -488,6 +488,9 @@ func (r *Relay) Revoked(user string) {
 	}
 }
 
+// orphanAge is how long a blob data file without a meta waits before the sweep deletes it.
+const orphanAge = time.Hour
+
 // Sweep deletes the envelopes older than QueueTTL, and what is kept for devices no longer enrolled.
 func (r *Relay) Sweep() {
 	if n, err := r.Store.Expire(r.Now().Add(-r.QueueTTL)); err != nil {
@@ -498,6 +501,11 @@ func (r *Relay) Sweep() {
 	if r.Blobs != nil && r.BlobTTL > 0 {
 		if n := r.Blobs.Expire(r.Now().Add(-r.BlobTTL), r.Now().Add(-r.mediaTTL())); n > 0 {
 			log.Printf("Deleted %d clips and attachments older than %v", n, r.BlobTTL)
+		}
+	}
+	if r.Blobs != nil {
+		if n := r.Blobs.ExpireOrphans(r.Now().Add(-orphanAge)); n > 0 {
+			log.Printf("Deleted %d blob files that had no meta", n)
 		}
 	}
 	if r.Blobs != nil && r.CallTTL > 0 {
