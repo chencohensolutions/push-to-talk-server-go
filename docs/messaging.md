@@ -419,17 +419,14 @@ Clips, voice messages and attachments are files of ciphertext in the blobs folde
 `blobs`), each `<id>.blob` beside `<id>.json` (who made it, for which conversation, its size, whether complete). They
 are deleted `blob_days` (default 30) after they were made, by the hourly sweep. Shared pictures, videos and files
 (2026-11-28, hen) use them too: the sender's phone uploads a preview at once and keeps the original, uploading it
-only when someone asks (a `PUSH_MEDIA` Send). An original uploaded with `?keep=media` is kept, encrypted, `media_days`
-(default 30; 2026-11-28, hen) after it was uploaded, so whoever asks again, or the rest of a group, gets it without
-waking the sender's phone. Its maker may ask for longer with `&days=N` (2026-11-28, hen: "the client can make the
-server keep it for one year"; the phone's Settings › Storage chooses 30 days, 1 year or 2 years), up to
-`media_max_days` (default 730), and every PUT answers `Blob-Keep-Days`. What each user keeps longer than `media_days`
-may take `media_quota_gb` (default 200, -1 no bound): past it, the sweep lets that user's oldest fall back to
-`media_days`. Everything in the blobs folder may take `media_total_gb` (default 1024, -1 no bound; 2026-11-28, hen:
-"limit the whole server cache data to 1tb"): a new file that wouldn't fit deletes the files fetched longest ago first (hen: "media will
-get deleted by the oldest fetch request"; each file's last GET is noted at most hourly, `read_at`; never fetched: when
-it was made), never a saved call's tracks or a talk buffer, nor a file being uploaded (507 if that isn't enough), and
-the sweep keeps to it. A file whose upload stopped unfinished is deleted 48 hours after
+only when someone asks (a `PUSH_MEDIA` Send). Shared media uploaded with `?keep=media` (its previews and original) is kept, encrypted, forever
+by default (`media_days` -1; 2026-11-28, hen: "don't use the 1 year, keep forever everything"; a number of days
+deletes it that long after it was uploaded), so whoever asks again, or the rest of a group, gets it without waking the
+sender's phone. Everything in the blobs folder may take `media_total_gb` (default 1024, -1 no bound; hen: "limit the
+whole server cache data to 1tb"): a new file that wouldn't fit deletes the files fetched longest ago first (hen:
+"media will get deleted by the oldest fetch request"; each file's last GET is noted at most hourly, `read_at`; never
+fetched: when it was made), never a saved call's tracks or a talk buffer, nor a file being uploaded (507 if that
+isn't enough), and the sweep keeps to it. A file whose upload stopped unfinished is deleted 48 hours after
 its last byte. A data file with no meta beside it (a delete that removed only the meta, as Windows refuses to
 remove a file a reader still has open) is deleted by the sweep once it is an hour old (`ExpireOrphans`). `/blob/<id>`, over mTLS, enrolled
 devices only:
@@ -442,7 +439,7 @@ devices only:
 - **HEAD**: the same headers, so a broken upload can go on.
 - **PUT** a file (a voice message, an attachment, a shared preview or original, up to `max_blob_mb`, default 20 GB)
   for `?peer=<user>` or `?group=<id>` (the same rule as talking there; 403 otherwise), `&keep=media` for shared
-  media (`&days=N` to keep it longer, as above). The first PUT gives `Blob-Total`; each PUT's `Blob-Offset` says where its bytes go and must be the size
+  media (kept as above). The first PUT gives `Blob-Total`; each PUT's `Blob-Offset` says where its bytes go and must be the size
   the server has (409 with the right `Blob-Offset` otherwise). It is complete when it has `Blob-Total` bytes. Only its
   maker writes it. An upload that would leave less than `min_free_gb` (default 10 GB) free on the blobs folder's disk
   is refused `507` (an open file's PUT too, once the disk is that full), so kept originals never fill the server's

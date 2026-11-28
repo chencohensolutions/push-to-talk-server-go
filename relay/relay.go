@@ -499,7 +499,7 @@ func (r *Relay) Sweep() {
 		log.Printf("Expired %d envelopes no device took in %v", n, r.QueueTTL)
 	}
 	if r.Blobs != nil && r.BlobTTL > 0 {
-		if n := r.Blobs.Expire(r.Now().Add(-r.BlobTTL), r.Now().Add(-r.mediaTTL())); n > 0 {
+		if n := r.Blobs.Expire(r.Now().Add(-r.BlobTTL), r.mediaBefore()); n > 0 {
 			log.Printf("Deleted %d clips and attachments older than %v", n, r.BlobTTL)
 		}
 	}
@@ -542,10 +542,11 @@ func (r *Relay) Run(ctx context.Context) {
 	}
 }
 
-// mediaTTL is how long a shared original is kept: media_days, or blob_days when unset.
-func (r *Relay) mediaTTL() time.Duration {
+// mediaBefore is when shared media made before is deleted: media_days ago, or never (the zero time) when media_days
+// is -1, the default (2026-11-28, hen: "keep forever everything"; media_total_gb bounds it instead).
+func (r *Relay) mediaBefore() time.Time {
 	if r.MediaTTL > 0 {
-		return r.MediaTTL
+		return r.Now().Add(-r.MediaTTL)
 	}
-	return r.BlobTTL
+	return time.Time{}
 }

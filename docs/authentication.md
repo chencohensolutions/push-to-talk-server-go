@@ -338,7 +338,8 @@ pinned key) at any address. See the client repo's docs.
   "blob_dir": "blobs",                          // optional (default): clips and attachments, ciphertext
   "blob_days": 30,                              // optional (default): how long they are kept
   "max_blob_mb": 20480,                         // optional (default): the largest file a phone may upload
-  "media_days": 30,                             // optional (default): how long a shared original is kept
+  "media_days": -1,                             // optional (default): days shared media is kept; -1 forever
+  "media_total_gb": 1024,                       // optional (default): all blobs, the least fetched go first
   "min_free_gb": 10,                            // optional (default): uploads leave this much disk free (-1: off)
   "database_file": "ptt.db",                    // optional (default): prekeys and the message queue
   "queue_days": 30,                             // optional (default): how long an envelope waits for its device
