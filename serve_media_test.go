@@ -141,58 +141,60 @@ func TestSharedOriginalsAreKeptMediaDays(t *testing.T) {
 	}
 }
 
-// Shared media can be kept longer on its maker's ask (2026-11-28, hen: "the client can make the server keep it for
-// one year"): &days=N, up to media_max_days, answered in Blob-Keep-Days; past media_quota_gb a user's oldest fall back
-// to media_days.
-func TestSharedMediaIsKeptTheDaysAskedWithinTheQuota(t *testing.T) {
+// Shared media is kept forever by default (2026-11-28, hen: "keep forever everything"): a zero mediaBefore never
+// deletes it, while other files still go after blob_days.
+func TestSharedMediaIsKeptForever(t *testing.T) {
 	env := newTestEnv(t)
 	hen, _, _ := pairedForMedia(t, env)
-	env.relay.Blobs.MaxKeepDays = 730
-	env.relay.Blobs.MediaQuota = 6
-	older, newer, plain, tooLong := burstID(), burstID(), burstID(), burstID()
-	put := func(id, query, body string) string {
-		resp, _ := env.blobRequest(t, hen, http.MethodPut, id+"?peer=dana&keep=media"+query, map[string]string{relay.HeaderTotal: strconv.Itoa(len(body))}, []byte(body))
-		if resp.StatusCode != 200 {
-			t.Fatalf("PUT %s: %d", query, resp.StatusCode)
-		}
-		return resp.Header.Get(relay.HeaderKeepDays)
+	media, clip := burstID(), burstID()
+	env.blobRequest(t, hen, http.MethodPut, media+"?peer=dana&keep=media", map[string]string{relay.HeaderTotal: "5"}, []byte("media"))
+	env.blobRequest(t, hen, http.MethodPut, clip+"?peer=dana", map[string]string{relay.HeaderTotal: "5"}, []byte("voice"))
+	env.relay.Blobs.Expire(time.Now().Add(10*365*24*time.Hour), time.Time{})
+	if _, ok := env.relay.Blobs.Get(media); !ok {
+		t.Fatal("shared media went with time")
 	}
-	if days := put(older, "&days=365", "older"); days != "365" {
-		t.Fatalf("Blob-Keep-Days for a year: %q", days)
+	if _, ok := env.relay.Blobs.Get(clip); ok {
+		t.Fatal("a voice message outlived blob_days")
 	}
-	if days := put(plain, "", "plain"); days != "30" {
-		t.Fatalf("Blob-Keep-Days without days: %q", days)
-	}
-	if days := put(tooLong, "&days=5000", "long"); days != "730" {
-		t.Fatalf("Blob-Keep-Days past media_max_days: %q", days)
-	}
-	// 6 bytes more: only the newest fits the quota of 6, so the older long-kept ones fall back.
-	time.Sleep(10 * time.Millisecond)
-	put(newer, "&days=365", "newer!")
+}
 
-	now := time.Now()
-	sweep := func(daysOn int) {
-		at := now.Add(time.Duration(daysOn) * 24 * time.Hour)
-		env.relay.Blobs.Expire(at.Add(-30*24*time.Hour), at.Add(-30*24*time.Hour))
+// Everything in the blobs folder keeps within media_total_gb (2026-11-28, hen: "limit the whole server cache data to
+// 1tb"): a new file that wouldn't fit deletes the one fetched longest ago first ("media will get deleted by the
+// oldest fetch request"); one bigger than the whole bound is refused 507, deleting nothing.
+func TestTheBlobsFolderKeepsWithinItsTotal(t *testing.T) {
+	env := newTestEnv(t)
+	hen, dana, _ := pairedForMedia(t, env)
+	env.relay.Blobs.MaxTotal = 20
+	first, second, third := burstID(), burstID(), burstID()
+	for _, id := range []string{first, second, third} {
+		if resp, _ := env.blobRequest(t, hen, http.MethodPut, id+"?peer=dana&keep=media", map[string]string{relay.HeaderTotal: "8"}, []byte("12345678")); resp.StatusCode != 200 {
+			t.Fatalf("PUT: %d", resp.StatusCode)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
-	there := func(id string) bool { _, ok := env.relay.Blobs.Get(id); return ok }
-	sweep(0)
-	if !there(older) || !there(newer) || !there(plain) || !there(tooLong) {
-		t.Fatal("something went at once")
+	if _, ok := env.relay.Blobs.Get(first); ok {
+		t.Fatal("the oldest file stayed past the total")
 	}
-	// Forty days on, with the store's clock: plain goes (media_days) and so do the older ones past the quota.
-	env.relay.Blobs.SetClock(func() time.Time { return now.Add(40 * 24 * time.Hour) })
-	sweep(40)
-	if there(plain) || there(older) || there(tooLong) {
-		t.Fatalf("kept past media_days: plain %v older %v tooLong %v", there(plain), there(older), there(tooLong))
+	// Dana fetches the second: now the third is the one fetched longest ago.
+	if resp, _ := env.blobRequest(t, dana, http.MethodGet, second, nil, nil); resp.StatusCode != 200 {
+		t.Fatalf("GET: %d", resp.StatusCode)
 	}
-	if !there(newer) {
-		t.Fatal("the newest within the quota went before its year")
+	for _, id := range []string{second, third} {
+		if _, ok := env.relay.Blobs.Get(id); !ok {
+			t.Fatal("a newer file went")
+		}
 	}
-	env.relay.Blobs.SetClock(func() time.Time { return now.Add(366 * 24 * time.Hour) })
-	sweep(366)
-	if there(newer) {
-		t.Fatal("kept past the year asked")
+	if resp, _ := env.blobRequest(t, hen, http.MethodPut, burstID()+"?peer=dana", map[string]string{relay.HeaderTotal: "21"}, []byte("x")); resp.StatusCode != http.StatusInsufficientStorage {
+		t.Fatalf("a file bigger than the whole bound: %d", resp.StatusCode)
+	}
+	// Lowered: the sweep keeps to it.
+	env.relay.Blobs.MaxTotal = 8
+	env.relay.Blobs.Expire(time.Now().Add(-365*24*time.Hour), time.Now().Add(-365*24*time.Hour))
+	if _, ok := env.relay.Blobs.Get(third); ok {
+		t.Fatal("the sweep didn't keep to the total, by last fetch")
+	}
+	if _, ok := env.relay.Blobs.Get(second); !ok {
+		t.Fatal("the sweep took the one fetched last")
 	}
 }
 

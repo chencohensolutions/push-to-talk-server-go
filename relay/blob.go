@@ -29,9 +29,6 @@ const (
 	HeaderOpen = "Blob-Open"
 	// HeaderLast: "true" on the PUT that ends an open file.
 	HeaderLast = "Blob-Last"
-	// HeaderKeepDays: answered on every PUT, the days after it was made the file is kept (media_days, blob_days, or
-	// the &days=N asked for shared media, within media_max_days).
-	HeaderKeepDays = "Blob-Keep-Days"
 	// fileFollow is the longest a GET ?follow=1 waits for an open file that stops growing.
 	fileFollow = 60 * time.Second
 	// clipFollow is the longest a GET follows a clip that stops growing (its talker gone without a word).
@@ -92,18 +89,6 @@ func identityUser(identity string) string {
 		return identity[:dot]
 	}
 	return identity
-}
-
-// keepDays is how many days after it was made m is kept as asked (not counting media_quota_gb).
-func (r *Relay) keepDays(m blobs.Meta) int {
-	if days := r.Blobs.KeepDaysOf(m); days > 0 {
-		return days
-	}
-	ttl := r.BlobTTL
-	if m.Keep == blobs.KeepMedia {
-		ttl = r.mediaTTL()
-	}
-	return int(ttl / (24 * time.Hour))
 }
 
 func setBlobHeaders(w http.ResponseWriter, m blobs.Meta) {
@@ -212,19 +197,12 @@ func (r *Relay) putBlob(w http.ResponseWriter, req *http.Request, from store.Dev
 			http.Error(w, "the first PUT gives "+HeaderTotal+" or "+HeaderOpen, http.StatusBadRequest)
 			return
 		}
-		keep, days := "", 0
+		keep := ""
 		if req.URL.Query().Get("keep") == blobs.KeepMedia {
 			keep = blobs.KeepMedia
-			// &days=N: kept that long (up to media_max_days) instead of media_days.
-			if n, err := strconv.Atoi(req.URL.Query().Get("days")); err == nil && n > 0 {
-				days = n
-				if r.Blobs.MaxKeepDays > 0 {
-					days = min(n, r.Blobs.MaxKeepDays)
-				}
-			}
 		}
 		err = r.Blobs.Create(blobs.Meta{ID: id, Kind: blobs.File, Owner: from.User, Peer: peer, Group: group,
-			Total: total, Open: open, Keep: keep, KeepDays: days})
+			Total: total, Open: open, Keep: keep})
 		if errors.Is(err, blobs.ErrTooLarge) {
 			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 			return
@@ -256,7 +234,6 @@ func (r *Relay) putBlob(w http.ResponseWriter, req *http.Request, from store.Dev
 	size, err := r.Blobs.Write(id, offset, req.Body, req.Header.Get(HeaderLast) == "true")
 	m, _ = r.Blobs.Get(id)
 	setBlobHeaders(w, m)
-	w.Header().Set(HeaderKeepDays, strconv.Itoa(r.keepDays(m)))
 	switch {
 	case err == nil, errors.Is(err, blobs.ErrComplete) && offset == size:
 		w.WriteHeader(http.StatusOK)
@@ -295,6 +272,7 @@ func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta, 
 		return
 	}
 	defer f.Close()
+	r.Blobs.Fetched(m.ID)
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return

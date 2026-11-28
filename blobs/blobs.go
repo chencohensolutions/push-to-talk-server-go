@@ -91,9 +91,8 @@ type Meta struct {
 	Open bool `json:"open,omitempty"`
 	// "media" for a shared original (KeepMedia).
 	Keep string `json:"keep,omitempty"`
-	// For shared media: the days its maker asked it be kept (2026-11-28, hen: "the client can make the server keep
-	// it for one year"), up to media_max_days; 0: media_days. Past media_quota_gb its maker's oldest fall back.
-	KeepDays int `json:"keep_days,omitempty"`
+	// When it was last fetched (a GET; noted at most hourly): media_total_gb lets the one fetched longest ago go first.
+	ReadAt time.Time `json:"read_at,omitempty"`
 	// When its last bytes arrived (a file): an upload left unfinished is deleted staleUpload after it.
 	Modified time.Time `json:"modified_at,omitempty"`
 	Size     int64     `json:"size"`
@@ -146,11 +145,11 @@ type Store struct {
 	// or a test's).
 	MaxFile int64
 	MinFree int64
-	// MaxKeepDays bounds a file's KeepDays (media_max_days); MediaQuota is how much each user's files kept longer
-	// than media_days may take (media_quota_gb, bytes; 0: no bound): past it the oldest fall back to media_days.
-	MaxKeepDays int
-	MediaQuota  int64
-	Free        func() int64
+	// MaxTotal bounds everything in the blobs folder (media_total_gb, bytes; 0: no bound; 2026-11-28, hen: "limit the
+	// whole server cache data to 1tb"): a new file that wouldn't fit makes room by deleting the oldest files first
+	// (never a saved call's tracks or a talk buffer, nor one being uploaded); the hourly sweep keeps to it too.
+	MaxTotal int64
+	Free     func() int64
 
 	mu    sync.Mutex
 	metas map[string]*Meta
@@ -240,6 +239,9 @@ func (s *Store) Create(m Meta) error {
 	defer s.mu.Unlock()
 	if _, ok := s.metas[m.ID]; ok {
 		return ErrExists
+	}
+	if m.Kind == File && !s.makeRoom(m.Total) {
+		return ErrFull
 	}
 	m.Size, m.Complete, m.Created = 0, false, s.now().UTC()
 	m.Modified = m.Created
@@ -498,14 +500,13 @@ func (s *Store) remove(id string) {
 	os.Remove(s.metaPath(id))
 }
 
-// Expire deletes the clips and attachments made before before, the shared originals (Keep "media") made before
-// mediaBefore, and the files whose upload stopped staleUpload ago unfinished, and answers how many. A saved
+// Expire deletes the clips and attachments made before before, the shared media (Keep "media") made before
+// mediaBefore (zero: never; 2026-11-28, hen: "keep forever everything"), and the files whose upload stopped staleUpload ago unfinished, and answers how many. A saved
 // call's tracks are deleted on their own schedule (ExpireTracks), not here.
 func (s *Store) Expire(before, mediaBefore time.Time) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	stale := s.now().Add(-staleUpload)
-	long := s.keptLonger()
 	n := 0
 	for id, m := range s.metas {
 		if m.Kind == Track || m.Kind == TalkBuffer || m.writing {
@@ -513,10 +514,8 @@ func (s *Store) Expire(before, mediaBefore time.Time) int {
 		}
 		cutoff := before
 		if m.Keep == KeepMedia {
+			// A zero mediaBefore: shared media is kept until MaxTotal needs its room.
 			cutoff = mediaBefore
-			if long[id] {
-				cutoff = s.now().Add(-time.Duration(s.KeepDaysOf(*m)) * 24 * time.Hour)
-			}
 		}
 		gone := m.Created.Before(cutoff) ||
 			(m.Kind == File && !m.Complete && !m.Modified.IsZero() && m.Modified.Before(stale))
@@ -525,7 +524,9 @@ func (s *Store) Expire(before, mediaBefore time.Time) int {
 			n++
 		}
 	}
-	return n
+	before0 := len(s.metas)
+	s.makeRoom(0)
+	return n + before0 - len(s.metas)
 }
 
 // SetClock changes the store's clock (tests that sweep days ahead).
@@ -535,38 +536,62 @@ func (s *Store) SetClock(now func() time.Time) {
 	s.now = now
 }
 
-// KeepDaysOf is the days m was asked to be kept, within MaxKeepDays (0: media_days).
-func (s *Store) KeepDaysOf(m Meta) int {
-	if m.Keep != KeepMedia || m.KeepDays <= 0 {
-		return 0
+// makeRoom deletes the oldest files until n more bytes fit MaxTotal, and says whether they do. Called under mu.
+func (s *Store) makeRoom(n int64) bool {
+	if s.MaxTotal <= 0 {
+		return true
 	}
-	if s.MaxKeepDays > 0 {
-		return min(m.KeepDays, s.MaxKeepDays)
+	var total, kept int64
+	var evictable []*Meta
+	for _, m := range s.metas {
+		total += m.Size
+		if m.Kind == File && !m.writing {
+			evictable = append(evictable, m)
+		} else {
+			kept += m.Size
+		}
 	}
-	return m.KeepDays
+	if total+n <= s.MaxTotal {
+		return true
+	}
+	// More than all that could go: nothing is deleted for it.
+	if kept+n > s.MaxTotal {
+		return false
+	}
+	// The one fetched longest ago goes first (2026-11-28, hen: "media will get deleted by the oldest fetch request").
+	sort.Slice(evictable, func(i, j int) bool { return evictable[i].lastUse().Before(evictable[j].lastUse()) })
+	for _, m := range evictable {
+		if total+n <= s.MaxTotal {
+			break
+		}
+		total -= m.Size
+		s.remove(m.ID)
+	}
+	return total+n <= s.MaxTotal
 }
 
-// keptLonger is the files kept their KeepDays: each user's newest first, while they fit MediaQuota. Called under mu.
-func (s *Store) keptLonger() map[string]bool {
-	byOwner := map[string][]*Meta{}
-	for _, m := range s.metas {
-		if s.KeepDaysOf(*m) > 0 {
-			byOwner[m.Owner] = append(byOwner[m.Owner], m)
-		}
+// lastUse is when m was last fetched, or made when it never was.
+func (m *Meta) lastUse() time.Time {
+	if m.ReadAt.After(m.Created) {
+		return m.ReadAt
 	}
-	out := map[string]bool{}
-	for _, list := range byOwner {
-		sort.Slice(list, func(i, j int) bool { return list[i].Created.After(list[j].Created) })
-		var used int64
-		for _, m := range list {
-			used += m.Size
-			if s.MediaQuota > 0 && used > s.MediaQuota {
-				break
-			}
-			out[m.ID] = true
-		}
+	return m.Created
+}
+
+// Fetched notes that file id was read now (GET), for MaxTotal's order; written at most hourly per file.
+func (s *Store) Fetched(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.metas[id]
+	if !ok || m.Kind != File {
+		return
 	}
-	return out
+	now := s.now().UTC()
+	if now.Sub(m.ReadAt) < time.Hour {
+		return
+	}
+	m.ReadAt = now
+	s.saveMeta(m)
 }
 
 // ExpireOrphans deletes the data files that have no meta (no .json beside them, so no blob the store knows) and
