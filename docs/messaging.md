@@ -417,9 +417,9 @@ Clips, voice messages and attachments are files of ciphertext in the blobs folde
 `blobs`), each `<id>.blob` beside `<id>.json` (who made it, for which conversation, its size, whether complete). They
 are deleted `blob_days` (default 30) after they were made, by the hourly sweep. Shared pictures, videos and files
 (2026-11-28, hen) use them too: the sender's phone uploads a preview at once and keeps the original, uploading it
-only when someone asks (a `PUSH_MEDIA` Send). An original uploaded with `?keep=media` is deleted `media_days`
-(default 3) after someone other than its maker first read it, so the rest of a group gets it without waking the
-sender again; one nobody read goes after `blob_days`. A file whose upload stopped unfinished is deleted 48 hours after
+only when someone asks (a `PUSH_MEDIA` Send). An original uploaded with `?keep=media` is kept, encrypted, `media_days`
+(default 30; 2026-11-28, hen) after it was uploaded, so whoever asks again, or the rest of a group, gets it without
+waking the sender's phone. A file whose upload stopped unfinished is deleted 48 hours after
 its last byte. `/blob/<id>`, over mTLS, enrolled
 devices only:
 

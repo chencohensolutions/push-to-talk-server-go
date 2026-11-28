@@ -101,45 +101,43 @@ func TestBlobOpenFileIsFollowedAsItGrows(t *testing.T) {
 	}
 }
 
-// A shared original (?keep=media) goes media_days after someone other than its maker first read it; one nobody read
-// stays blob_days; an upload left unfinished goes after 48 hours without a byte.
+// A shared original (?keep=media) is kept media_days after it was uploaded (2026-11-28, hen: 30), other files
+// blob_days; an upload left unfinished goes after 48 hours without a byte.
 func TestSharedOriginalsAreKeptMediaDays(t *testing.T) {
 	env := newTestEnv(t)
-	hen, dana, _ := pairedForMedia(t, env)
-	read, unread, broken := burstID(), burstID(), burstID()
-	for _, id := range []string{read, unread} {
-		env.blobRequest(t, hen, http.MethodPut, id+"?peer=dana&keep=media", map[string]string{relay.HeaderTotal: "8"}, []byte("original"))
-	}
+	hen, _, _ := pairedForMedia(t, env)
+	original, preview, broken := burstID(), burstID(), burstID()
+	env.blobRequest(t, hen, http.MethodPut, original+"?peer=dana&keep=media", map[string]string{relay.HeaderTotal: "8"}, []byte("original"))
+	env.blobRequest(t, hen, http.MethodPut, preview+"?peer=dana", map[string]string{relay.HeaderTotal: "7"}, []byte("preview"))
 	env.blobRequest(t, hen, http.MethodPut, broken+"?peer=dana", map[string]string{relay.HeaderTotal: "100"}, []byte("half"))
-	// hen's own read doesn't count; dana's does.
-	env.blobRequest(t, hen, http.MethodGet, read, nil, nil)
-	if m, _ := env.relay.Blobs.Get(read); m.FirstRead != nil || m.Keep != blobs.KeepMedia {
-		t.Fatalf("after its maker read it: %+v", m)
-	}
-	env.blobRequest(t, dana, http.MethodGet, read, nil, nil)
-	m, _ := env.relay.Blobs.Get(read)
-	if m.FirstRead == nil {
-		t.Fatalf("dana's read wasn't noted: %+v", m)
+	if m, _ := env.relay.Blobs.Get(original); m.Keep != blobs.KeepMedia {
+		t.Fatalf("?keep=media wasn't kept: %+v", m)
 	}
 
 	now := time.Now()
-	days := func(n int) time.Time { return now.Add(time.Duration(n) * 24 * time.Hour) }
-	// Two days on, with media_days 3 and blob_days 30: nothing goes.
-	if n := env.relay.Blobs.Expire(days(2).Add(-30*24*time.Hour), days(2).Add(-3*24*time.Hour)); n != 0 {
-		t.Fatalf("two days on: %d deleted", n)
+	sweep := func(daysOn, blobDays, mediaDays int) int {
+		at := now.Add(time.Duration(daysOn) * 24 * time.Hour)
+		return env.relay.Blobs.Expire(at.Add(-time.Duration(blobDays)*24*time.Hour), at.Add(-time.Duration(mediaDays)*24*time.Hour))
 	}
-	// Four days on: the read original goes, the unread one stays.
-	if n := env.relay.Blobs.Expire(days(4).Add(-30*24*time.Hour), days(4).Add(-3*24*time.Hour)); n != 1 {
-		t.Fatalf("four days on: %d deleted", n)
+	// An unfinished upload isn't swept while it is fresh.
+	if n := sweep(0, 10, 30); n != 0 {
+		t.Fatalf("at once: %d deleted", n)
 	}
-	if _, ok := env.relay.Blobs.Get(read); ok {
-		t.Fatal("the read original is still there")
+	// With blob_days 10 and media_days 30: twenty days on, the preview (and the unfinished upload) go and the
+	// original stays.
+	if n := sweep(20, 10, 30); n != 2 {
+		t.Fatalf("twenty days on: %d deleted", n)
 	}
-	if _, ok := env.relay.Blobs.Get(unread); !ok {
-		t.Fatal("the unread original went before blob_days")
+	if _, ok := env.relay.Blobs.Get(preview); ok {
+		t.Fatal("the preview outlived blob_days")
 	}
-	if _, ok := env.relay.Blobs.Get(broken); !ok {
-		t.Fatal("an unfinished upload went at once")
+	if _, ok := env.relay.Blobs.Get(original); !ok {
+		t.Fatal("the original went before media_days")
+	}
+	// Thirty-one days on: the original goes.
+	sweep(31, 10, 30)
+	if _, ok := env.relay.Blobs.Get(original); ok {
+		t.Fatal("the original outlived media_days")
 	}
 }
 

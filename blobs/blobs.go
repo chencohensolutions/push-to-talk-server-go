@@ -3,7 +3,7 @@
 // grows while its burst lasts (one record per ClipSegment) and readers follow it until its last segment; a file
 // (a voice message, an attachment, a shared picture's preview or original) is uploaded with PUT, resumably, and an
 // open file grows while it is uploaded, readers following it. They are deleted blob_days after they were made; a
-// shared original (Keep "media") media_days after it was first read. The server never holds a key to them. See
+// shared original (Keep "media") media_days after it was made. The server never holds a key to them. See
 // docs/messaging.md, "Talk" and "Blobs".
 package blobs
 
@@ -29,8 +29,8 @@ const (
 	// DefaultMaxFileBytes is the largest file a device may upload (max_blob_mb): a shared video's original can be
 	// gigabytes (2026-11-28, hen: share videos; it was 100 MB before).
 	DefaultMaxFileBytes = 20 << 30
-	// KeepMedia marks a shared original (PUT ?keep=media): kept media_days after its first read by someone other
-	// than its maker, so the others in a group get it without waking the sender's phone again.
+	// KeepMedia marks a shared original (PUT ?keep=media): kept media_days (2026-11-28, hen: 30) after it was
+	// made, so whoever asks again, or the others in a group, get it without waking the sender's phone.
 	KeepMedia = "media"
 	// staleUpload is how long an incomplete file may go without a byte before the sweep deletes it.
 	staleUpload = 48 * time.Hour
@@ -83,9 +83,8 @@ type Meta struct {
 	// An open file (2026-11-28): uploaded while it is being made (a video's preview as the phone encodes it), so its
 	// size isn't known up front; the PUT with Blob-Last completes it, and readers may follow it until then.
 	Open bool `json:"open,omitempty"`
-	// "media" for a shared original (KeepMedia), and when someone other than its maker first read it.
-	Keep      string     `json:"keep,omitempty"`
-	FirstRead *time.Time `json:"first_read_at,omitempty"`
+	// "media" for a shared original (KeepMedia).
+	Keep string `json:"keep,omitempty"`
 	// When its last bytes arrived (a file): an upload left unfinished is deleted staleUpload after it.
 	Modified time.Time `json:"modified_at,omitempty"`
 	Size     int64     `json:"size"`
@@ -193,7 +192,7 @@ func (s *Store) Create(m Meta) error {
 	if _, ok := s.metas[m.ID]; ok {
 		return ErrExists
 	}
-	m.Size, m.Complete, m.Created, m.FirstRead = 0, false, s.now().UTC(), nil
+	m.Size, m.Complete, m.Created = 0, false, s.now().UTC()
 	m.Modified = m.Created
 	f, err := os.OpenFile(s.dataPath(m.ID), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -405,22 +404,8 @@ func (s *Store) remove(id string) {
 	os.Remove(s.metaPath(id))
 }
 
-// MarkRead notes that user read blob id: the first reader other than its maker starts a shared original's
-// media_days.
-func (s *Store) MarkRead(id, user string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	m, ok := s.metas[id]
-	if !ok || user == m.Owner || m.FirstRead != nil {
-		return
-	}
-	now := s.now().UTC()
-	m.FirstRead = &now
-	s.saveMeta(m)
-}
-
-// Expire deletes the clips and attachments made before before, the shared originals (Keep "media") first read
-// before mediaBefore, and the files whose upload stopped staleUpload ago unfinished, and answers how many. A saved
+// Expire deletes the clips and attachments made before before, the shared originals (Keep "media") made before
+// mediaBefore, and the files whose upload stopped staleUpload ago unfinished, and answers how many. A saved
 // call's tracks are deleted on their own schedule (ExpireTracks), not here.
 func (s *Store) Expire(before, mediaBefore time.Time) int {
 	s.mu.Lock()
@@ -431,8 +416,11 @@ func (s *Store) Expire(before, mediaBefore time.Time) int {
 		if m.Kind == Track || m.Kind == TalkBuffer || m.writing {
 			continue
 		}
-		gone := m.Created.Before(before) ||
-			(m.Keep == KeepMedia && m.FirstRead != nil && m.FirstRead.Before(mediaBefore)) ||
+		cutoff := before
+		if m.Keep == KeepMedia {
+			cutoff = mediaBefore
+		}
+		gone := m.Created.Before(cutoff) ||
 			(m.Kind == File && !m.Complete && !m.Modified.IsZero() && m.Modified.Before(stale))
 		if gone {
 			s.remove(id)

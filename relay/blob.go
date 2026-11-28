@@ -129,7 +129,6 @@ func (r *Relay) ServeBlob(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodHead {
 			return
 		}
-		r.Blobs.MarkRead(id, user.Name)
 		r.getBlob(w, req, m, user.Name)
 	case http.MethodDelete:
 		if !exists || m.Owner != user.Name || m.Kind != blobs.File {

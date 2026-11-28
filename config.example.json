@@ -13,7 +13,7 @@
   "blob_dir": "blobs",
   "blob_days": 30,
   "max_blob_mb": 20480,
-  "media_days": 3,
+  "media_days": 30,
   "database_file": "ptt.db",
   "queue_days": 30,
   "admin_addr": "127.0.0.1:8082",

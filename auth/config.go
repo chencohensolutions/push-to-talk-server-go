@@ -47,8 +47,8 @@ type AppConfig struct {
 	BlobDays int `json:"blob_days"`
 	// The largest file a phone may upload, in MB (default 20480): a shared video's original can be gigabytes.
 	MaxBlobMB int64 `json:"max_blob_mb"`
-	// Days a shared original (a picture's, video's or file's, uploaded when someone asked for it) is kept after it
-	// was first read (default 3), so the others in a group get it without waking the sender's phone again.
+	// Days a shared original (a picture's, video's or file's, uploaded when someone asked for it) is kept, encrypted
+	// (default 30; 2026-11-28, hen), so whoever asks again gets it without waking the sender's phone.
 	MediaDays int `json:"media_days"`
 	// Days an envelope waits in the queue for a device that doesn't take it (default 30).
 	QueueDays int `json:"queue_days"`
@@ -150,7 +150,7 @@ const (
 	DefaultBlobDir        = "blobs"
 	DefaultBlobDays       = 30
 	DefaultMaxBlobMB      = 20480
-	DefaultMediaDays      = 3
+	DefaultMediaDays      = 30
 	DefaultAdminAddr      = "127.0.0.1:8082"
 	DefaultAppReleases    = "chencohensolutions/push-to-talk-kmp"
 	DefaultAppReleaseFile = "app-release.json"
