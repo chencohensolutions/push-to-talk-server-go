@@ -420,7 +420,8 @@ are deleted `blob_days` (default 30) after they were made, by the hourly sweep. 
 only when someone asks (a `PUSH_MEDIA` Send). An original uploaded with `?keep=media` is kept, encrypted, `media_days`
 (default 30; 2026-11-28, hen) after it was uploaded, so whoever asks again, or the rest of a group, gets it without
 waking the sender's phone. A file whose upload stopped unfinished is deleted 48 hours after
-its last byte. `/blob/<id>`, over mTLS, enrolled
+its last byte. A data file with no meta beside it (a delete that removed only the meta, as Windows refuses to
+remove a file a reader still has open) is deleted by the sweep once it is an hour old (`ExpireOrphans`). `/blob/<id>`, over mTLS, enrolled
 devices only:
 
 - **GET** by the maker, the other user of its one-to-one conversation, or a member of its group now (blocks apply);

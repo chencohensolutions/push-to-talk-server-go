@@ -455,6 +455,38 @@ func (s *Store) Expire(before, mediaBefore time.Time) int {
 	return n
 }
 
+// ExpireOrphans deletes the data files that have no meta (no .json beside them, so no blob the store knows) and
+// were last written before before, and answers how many. They are left when a delete took the meta but not the
+// data (on Windows a file a reader still has open can't be removed) or a server stopped mid-write; nothing reads
+// them and Expire never sees them (2026-11-28: 28 such files on hen-server). Create makes the data file and its
+// meta under the store's lock, so a file it is making is never taken for one.
+func (s *Store) ExpireOrphans(before time.Time) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entries, err := os.ReadDir(s.dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range entries {
+		id, ok := strings.CutSuffix(e.Name(), ".blob")
+		if !ok || !ValidID(id) || e.IsDir() {
+			continue
+		}
+		if _, known := s.metas[id]; known {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || !info.ModTime().Before(before) {
+			continue
+		}
+		if os.Remove(s.dataPath(id)) == nil {
+			n++
+		}
+	}
+	return n
+}
+
 // ReadToEnd notes that user read TalkBuffer id to its end, and deletes it once every reader has; it answers whether
 // it was deleted.
 func (s *Store) ReadToEnd(id, user string) bool {
