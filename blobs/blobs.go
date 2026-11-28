@@ -81,6 +81,9 @@ type Meta struct {
 	// The conversation: the other user of a one-to-one conversation, or a group's id.
 	Peer  string `json:"peer,omitempty"`
 	Group string `json:"group,omitempty"`
+	// More conversations its maker shared it to (2026-11-28, hen: "share images between groups without doubling the
+	// storage"): the same sealed file, readable in each.
+	Shares []Conversation `json:"shares,omitempty"`
 	// For a file: its whole size, given when the upload began. For a clip, or an open file: 0.
 	Total int64 `json:"total,omitempty"`
 	// An open file (2026-11-28): uploaded while it is being made (a video's preview as the phone encodes it), so its
@@ -101,6 +104,24 @@ type Meta struct {
 
 	writing bool // an upload is going on
 }
+
+// Conversation is a one-to-one conversation (the other user) or a group.
+type Conversation struct {
+	Peer  string `json:"peer,omitempty"`
+	Group string `json:"group,omitempty"`
+}
+
+// Conversations are every conversation m is readable in: the one it was made for, then those it was shared to.
+func (m Meta) Conversations() []Conversation {
+	out := make([]Conversation, 0, 1+len(m.Shares))
+	if m.Peer != "" || m.Group != "" {
+		out = append(out, Conversation{Peer: m.Peer, Group: m.Group})
+	}
+	return append(out, m.Shares...)
+}
+
+// MaxShares is how many conversations a file may be readable in.
+const MaxShares = 64
 
 var (
 	ErrExists   = errors.New("a blob with this id exists")
@@ -420,6 +441,47 @@ func (s *Store) Delete(id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.remove(id)
+}
+
+// Share makes file id readable in conversation c too, and starts its keeping time again (the new conversation gets
+// it as long as a new upload would stay). Sharing it where it is already readable only starts the time again.
+func (s *Store) Share(id string, c Conversation) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.metas[id]
+	if !ok || m.Kind != File {
+		return ErrNotFound
+	}
+	if !slices.Contains(m.Conversations(), c) {
+		if len(m.Shares) >= MaxShares {
+			return ErrTooLarge
+		}
+		m.Shares = append(m.Shares, c)
+	}
+	m.Created = s.now()
+	return s.saveMeta(m)
+}
+
+// Unshare takes file id out of conversation c; the file is deleted when no conversation is left. Answers whether it
+// is still kept.
+func (s *Store) Unshare(id string, c Conversation) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.metas[id]
+	if !ok {
+		return false
+	}
+	left := slices.DeleteFunc(m.Conversations(), func(x Conversation) bool { return x == c })
+	if len(left) == 0 {
+		s.remove(id)
+		return false
+	}
+	m.Peer, m.Group, m.Shares = left[0].Peer, left[0].Group, left[1:]
+	if len(m.Shares) == 0 {
+		m.Shares = nil
+	}
+	s.saveMeta(m)
+	return true
 }
 
 func (s *Store) remove(id string) {

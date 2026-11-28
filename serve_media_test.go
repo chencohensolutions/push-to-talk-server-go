@@ -190,3 +190,48 @@ func TestUploadsLeaveTheDiskRoom(t *testing.T) {
 		t.Fatalf("an open file on a full disk: %d", resp.StatusCode)
 	}
 }
+
+// A picture shared again to another conversation is the same file on the server (2026-11-28, hen: "share images
+// between groups without doubling the storage"): its maker shares it there, it is read in each, and deleting it from
+// one conversation leaves it in the others until none is left.
+func TestABlobIsSharedToAnotherConversationOnce(t *testing.T) {
+	env := newTestEnv(t)
+	hen, dana, eli := pairedForMedia(t, env)
+	id := burstID()
+	if resp, _ := env.blobRequest(t, hen, http.MethodPut, id+"?peer=dana", map[string]string{relay.HeaderTotal: "7"}, []byte("preview")); resp.StatusCode != 200 {
+		t.Fatalf("upload: %d", resp.StatusCode)
+	}
+	if resp, _ := env.blobRequest(t, eli, http.MethodGet, id, nil, nil); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("eli read a blob of hen and dana's: %d", resp.StatusCode)
+	}
+	// Only to a contact: eli isn't one yet.
+	if resp, _ := env.blobRequest(t, hen, http.MethodPost, id+"?peer=eli", nil, nil); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("shared to a stranger: %d", resp.StatusCode)
+	}
+	env.uploadKeys(t, eli, ecKey())
+	env.pair(t, eli, []store.Device{dev(eli)}, hen, env.socket(t, hen))
+	// Only its maker shares it.
+	if resp, _ := env.blobRequest(t, dana, http.MethodPost, id+"?peer=eli", nil, nil); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("dana shared hen's blob: %d", resp.StatusCode)
+	}
+	if resp, _ := env.blobRequest(t, hen, http.MethodPost, id+"?peer=eli", nil, nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("share: %d", resp.StatusCode)
+	}
+	for _, p := range []*phone{dana, eli} {
+		if resp, data := env.blobRequest(t, p, http.MethodGet, id, nil, nil); resp.StatusCode != 200 || string(data) != "preview" {
+			t.Fatalf("read after the share: %d %q", resp.StatusCode, data)
+		}
+	}
+	// Deleted from dana's chat: eli still reads it; from eli's too: gone.
+	env.blobRequest(t, hen, http.MethodDelete, id+"?peer=dana", nil, nil)
+	if resp, _ := env.blobRequest(t, dana, http.MethodGet, id, nil, nil); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("dana still reads it: %d", resp.StatusCode)
+	}
+	if resp, _ := env.blobRequest(t, eli, http.MethodGet, id, nil, nil); resp.StatusCode != 200 {
+		t.Fatalf("eli lost it: %d", resp.StatusCode)
+	}
+	env.blobRequest(t, hen, http.MethodDelete, id+"?peer=eli", nil, nil)
+	if _, ok := env.relay.Blobs.Get(id); ok {
+		t.Fatal("the blob outlived its last conversation")
+	}
+}
