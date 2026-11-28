@@ -102,11 +102,14 @@ func (k Keys) Sign(identity string, grant Grant, now time.Time, ttl time.Duratio
 	return unsigned + "." + enc.EncodeToString(mac.Sum(nil)), nil
 }
 
-// JoinToken is a phone's token for room: join, send its microphone, hear the others; no data messages (floor
-// control is on ptt-server's /ws).
+// JoinToken is a phone's token for room: join, send its microphone, hear the others, and send the room's small data
+// messages. Floor control stays on ptt-server's /ws; the data messages are the phones' own, sealed or harmless: a
+// talker's "still pushing" beat once a second (sealed with its room key), a call's face hints. They were refused
+// until 2026-11-27, so LiveKit dropped every beat and a listener never learned that a talker had gone quiet without
+// an end.
 func (k Keys) JoinToken(identity, room string, now time.Time) (string, error) {
 	return k.Sign(identity, Grant{Room: room, RoomJoin: true, CanPublish: yes(), CanSubscribe: yes(),
-		CanPublishData: no()}, now, TokenTTL)
+		CanPublishData: yes()}, now, TokenTTL)
 }
 
 // RecorderIdentity is the server's call recorder in a call's room (package recorder). It has no dot, so it is never
