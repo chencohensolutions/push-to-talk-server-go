@@ -170,6 +170,11 @@ func (r *Relay) putBlob(w http.ResponseWriter, req *http.Request, from store.Dev
 			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 			return
 		}
+		if errors.Is(err, blobs.ErrFull) {
+			log.Printf("PUT /blob from %s.%d: refused, the disk would have less than min_free_gb left", from.User, from.Number)
+			http.Error(w, err.Error(), http.StatusInsufficientStorage)
+			return
+		}
 		if err != nil && !errors.Is(err, blobs.ErrExists) {
 			log.Printf("PUT /blob from %s.%d: %v", from.User, from.Number, err)
 			http.Error(w, "server error", http.StatusInternalServerError)
@@ -199,6 +204,8 @@ func (r *Relay) putBlob(w http.ResponseWriter, req *http.Request, from store.Dev
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, blobs.ErrTooLarge):
 		http.Error(w, "more bytes than "+HeaderTotal, http.StatusRequestEntityTooLarge)
+	case errors.Is(err, blobs.ErrFull):
+		http.Error(w, err.Error(), http.StatusInsufficientStorage)
 	default:
 		// A broken upload: what arrived is kept, and HEAD says how much.
 		log.Printf("PUT /blob/%s from %s.%d: %v", id, from.User, from.Number, err)

@@ -166,3 +166,27 @@ func TestAMediaPushWakesOnlyPushUser(t *testing.T) {
 	}
 	fcm.none(t, pushWindow+100*time.Millisecond) // hen's tablet isn't push_user: no push
 }
+
+// An upload that would leave less than min_free_gb free on the disk is refused 507 (2026-11-28, hen), and an open
+// file stops growing once the disk is that full.
+func TestUploadsLeaveTheDiskRoom(t *testing.T) {
+	env := newTestEnv(t)
+	hen, _, _ := pairedForMedia(t, env)
+	free := int64(1 << 30)
+	env.relay.Blobs.MinFree = 100 << 20
+	env.relay.Blobs.Free = func() int64 { return free }
+	if resp, _ := env.blobRequest(t, hen, http.MethodPut, burstID()+"?peer=dana", map[string]string{relay.HeaderTotal: "1000"}, []byte("small")); resp.StatusCode != 200 {
+		t.Fatalf("a small upload: %d", resp.StatusCode)
+	}
+	if resp, _ := env.blobRequest(t, hen, http.MethodPut, burstID()+"?peer=dana", map[string]string{relay.HeaderTotal: strconv.FormatInt(free, 10)}, []byte("big")); resp.StatusCode != http.StatusInsufficientStorage {
+		t.Fatalf("an upload that would fill the disk: %d", resp.StatusCode)
+	}
+	id := burstID()
+	if resp, _ := env.blobRequest(t, hen, http.MethodPut, id+"?peer=dana", map[string]string{relay.HeaderOpen: "true"}, []byte("part")); resp.StatusCode != 200 {
+		t.Fatalf("an open file: %d", resp.StatusCode)
+	}
+	free = 50 << 20
+	if resp, _ := env.blobRequest(t, hen, http.MethodPut, id, map[string]string{relay.HeaderOffset: "4"}, []byte("more")); resp.StatusCode != http.StatusInsufficientStorage {
+		t.Fatalf("an open file on a full disk: %d", resp.StatusCode)
+	}
+}

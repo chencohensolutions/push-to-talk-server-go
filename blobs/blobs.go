@@ -32,6 +32,9 @@ const (
 	// KeepMedia marks a shared original (PUT ?keep=media): kept media_days (2026-11-28, hen: 30) after it was
 	// made, so whoever asks again, or the others in a group, get it without waking the sender's phone.
 	KeepMedia = "media"
+	// DefaultMinFreeBytes is the space a file upload must leave free on the blobs folder's disk (min_free_gb):
+	// originals are kept 30 days and a video can be gigabytes, so the server's disk mustn't fill up (2026-11-28, hen).
+	DefaultMinFreeBytes = 10 << 30
 	// staleUpload is how long an incomplete file may go without a byte before the sweep deletes it.
 	staleUpload = 48 * time.Hour
 	// MaxClipBytes bounds one clip: 60 seconds of 24 kbit/s Opus is about 180 KB; with push-to-video, 60 seconds of
@@ -107,14 +110,19 @@ var (
 	ErrComplete = errors.New("the blob is complete")
 	ErrOffset   = errors.New("the upload doesn't continue where the blob ends")
 	ErrBusy     = errors.New("another upload of this blob is going on")
+	ErrFull     = errors.New("the server's disk is too full")
 )
 
 // Store is the blobs folder.
 type Store struct {
 	dir string
 	now func() time.Time
-	// MaxFile is the largest file (max_blob_mb; DefaultMaxFileBytes).
+	// MaxFile is the largest file (max_blob_mb; DefaultMaxFileBytes). MinFree is the space a file upload must leave
+	// free on the disk (min_free_gb; DefaultMinFreeBytes); 0 doesn't check. Free answers the space left (the disk's,
+	// or a test's).
 	MaxFile int64
+	MinFree int64
+	Free    func() int64
 
 	mu    sync.Mutex
 	metas map[string]*Meta
@@ -136,7 +144,7 @@ func Open(dir string, now func() time.Time) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, now: now, MaxFile: DefaultMaxFileBytes, metas: map[string]*Meta{}, grew: map[string]chan struct{}{}}
+	s := &Store{dir: dir, now: now, MaxFile: DefaultMaxFileBytes, MinFree: DefaultMinFreeBytes, metas: map[string]*Meta{}, grew: map[string]chan struct{}{}}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -159,7 +167,17 @@ func Open(dir string, now func() time.Time) (*Store, error) {
 		}
 		s.metas[id] = &m
 	}
+	s.Free = func() int64 { return freeBytes(dir) }
 	return s, nil
+}
+
+// roomFor says whether n more bytes leave MinFree on the disk (true when the disk can't be read).
+func (s *Store) roomFor(n int64) bool {
+	if s.MinFree <= 0 || s.Free == nil {
+		return true
+	}
+	free := s.Free()
+	return free < 0 || free-n >= s.MinFree
 }
 
 // Root is the blobs folder.
@@ -186,6 +204,9 @@ func (s *Store) Create(m Meta) error {
 	}
 	if m.Open {
 		m.Total = 0
+	}
+	if m.Kind == File && !s.roomFor(m.Total) {
+		return ErrFull
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -337,6 +358,10 @@ func (s *Store) Write(id string, offset int64, r io.Reader, last bool) (int64, e
 	if m.writing {
 		s.mu.Unlock()
 		return 0, ErrBusy
+	}
+	if m.Open && !s.roomFor(0) {
+		s.mu.Unlock()
+		return m.Size, ErrFull
 	}
 	m.writing = true
 	total, open := m.Total, m.Open

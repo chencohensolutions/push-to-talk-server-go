@@ -433,7 +433,9 @@ devices only:
   for `?peer=<user>` or `?group=<id>` (the same rule as talking there; 403 otherwise), `&keep=media` for a shared
   original. The first PUT gives `Blob-Total`; each PUT's `Blob-Offset` says where its bytes go and must be the size
   the server has (409 with the right `Blob-Offset` otherwise). It is complete when it has `Blob-Total` bytes. Only its
-  maker writes it.
+  maker writes it. An upload that would leave less than `min_free_gb` (default 10 GB) free on the blobs folder's disk
+  is refused `507` (an open file's PUT too, once the disk is that full), so kept originals never fill the server's
+  disk; the phone says the server is full.
 - **An open file** (2026-11-28): a video's preview is uploaded while the phone encodes it, so its size isn't known.
   The first PUT gives `Blob-Open: true` instead of `Blob-Total`, and the PUT with `Blob-Last: true` completes it (its
   `Blob-Total` is then its size). GET and HEAD answer `Blob-Open: true` while it grows. A plain GET is 409 until it

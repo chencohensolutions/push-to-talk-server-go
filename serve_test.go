@@ -85,6 +85,7 @@ func newTestEnv(t *testing.T, configure ...func(*auth.AppConfig)) *testEnv {
 		PairsFile:      filepath.Join(dir, "pairs.json"),
 		GroupsFile:     filepath.Join(dir, "groups.json"),
 		BlobDir:        filepath.Join(dir, "blobs"),
+		MinFreeGB:      -1, // the test machine's free space isn't the point; TestUploadsLeaveTheDiskRoom sets its own
 		InvitesFile:    filepath.Join(dir, "invites.json"),
 		AppReleaseFile: filepath.Join(dir, "app-release.json"),
 		DatabaseFile:   filepath.Join(dir, "ptt.db"),
