@@ -196,6 +196,46 @@ func TestSharedMediaIsKeptTheDaysAskedWithinTheQuota(t *testing.T) {
 	}
 }
 
+// Everything in the blobs folder keeps within media_total_gb (2026-11-28, hen: "limit the whole server cache data to
+// 1tb"): a new file that wouldn't fit deletes the one fetched longest ago first ("media will get deleted by the
+// oldest fetch request"); one bigger than the whole bound is refused 507, deleting nothing.
+func TestTheBlobsFolderKeepsWithinItsTotal(t *testing.T) {
+	env := newTestEnv(t)
+	hen, dana, _ := pairedForMedia(t, env)
+	env.relay.Blobs.MaxTotal = 20
+	first, second, third := burstID(), burstID(), burstID()
+	for _, id := range []string{first, second, third} {
+		if resp, _ := env.blobRequest(t, hen, http.MethodPut, id+"?peer=dana&keep=media&days=365", map[string]string{relay.HeaderTotal: "8"}, []byte("12345678")); resp.StatusCode != 200 {
+			t.Fatalf("PUT: %d", resp.StatusCode)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, ok := env.relay.Blobs.Get(first); ok {
+		t.Fatal("the oldest file stayed past the total")
+	}
+	// Dana fetches the second: now the third is the one fetched longest ago.
+	if resp, _ := env.blobRequest(t, dana, http.MethodGet, second, nil, nil); resp.StatusCode != 200 {
+		t.Fatalf("GET: %d", resp.StatusCode)
+	}
+	for _, id := range []string{second, third} {
+		if _, ok := env.relay.Blobs.Get(id); !ok {
+			t.Fatal("a newer file went")
+		}
+	}
+	if resp, _ := env.blobRequest(t, hen, http.MethodPut, burstID()+"?peer=dana", map[string]string{relay.HeaderTotal: "21"}, []byte("x")); resp.StatusCode != http.StatusInsufficientStorage {
+		t.Fatalf("a file bigger than the whole bound: %d", resp.StatusCode)
+	}
+	// Lowered: the sweep keeps to it.
+	env.relay.Blobs.MaxTotal = 8
+	env.relay.Blobs.Expire(time.Now().Add(-365*24*time.Hour), time.Now().Add(-365*24*time.Hour))
+	if _, ok := env.relay.Blobs.Get(third); ok {
+		t.Fatal("the sweep didn't keep to the total, by last fetch")
+	}
+	if _, ok := env.relay.Blobs.Get(second); !ok {
+		t.Fatal("the sweep took the one fetched last")
+	}
+}
+
 // A request for a shared original (2026-11-28): PUSH_MEDIA is high priority even with notifications off (the phone
 // starts an upload), kept a day; push_user wakes only that user's devices.
 func TestAMediaPushWakesOnlyPushUser(t *testing.T) {

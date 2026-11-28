@@ -295,6 +295,7 @@ func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta, 
 		return
 	}
 	defer f.Close()
+	r.Blobs.Fetched(m.ID)
 	if _, err := f.Seek(offset, io.SeekStart); err != nil {
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return

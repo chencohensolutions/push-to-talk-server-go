@@ -16,6 +16,7 @@
   "media_days": 30,
   "media_max_days": 730,
   "media_quota_gb": 200,
+  "media_total_gb": 1024,
   "min_free_gb": 10,
   "database_file": "ptt.db",
   "queue_days": 30,

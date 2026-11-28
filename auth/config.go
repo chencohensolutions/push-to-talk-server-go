@@ -56,6 +56,9 @@ type AppConfig struct {
 	// How much each user's media kept longer than media_days may take, in GB (default 200); past it their oldest fall
 	// back to media_days. -1: no bound.
 	MediaQuotaGB int64 `json:"media_quota_gb"`
+	// Everything the blobs folder may hold, in GB (default 1024; 2026-11-28, hen: "limit the whole server cache data
+	// to 1tb"): past it the oldest files go first, saved calls' tracks never. -1: no bound.
+	MediaTotalGB int64 `json:"media_total_gb"`
 	// The space, in GB, a file upload must leave free on the blobs folder's disk (default 10); an upload that would
 	// leave less is refused 507, so kept originals never fill the server's disk. 0 is the default; -1 doesn't check.
 	MinFreeGB int64 `json:"min_free_gb"`
@@ -162,6 +165,7 @@ const (
 	DefaultMediaDays      = 30
 	DefaultMediaMaxDays   = 730
 	DefaultMediaQuotaGB   = 200
+	DefaultMediaTotalGB   = 1024
 	DefaultMinFreeGB      = 10
 	DefaultAdminAddr      = "127.0.0.1:8082"
 	DefaultAppReleases    = "chencohensolutions/push-to-talk-kmp"
@@ -269,6 +273,9 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.MediaQuotaGB == 0 {
 		c.MediaQuotaGB = DefaultMediaQuotaGB
+	}
+	if c.MediaTotalGB == 0 {
+		c.MediaTotalGB = DefaultMediaTotalGB
 	}
 	if c.MinFreeGB == 0 {
 		c.MinFreeGB = DefaultMinFreeGB

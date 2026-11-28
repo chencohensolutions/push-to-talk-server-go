@@ -94,6 +94,8 @@ type Meta struct {
 	// For shared media: the days its maker asked it be kept (2026-11-28, hen: "the client can make the server keep
 	// it for one year"), up to media_max_days; 0: media_days. Past media_quota_gb its maker's oldest fall back.
 	KeepDays int `json:"keep_days,omitempty"`
+	// When it was last fetched (a GET; noted at most hourly): media_total_gb lets the one fetched longest ago go first.
+	ReadAt time.Time `json:"read_at,omitempty"`
 	// When its last bytes arrived (a file): an upload left unfinished is deleted staleUpload after it.
 	Modified time.Time `json:"modified_at,omitempty"`
 	Size     int64     `json:"size"`
@@ -150,7 +152,11 @@ type Store struct {
 	// than media_days may take (media_quota_gb, bytes; 0: no bound): past it the oldest fall back to media_days.
 	MaxKeepDays int
 	MediaQuota  int64
-	Free        func() int64
+	// MaxTotal bounds everything in the blobs folder (media_total_gb, bytes; 0: no bound; 2026-11-28, hen: "limit the
+	// whole server cache data to 1tb"): a new file that wouldn't fit makes room by deleting the oldest files first
+	// (never a saved call's tracks or a talk buffer, nor one being uploaded); the hourly sweep keeps to it too.
+	MaxTotal int64
+	Free     func() int64
 
 	mu    sync.Mutex
 	metas map[string]*Meta
@@ -240,6 +246,9 @@ func (s *Store) Create(m Meta) error {
 	defer s.mu.Unlock()
 	if _, ok := s.metas[m.ID]; ok {
 		return ErrExists
+	}
+	if m.Kind == File && !s.makeRoom(m.Total) {
+		return ErrFull
 	}
 	m.Size, m.Complete, m.Created = 0, false, s.now().UTC()
 	m.Modified = m.Created
@@ -525,7 +534,9 @@ func (s *Store) Expire(before, mediaBefore time.Time) int {
 			n++
 		}
 	}
-	return n
+	before0 := len(s.metas)
+	s.makeRoom(0)
+	return n + before0 - len(s.metas)
 }
 
 // SetClock changes the store's clock (tests that sweep days ahead).
@@ -533,6 +544,64 @@ func (s *Store) SetClock(now func() time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.now = now
+}
+
+// makeRoom deletes the oldest files until n more bytes fit MaxTotal, and says whether they do. Called under mu.
+func (s *Store) makeRoom(n int64) bool {
+	if s.MaxTotal <= 0 {
+		return true
+	}
+	var total, kept int64
+	var evictable []*Meta
+	for _, m := range s.metas {
+		total += m.Size
+		if m.Kind == File && !m.writing {
+			evictable = append(evictable, m)
+		} else {
+			kept += m.Size
+		}
+	}
+	if total+n <= s.MaxTotal {
+		return true
+	}
+	// More than all that could go: nothing is deleted for it.
+	if kept+n > s.MaxTotal {
+		return false
+	}
+	// The one fetched longest ago goes first (2026-11-28, hen: "media will get deleted by the oldest fetch request").
+	sort.Slice(evictable, func(i, j int) bool { return evictable[i].lastUse().Before(evictable[j].lastUse()) })
+	for _, m := range evictable {
+		if total+n <= s.MaxTotal {
+			break
+		}
+		total -= m.Size
+		s.remove(m.ID)
+	}
+	return total+n <= s.MaxTotal
+}
+
+// lastUse is when m was last fetched, or made when it never was.
+func (m *Meta) lastUse() time.Time {
+	if m.ReadAt.After(m.Created) {
+		return m.ReadAt
+	}
+	return m.Created
+}
+
+// Fetched notes that file id was read now (GET), for MaxTotal's order; written at most hourly per file.
+func (s *Store) Fetched(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.metas[id]
+	if !ok || m.Kind != File {
+		return
+	}
+	now := s.now().UTC()
+	if now.Sub(m.ReadAt) < time.Hour {
+		return
+	}
+	m.ReadAt = now
+	s.saveMeta(m)
 }
 
 // KeepDaysOf is the days m was asked to be kept, within MaxKeepDays (0: media_days).

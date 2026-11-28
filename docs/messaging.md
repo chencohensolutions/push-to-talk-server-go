@@ -425,7 +425,11 @@ waking the sender's phone. Its maker may ask for longer with `&days=N` (2026-11-
 server keep it for one year"; the phone's Settings › Storage chooses 30 days, 1 year or 2 years), up to
 `media_max_days` (default 730), and every PUT answers `Blob-Keep-Days`. What each user keeps longer than `media_days`
 may take `media_quota_gb` (default 200, -1 no bound): past it, the sweep lets that user's oldest fall back to
-`media_days`. A file whose upload stopped unfinished is deleted 48 hours after
+`media_days`. Everything in the blobs folder may take `media_total_gb` (default 1024, -1 no bound; 2026-11-28, hen:
+"limit the whole server cache data to 1tb"): a new file that wouldn't fit deletes the files fetched longest ago first (hen: "media will
+get deleted by the oldest fetch request"; each file's last GET is noted at most hourly, `read_at`; never fetched: when
+it was made), never a saved call's tracks or a talk buffer, nor a file being uploaded (507 if that isn't enough), and
+the sweep keeps to it. A file whose upload stopped unfinished is deleted 48 hours after
 its last byte. A data file with no meta beside it (a delete that removed only the meta, as Windows refuses to
 remove a file a reader still has open) is deleted by the sweep once it is an hour old (`ExpireOrphans`). `/blob/<id>`, over mTLS, enrolled
 devices only:
