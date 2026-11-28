@@ -57,6 +57,8 @@ type Relay struct {
 	Blobs *blobs.Store
 	// How long a blob is kept (blob_days).
 	BlobTTL time.Duration
+	// How long a shared original is kept after its first read (media_days).
+	MediaTTL time.Duration
 	// How long a saved call's tracks are kept after recording starts (livekit.keep_call_days); 0 keeps them.
 	CallTTL time.Duration
 	// How long a talk buffer is kept when not all its readers read it (livekit.talk_buffer_hours).
@@ -494,7 +496,7 @@ func (r *Relay) Sweep() {
 		log.Printf("Expired %d envelopes no device took in %v", n, r.QueueTTL)
 	}
 	if r.Blobs != nil && r.BlobTTL > 0 {
-		if n := r.Blobs.Expire(r.Now().Add(-r.BlobTTL)); n > 0 {
+		if n := r.Blobs.Expire(r.Now().Add(-r.BlobTTL), r.Now().Add(-r.mediaTTL())); n > 0 {
 			log.Printf("Deleted %d clips and attachments older than %v", n, r.BlobTTL)
 		}
 	}
@@ -530,4 +532,12 @@ func (r *Relay) Run(ctx context.Context) {
 		case <-ticker.C:
 		}
 	}
+}
+
+// mediaTTL is how long a shared original is kept after its first read: media_days, or blob_days when unset.
+func (r *Relay) mediaTTL() time.Duration {
+	if r.MediaTTL > 0 {
+		return r.MediaTTL
+	}
+	return r.BlobTTL
 }

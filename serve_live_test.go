@@ -482,7 +482,7 @@ func TestACallIsKeptOnlyWhileSomeoneRecordsIt(t *testing.T) {
 	if resp.StatusCode != 200 || len(body) == 0 {
 		t.Fatalf("GET the track: %d", resp.StatusCode)
 	}
-	if n := env.relay.Blobs.Expire(time.Now().Add(365 * 24 * time.Hour)); n != 0 {
+	if n := env.relay.Blobs.Expire(time.Now().Add(365*24*time.Hour), time.Now().Add(365*24*time.Hour)); n != 0 {
 		t.Fatalf("a kept call's track expired: %d", n)
 	}
 	if r := env.graphql(t, hen.client, `{ serverInfo { keepsCalls } }`, nil); string(r.Data["serverInfo"]) != `{"keepsCalls":true}` {

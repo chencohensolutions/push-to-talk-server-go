@@ -24,6 +24,9 @@ const (
 	Sync
 	// Message: a message the user is notified of; high priority where notifications are on.
 	Message
+	// Media (2026-11-28, hen): someone asks this phone for the original of a picture, video or file it shared, which
+	// only it has. High priority always (the phone starts an upload that shows a notification), kept a day.
+	Media
 	// Warm (2026-11-24, hen): someone opened a chat with this user; the phone joins its talk room quietly. High
 	// priority where notifications are on, kept 60 seconds. Less urgent than a talk burst or a call.
 	Warm
@@ -44,6 +47,8 @@ func (k Kind) String() string {
 		return "call"
 	case Warm:
 		return "warm"
+	case Media:
+		return "media"
 	}
 	return "none"
 }
@@ -57,6 +62,8 @@ func (k Kind) wake(notifications bool) Wake {
 		return Wake{Kind: k.String(), High: notifications, TTL: 30 * time.Second}
 	case Warm:
 		return Wake{Kind: k.String(), High: notifications, TTL: 60 * time.Second}
+	case Media:
+		return Wake{Kind: k.String(), High: true, TTL: 24 * time.Hour}
 	}
 	return Wake{Kind: Sync.String(), TTL: 24 * time.Hour}
 }

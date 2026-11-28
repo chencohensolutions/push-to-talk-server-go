@@ -28,9 +28,13 @@ func (r *Relay) Send(from store.Device, send *pb.Send) *pb.SendResult {
 			recipients = append(recipients, store.Device{User: e.GetRecipientUser(), Number: int(e.GetRecipientDevice())})
 		}
 	}
+	only := send.GetPushUser()
 	for _, to := range recipients {
 		k := kind
-		if to.User == from.User {
+		if only != "" && to.User != only {
+			// push_user: only that user's devices are woken (a request for a shared original wakes its sender).
+			k = push.None
+		} else if to.User == from.User {
 			// The sender's own devices show what their user sent: nothing to notify of.
 			k = min(k, push.Sync)
 		}
@@ -52,6 +56,8 @@ func PushKind(k pb.PushKind) push.Kind {
 		return push.Call
 	case pb.PushKind_PUSH_WARM:
 		return push.Warm
+	case pb.PushKind_PUSH_MEDIA:
+		return push.Media
 	}
 	return push.Sync
 }

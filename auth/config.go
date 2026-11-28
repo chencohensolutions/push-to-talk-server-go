@@ -45,6 +45,11 @@ type AppConfig struct {
 	BlobDir string `json:"blob_dir"`
 	// Days a clip or attachment is kept (default 30).
 	BlobDays int `json:"blob_days"`
+	// The largest file a phone may upload, in MB (default 20480): a shared video's original can be gigabytes.
+	MaxBlobMB int64 `json:"max_blob_mb"`
+	// Days a shared original (a picture's, video's or file's, uploaded when someone asked for it) is kept after it
+	// was first read (default 3), so the others in a group get it without waking the sender's phone again.
+	MediaDays int `json:"media_days"`
 	// Days an envelope waits in the queue for a device that doesn't take it (default 30).
 	QueueDays int `json:"queue_days"`
 	// Let enrolled users invite friends (createInvite): one link and its passcode, sent from the inviter's phone,
@@ -144,6 +149,8 @@ const (
 	DefaultQueueDays      = 30
 	DefaultBlobDir        = "blobs"
 	DefaultBlobDays       = 30
+	DefaultMaxBlobMB      = 20480
+	DefaultMediaDays      = 3
 	DefaultAdminAddr      = "127.0.0.1:8082"
 	DefaultAppReleases    = "chencohensolutions/push-to-talk-kmp"
 	DefaultAppReleaseFile = "app-release.json"
@@ -238,6 +245,12 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.BlobDays == 0 {
 		c.BlobDays = DefaultBlobDays
+	}
+	if c.MaxBlobMB == 0 {
+		c.MaxBlobMB = DefaultMaxBlobMB
+	}
+	if c.MediaDays == 0 {
+		c.MediaDays = DefaultMediaDays
 	}
 	if c.GroupsFile == "" {
 		c.GroupsFile = DefaultGroupsFile

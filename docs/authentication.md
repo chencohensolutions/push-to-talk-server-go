@@ -337,6 +337,8 @@ pinned key) at any address. See the client repo's docs.
   "groups_file": "groups.json",                 // optional (default): who is in which group (messaging.md)
   "blob_dir": "blobs",                          // optional (default): clips and attachments, ciphertext
   "blob_days": 30,                              // optional (default): how long they are kept
+  "max_blob_mb": 20480,                         // optional (default): the largest file a phone may upload
+  "media_days": 3,                              // optional (default): a shared original, kept after its first read
   "database_file": "ptt.db",                    // optional (default): prekeys and the message queue
   "queue_days": 30,                             // optional (default): how long an envelope waits for its device
   "admin_addr": "127.0.0.1:8082",               // optional (default), must be loopback
