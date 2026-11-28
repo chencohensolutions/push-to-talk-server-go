@@ -1,8 +1,10 @@
 // Package blobs keeps clips and attachments: files of ciphertext under the blobs folder (blob_dir), each beside a
 // small JSON file that says who made it and for which conversation, so the server can tell who may read it. A clip
 // grows while its burst lasts (one record per ClipSegment) and readers follow it until its last segment; a file
-// (a voice message, an attachment) is uploaded with PUT, resumably. Both are deleted blob_days after they were
-// made. The server never holds a key to them. See docs/messaging.md, "Talk" and "Blobs".
+// (a voice message, an attachment, a shared picture's preview or original) is uploaded with PUT, resumably, and an
+// open file grows while it is uploaded, readers following it. They are deleted blob_days after they were made; a
+// shared original (Keep "media") media_days after it was made. The server never holds a key to them. See
+// docs/messaging.md, "Talk" and "Blobs".
 package blobs
 
 import (
@@ -24,8 +26,17 @@ import (
 )
 
 const (
-	// MaxFileBytes is the largest file a device may upload (a voice message or an attachment).
-	MaxFileBytes = 100 << 20
+	// DefaultMaxFileBytes is the largest file a device may upload (max_blob_mb): a shared video's original can be
+	// gigabytes (2026-11-28, hen: share videos; it was 100 MB before).
+	DefaultMaxFileBytes = 20 << 30
+	// KeepMedia marks a shared original (PUT ?keep=media): kept media_days (2026-11-28, hen: 30) after it was
+	// made, so whoever asks again, or the others in a group, get it without waking the sender's phone.
+	KeepMedia = "media"
+	// DefaultMinFreeBytes is the space a file upload must leave free on the blobs folder's disk (min_free_gb):
+	// originals are kept 30 days and a video can be gigabytes, so the server's disk mustn't fill up (2026-11-28, hen).
+	DefaultMinFreeBytes = 10 << 30
+	// staleUpload is how long an incomplete file may go without a byte before the sweep deletes it.
+	staleUpload = 48 * time.Hour
 	// MaxClipBytes bounds one clip: 60 seconds of 24 kbit/s Opus is about 180 KB; with push-to-video, 60 seconds of
 	// 1 Mbit/s video is about 7.5 MB.
 	MaxClipBytes = 8 << 20
@@ -70,8 +81,15 @@ type Meta struct {
 	// The conversation: the other user of a one-to-one conversation, or a group's id.
 	Peer  string `json:"peer,omitempty"`
 	Group string `json:"group,omitempty"`
-	// For a file: its whole size, given when the upload began. For a clip: 0.
-	Total    int64     `json:"total,omitempty"`
+	// For a file: its whole size, given when the upload began. For a clip, or an open file: 0.
+	Total int64 `json:"total,omitempty"`
+	// An open file (2026-11-28): uploaded while it is being made (a video's preview as the phone encodes it), so its
+	// size isn't known up front; the PUT with Blob-Last completes it, and readers may follow it until then.
+	Open bool `json:"open,omitempty"`
+	// "media" for a shared original (KeepMedia).
+	Keep string `json:"keep,omitempty"`
+	// When its last bytes arrived (a file): an upload left unfinished is deleted staleUpload after it.
+	Modified time.Time `json:"modified_at,omitempty"`
 	Size     int64     `json:"size"`
 	Complete bool      `json:"complete"`
 	Created  time.Time `json:"created_at"`
@@ -92,12 +110,19 @@ var (
 	ErrComplete = errors.New("the blob is complete")
 	ErrOffset   = errors.New("the upload doesn't continue where the blob ends")
 	ErrBusy     = errors.New("another upload of this blob is going on")
+	ErrFull     = errors.New("the server's disk is too full")
 )
 
 // Store is the blobs folder.
 type Store struct {
 	dir string
 	now func() time.Time
+	// MaxFile is the largest file (max_blob_mb; DefaultMaxFileBytes). MinFree is the space a file upload must leave
+	// free on the disk (min_free_gb; DefaultMinFreeBytes); 0 doesn't check. Free answers the space left (the disk's,
+	// or a test's).
+	MaxFile int64
+	MinFree int64
+	Free    func() int64
 
 	mu    sync.Mutex
 	metas map[string]*Meta
@@ -119,7 +144,7 @@ func Open(dir string, now func() time.Time) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	s := &Store{dir: dir, now: now, metas: map[string]*Meta{}, grew: map[string]chan struct{}{}}
+	s := &Store{dir: dir, now: now, MaxFile: DefaultMaxFileBytes, MinFree: DefaultMinFreeBytes, metas: map[string]*Meta{}, grew: map[string]chan struct{}{}}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -136,10 +161,23 @@ func Open(dir string, now func() time.Time) (*Store, error) {
 		}
 		if info, err := os.Stat(s.dataPath(id)); err == nil {
 			m.Size = info.Size() // what is on disk wins over the last saved size
+			if m.Kind == File && !m.Complete {
+				m.Modified = info.ModTime().UTC()
+			}
 		}
 		s.metas[id] = &m
 	}
+	s.Free = func() int64 { return freeBytes(dir) }
 	return s, nil
+}
+
+// roomFor says whether n more bytes leave MinFree on the disk (true when the disk can't be read).
+func (s *Store) roomFor(n int64) bool {
+	if s.MinFree <= 0 || s.Free == nil {
+		return true
+	}
+	free := s.Free()
+	return free < 0 || free-n >= s.MinFree
 }
 
 // Root is the blobs folder.
@@ -161,8 +199,14 @@ func (s *Store) Create(m Meta) error {
 	if !ValidID(m.ID) {
 		return ErrBadID
 	}
-	if m.Kind == File && (m.Total <= 0 || m.Total > MaxFileBytes) {
-		return fmt.Errorf("%w: a file is 1 byte to %d MB", ErrTooLarge, MaxFileBytes>>20)
+	if m.Kind == File && !m.Open && (m.Total <= 0 || m.Total > s.MaxFile) {
+		return fmt.Errorf("%w: a file is 1 byte to %d MB", ErrTooLarge, s.MaxFile>>20)
+	}
+	if m.Open {
+		m.Total = 0
+	}
+	if m.Kind == File && !s.roomFor(m.Total) {
+		return ErrFull
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -170,6 +214,7 @@ func (s *Store) Create(m Meta) error {
 		return ErrExists
 	}
 	m.Size, m.Complete, m.Created = 0, false, s.now().UTC()
+	m.Modified = m.Created
 	f, err := os.OpenFile(s.dataPath(m.ID), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
@@ -288,8 +333,9 @@ func (s *Store) Finish(id string) error {
 }
 
 // Write adds the bytes of r to file id at offset, which must be where the file ends now (an upload that broke off
-// continues from the size HEAD or GET answers). It answers the file's size after.
-func (s *Store) Write(id string, offset int64, r io.Reader) (int64, error) {
+// continues from the size HEAD or GET answers). It answers the file's size after. A file with a Total is complete
+// with its last byte; an open file when last is set (Blob-Last) and all of r has arrived.
+func (s *Store) Write(id string, offset int64, r io.Reader, last bool) (int64, error) {
 	s.mu.Lock()
 	m, ok := s.metas[id]
 	if !ok {
@@ -313,8 +359,15 @@ func (s *Store) Write(id string, offset int64, r io.Reader) (int64, error) {
 		s.mu.Unlock()
 		return 0, ErrBusy
 	}
+	if m.Open && !s.roomFor(0) {
+		s.mu.Unlock()
+		return m.Size, ErrFull
+	}
 	m.writing = true
-	total := m.Total
+	total, open := m.Total, m.Open
+	if open {
+		total = s.MaxFile
+	}
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
@@ -334,8 +387,12 @@ func (s *Store) Write(id string, offset int64, r io.Reader) (int64, error) {
 		return offset, ErrTooLarge
 	}
 	m.Size = offset + n
-	if m.Size == total {
+	m.Modified = s.now().UTC()
+	if (!open && m.Size == total) || (open && last && err == nil) {
 		m.Complete = true
+		if open {
+			m.Total = m.Size
+		}
 		if serr := s.saveMeta(m); err == nil {
 			err = serr
 		}
@@ -372,14 +429,25 @@ func (s *Store) remove(id string) {
 	os.Remove(s.metaPath(id))
 }
 
-// Expire deletes the clips and attachments made before before, and answers how many. A saved call's tracks are
-// deleted on their own schedule (ExpireTracks), not here.
-func (s *Store) Expire(before time.Time) int {
+// Expire deletes the clips and attachments made before before, the shared originals (Keep "media") made before
+// mediaBefore, and the files whose upload stopped staleUpload ago unfinished, and answers how many. A saved
+// call's tracks are deleted on their own schedule (ExpireTracks), not here.
+func (s *Store) Expire(before, mediaBefore time.Time) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	stale := s.now().Add(-staleUpload)
 	n := 0
 	for id, m := range s.metas {
-		if m.Kind != Track && m.Kind != TalkBuffer && m.Created.Before(before) {
+		if m.Kind == Track || m.Kind == TalkBuffer || m.writing {
+			continue
+		}
+		cutoff := before
+		if m.Keep == KeepMedia {
+			cutoff = mediaBefore
+		}
+		gone := m.Created.Before(cutoff) ||
+			(m.Kind == File && !m.Complete && !m.Modified.IsZero() && m.Modified.Before(stale))
+		if gone {
 			s.remove(id)
 			n++
 		}

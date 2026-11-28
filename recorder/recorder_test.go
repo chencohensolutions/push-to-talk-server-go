@@ -123,7 +123,7 @@ func TestWriteKeepsFramesAsTheyCame(t *testing.T) {
 		t.Fatalf("the call's tracks: %v", calls)
 	}
 	// Kept calls aren't deleted with the other blobs.
-	if store.Expire(time.Now().Add(time.Hour)) != 0 {
+	if store.Expire(time.Now().Add(time.Hour), time.Now().Add(time.Hour)) != 0 {
 		t.Fatal("a kept call's track expired")
 	}
 	if _, err := os.Stat(store.Root() + "/" + id + ".blob"); err != nil {

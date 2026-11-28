@@ -24,6 +24,13 @@ const (
 	HeaderOffset = "Blob-Offset"
 	// HeaderComplete: "true" once a file has all its bytes or a clip its last segment.
 	HeaderComplete = "Blob-Complete"
+	// HeaderOpen: "true" on the first PUT of a file whose size isn't known yet (a video's preview uploaded while the
+	// phone encodes it), in place of Blob-Total. Answered on GET and HEAD while it grows.
+	HeaderOpen = "Blob-Open"
+	// HeaderLast: "true" on the PUT that ends an open file.
+	HeaderLast = "Blob-Last"
+	// fileFollow is the longest a GET ?follow=1 waits for an open file that stops growing.
+	fileFollow = 60 * time.Second
 	// clipFollow is the longest a GET follows a clip that stops growing (its talker gone without a word).
 	clipFollow = MaxBurst + lastSegmentWait
 )
@@ -82,16 +89,21 @@ func setBlobHeaders(w http.ResponseWriter, m blobs.Meta) {
 	if m.Total > 0 {
 		w.Header().Set(HeaderTotal, strconv.FormatInt(m.Total, 10))
 	}
+	if m.Open && !m.Complete {
+		w.Header().Set(HeaderOpen, "true")
+	}
 }
 
 // ServeBlob is /blob/<id>, behind identify (a certificate is required).
 //
-//   - PUT uploads a file (a voice message, an attachment) for ?peer=<user> or ?group=<id>, resumable: the first PUT
-//     gives Blob-Total, and each PUT's Blob-Offset is where its bytes go.
+//   - PUT uploads a file (a voice message, an attachment, a shared picture's preview or original) for ?peer=<user> or
+//     ?group=<id>, resumable: the first PUT gives Blob-Total (or Blob-Open: true, and the PUT with Blob-Last: true
+//     ends it), and each PUT's Blob-Offset is where its bytes go. ?keep=media marks a shared original (media_days).
 //   - HEAD answers how much the server has (Blob-Offset), so a broken upload can go on.
 //   - GET reads a file once it is complete, from a byte offset with "Range: bytes=N-"; a clip is read while it grows:
 //     its records (a 4-byte big-endian length, then a ClipSegment without its burst id) are sent as they arrive
-//     until its last one.
+//     until its last one. A file that isn't complete is 409, or with ?follow=1 is sent as it grows.
+//   - DELETE: its maker deletes it (a shared item deleted for everyone, an upload given up).
 func (r *Relay) ServeBlob(w http.ResponseWriter, req *http.Request) {
 	user := auth.FromContext(req.Context())
 	device, _ := r.Registry.Find(auth.SerialFromContext(req.Context()))
@@ -118,9 +130,16 @@ func (r *Relay) ServeBlob(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.getBlob(w, req, m, user.Name)
+	case http.MethodDelete:
+		if !exists || m.Owner != user.Name || m.Kind != blobs.File {
+			http.Error(w, "no such blob", http.StatusNotFound)
+			return
+		}
+		r.Blobs.Delete(id)
+		w.WriteHeader(http.StatusNoContent)
 	default:
-		w.Header().Set("Allow", "GET, HEAD, PUT")
-		http.Error(w, "GET, HEAD or PUT", http.StatusMethodNotAllowed)
+		w.Header().Set("Allow", "GET, HEAD, PUT, DELETE")
+		http.Error(w, "GET, HEAD, PUT or DELETE", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -135,14 +154,25 @@ func (r *Relay) putBlob(w http.ResponseWriter, req *http.Request, from store.Dev
 			http.Error(w, status.String()+": "+detail, http.StatusForbidden)
 			return
 		}
+		open := req.Header.Get(HeaderOpen) == "true"
 		total, err := strconv.ParseInt(req.Header.Get(HeaderTotal), 10, 64)
-		if err != nil {
-			http.Error(w, "the first PUT gives "+HeaderTotal, http.StatusBadRequest)
+		if err != nil && !open {
+			http.Error(w, "the first PUT gives "+HeaderTotal+" or "+HeaderOpen, http.StatusBadRequest)
 			return
 		}
-		err = r.Blobs.Create(blobs.Meta{ID: id, Kind: blobs.File, Owner: from.User, Peer: peer, Group: group, Total: total})
+		keep := ""
+		if req.URL.Query().Get("keep") == blobs.KeepMedia {
+			keep = blobs.KeepMedia
+		}
+		err = r.Blobs.Create(blobs.Meta{ID: id, Kind: blobs.File, Owner: from.User, Peer: peer, Group: group,
+			Total: total, Open: open, Keep: keep})
 		if errors.Is(err, blobs.ErrTooLarge) {
 			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
+		if errors.Is(err, blobs.ErrFull) {
+			log.Printf("PUT /blob from %s.%d: refused, the disk would have less than min_free_gb left", from.User, from.Number)
+			http.Error(w, err.Error(), http.StatusInsufficientStorage)
 			return
 		}
 		if err != nil && !errors.Is(err, blobs.ErrExists) {
@@ -164,7 +194,7 @@ func (r *Relay) putBlob(w http.ResponseWriter, req *http.Request, from store.Dev
 			return
 		}
 	}
-	size, err := r.Blobs.Write(id, offset, req.Body)
+	size, err := r.Blobs.Write(id, offset, req.Body, req.Header.Get(HeaderLast) == "true")
 	m, _ = r.Blobs.Get(id)
 	setBlobHeaders(w, m)
 	switch {
@@ -174,6 +204,8 @@ func (r *Relay) putBlob(w http.ResponseWriter, req *http.Request, from store.Dev
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, blobs.ErrTooLarge):
 		http.Error(w, "more bytes than "+HeaderTotal, http.StatusRequestEntityTooLarge)
+	case errors.Is(err, blobs.ErrFull):
+		http.Error(w, err.Error(), http.StatusInsufficientStorage)
 	default:
 		// A broken upload: what arrived is kept, and HEAD says how much.
 		log.Printf("PUT /blob/%s from %s.%d: %v", id, from.User, from.Number, err)
@@ -192,7 +224,8 @@ func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta, 
 		}
 		offset = n
 	}
-	if m.Kind == blobs.File && !m.Complete {
+	follow := req.URL.Query().Get("follow") == "1"
+	if m.Kind == blobs.File && !m.Complete && !follow {
 		http.Error(w, "the upload isn't complete", http.StatusConflict)
 		return
 	}
@@ -206,13 +239,24 @@ func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta, 
 		http.Error(w, "server error", http.StatusInternalServerError)
 		return
 	}
-	if m.Kind == blobs.File {
+	if m.Kind == blobs.File && m.Complete {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Length", strconv.FormatInt(m.Size-offset, 10))
 		if offset > 0 {
 			w.WriteHeader(http.StatusPartialContent)
 		}
 		io.Copy(w, f)
+		return
+	}
+	if m.Kind == blobs.File {
+		// ?follow=1 on a file still uploading: what is there, then each piece as it arrives, until it completes or
+		// fileFollow passes with nothing new (the reader asks again from where it got to). Blob-Complete in the
+		// headers was false; the reader knows it has it all when the body ends at the size HEAD then answers.
+		w.Header().Set("Content-Type", "application/octet-stream")
+		if offset > 0 {
+			w.WriteHeader(http.StatusPartialContent)
+		}
+		r.follow(w, req, f, m, fileFollow, true)
 		return
 	}
 	// A clip or a saved call's track: send what is there, then follow it until its last record.
@@ -224,8 +268,16 @@ func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta, 
 	if offset > 0 {
 		w.WriteHeader(http.StatusPartialContent)
 	}
+	r.follow(w, req, f, m, clipFollow, false)
+}
+
+// follow sends blob m from f as it grows, until it completes, the reader goes or wait passes: from the start (a
+// clip, bounded by its longest burst) or, with idle, since it last grew (a file still uploading).
+func (r *Relay) follow(w http.ResponseWriter, req *http.Request, f io.Reader, m blobs.Meta, wait time.Duration, idle bool) {
+	user := auth.FromContext(req.Context())
 	rc := http.NewResponseController(w)
-	deadline := time.After(clipFollow)
+	deadline := time.NewTimer(wait)
+	defer deadline.Stop()
 	for {
 		changed := r.Blobs.Changed(m.ID)
 		if _, err := io.Copy(w, f); err != nil {
@@ -237,16 +289,20 @@ func (r *Relay) getBlob(w http.ResponseWriter, req *http.Request, m blobs.Meta, 
 			return
 		}
 		if now.Complete {
-			if _, err := io.Copy(w, f); err == nil && m.Kind == blobs.TalkBuffer && r.Blobs.ReadToEnd(m.ID, user) {
+			if _, err := io.Copy(w, f); err == nil && m.Kind == blobs.TalkBuffer && user != nil &&
+				r.Blobs.ReadToEnd(m.ID, user.Name) {
 				log.Printf("Talk buffer %s: read by all its members, deleted", m.ID)
 			}
 			return
 		}
 		select {
 		case <-changed:
+			if idle {
+				deadline.Reset(wait)
+			}
 		case <-req.Context().Done():
 			return
-		case <-deadline:
+		case <-deadline.C:
 			return
 		}
 	}

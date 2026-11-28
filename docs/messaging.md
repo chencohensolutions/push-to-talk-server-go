@@ -217,6 +217,14 @@ remove`) clears its token at once, and a token FCM answers as gone (`404` / `UNR
 | `PUSH_NONE` | nothing | nothing |
 | `PUSH_TALK`, `PUSH_CALL` (phases 5a and 5b) | `talk`, `call` | `sync` |
 | `PUSH_WARM` (2026-11-24) | `warm` | `sync` |
+| `PUSH_MEDIA` (2026-11-28) | `media` | `sync` |
+
+`Send.push_user` (2026-11-28) narrows the push: when set, only that user's devices get the kind above, and every
+other recipient gets no push (their envelope is still queued). A phone asking a group for the original of something
+a member shared wakes only that member. `PUSH_MEDIA` is someone asking a phone for the original of a picture, video
+or file it shared (the sender's phone keeps the only copy and uploads it on request, "Blobs" below). It is high
+priority whether notifications are on or off, since the phone must start the upload at once (the upload shows a
+notification), and kept a day.
 
 The server can't read the ciphertext, so the sending phone says what it is: `PUSH_MESSAGE` for a message the
 recipient is notified of (text, a voice message, a message in a chat that isn't muted), `PUSH_SYNC` for what must
@@ -407,7 +415,12 @@ can be played only by the people who were in it.
 
 Clips, voice messages and attachments are files of ciphertext in the blobs folder (`blob_dir`, default `blobs`; package
 `blobs`), each `<id>.blob` beside `<id>.json` (who made it, for which conversation, its size, whether complete). They
-are deleted `blob_days` (default 30) after they were made, by the hourly sweep. `/blob/<id>`, over mTLS, enrolled
+are deleted `blob_days` (default 30) after they were made, by the hourly sweep. Shared pictures, videos and files
+(2026-11-28, hen) use them too: the sender's phone uploads a preview at once and keeps the original, uploading it
+only when someone asks (a `PUSH_MEDIA` Send). An original uploaded with `?keep=media` is kept, encrypted, `media_days`
+(default 30; 2026-11-28, hen) after it was uploaded, so whoever asks again, or the rest of a group, gets it without
+waking the sender's phone. A file whose upload stopped unfinished is deleted 48 hours after
+its last byte. `/blob/<id>`, over mTLS, enrolled
 devices only:
 
 - **GET** by the maker, the other user of its one-to-one conversation, or a member of its group now (blocks apply);
@@ -416,10 +429,21 @@ devices only:
   as they arrive, until its last one, so a late or woken phone plays from the start and catches up. `Blob-Offset`
   (the size the server has) and `Blob-Complete` are answered.
 - **HEAD**: the same headers, so a broken upload can go on.
-- **PUT** a file (a voice message, an attachment, up to 100 MB) for `?peer=<user>` or `?group=<id>` (the same rule as
-  talking there; 403 otherwise). The first PUT gives `Blob-Total`; each PUT's `Blob-Offset` says where its bytes go
-  and must be the size the server has (409 with the right `Blob-Offset` otherwise). It is complete when it has
-  `Blob-Total` bytes. Only its maker writes it.
+- **PUT** a file (a voice message, an attachment, a shared preview or original, up to `max_blob_mb`, default 20 GB)
+  for `?peer=<user>` or `?group=<id>` (the same rule as talking there; 403 otherwise), `&keep=media` for a shared
+  original. The first PUT gives `Blob-Total`; each PUT's `Blob-Offset` says where its bytes go and must be the size
+  the server has (409 with the right `Blob-Offset` otherwise). It is complete when it has `Blob-Total` bytes. Only its
+  maker writes it. An upload that would leave less than `min_free_gb` (default 10 GB) free on the blobs folder's disk
+  is refused `507` (an open file's PUT too, once the disk is that full), so kept originals never fill the server's
+  disk; the phone says the server is full.
+- **An open file** (2026-11-28): a video's preview is uploaded while the phone encodes it, so its size isn't known.
+  The first PUT gives `Blob-Open: true` instead of `Blob-Total`, and the PUT with `Blob-Last: true` completes it (its
+  `Blob-Total` is then its size). GET and HEAD answer `Blob-Open: true` while it grows. A plain GET is 409 until it
+  is complete; `GET ?follow=1` sends what is there and then each piece as it arrives, until it completes or 60
+  seconds pass with nothing new (the reader asks again from where it got to, with `Range`). `?follow=1` works on a
+  file with a `Blob-Total` too.
+- **DELETE**: its maker deletes a file (a shared item deleted for everyone, an upload given up); 204, or 404 for
+  anyone else.
 
 ## The queue
 
@@ -430,7 +454,8 @@ database runs in WAL mode; the server writes the log back into `ptt.db` when it 
 
 ## What the server sees
 
-Who is paired with whom and who blocked whom, who sends to whom and when, how big each envelope is, the type of each
+Who is paired with whom and who blocked whom, who sends to whom and when, how big each envelope is (and each shared
+picture's preview and original, and who asked whom for an original), the type of each
 (a pair request is told apart by its token), the push kind the sender chose (message, sync, none), the public keys,
 each device's FCM token, when each user is connected, and the IP addresses. Google sees that a device was woken, when,
 and the kind (`message` or `sync`), nothing else. Never the content: text, receipts, typing, sync messages and key

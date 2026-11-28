@@ -36,7 +36,7 @@ func TestExpireTracksDeletesOldKeptCallsOnly(t *testing.T) {
 	}
 
 	// blob_days (Expire) deletes the clip but never a kept call's tracks.
-	if n := s.Expire(now.Add(time.Hour)); n != 1 {
+	if n := s.Expire(now.Add(time.Hour), now.Add(time.Hour)); n != 1 {
 		t.Fatalf("Expire deleted %d, want 1 (the clip only)", n)
 	}
 	if _, ok := s.Get(recent); !ok {

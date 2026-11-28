@@ -124,10 +124,14 @@ message Send {
   // Live only (2026-11-23, hen: live typing, a draft as it is written): delivered to the recipient devices that have
   // /ws open now, never queued and never pushed; a device that isn't connected misses it. The checks are a Send's.
   bool ephemeral = 6;
+  // Wake only this user's devices (2026-11-28, sharing media): push_kind applies to push_user's devices, and every
+  // other recipient gets no push (the envelope is still queued for them). A phone asking a group's member for the
+  // original of something they shared wakes only that member. Empty: push_kind applies to every recipient.
+  string push_user = 7;
 }
 
 // The kinds of wake-up a Send asks for. The FCM data message carries only the kind's name ("message", "sync",
-// "talk", "call", "warm"), nothing else.
+// "talk", "call", "warm", "media"), nothing else.
 enum PushKind {
   // Taken as PUSH_SYNC.
   PUSH_KIND_UNSPECIFIED = 0;
@@ -147,6 +151,10 @@ enum PushKind {
   // nothing, so a push that follows starts at once. High priority (notifications on), kept 60 seconds. Android may
   // demote high-priority pushes that end in no notification.
   PUSH_WARM = 6;
+  // Someone asks for a shared picture's, video's or file's original (2026-11-28, hen: the sender's phone keeps the
+  // only copy and uploads it on request). High priority always, since the phone must start uploading at once (its
+  // upload shows a notification), kept a day.
+  PUSH_MEDIA = 7;
 }
 
 message SendResult {

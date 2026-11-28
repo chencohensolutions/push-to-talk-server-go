@@ -204,6 +204,9 @@ func openServer(config auth.AppConfig) (*server, error) {
 	}
 	s.relay.Blobs = blobStore
 	s.relay.BlobTTL = time.Duration(config.BlobDays) * 24 * time.Hour
+	s.relay.MediaTTL = time.Duration(config.MediaDays) * 24 * time.Hour
+	blobStore.MaxFile = config.MaxBlobMB << 20
+	blobStore.MinFree = max(config.MinFreeGB, 0) << 30
 	if config.LiveKitOn() {
 		s.relay.CallTTL = time.Duration(config.LiveKit.KeepCallDays) * 24 * time.Hour
 		hours := config.LiveKit.TalkBufferHours

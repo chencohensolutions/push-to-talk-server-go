@@ -28,7 +28,7 @@ const (
 )
 
 // The kinds of wake-up a Send asks for. The FCM data message carries only the kind's name ("message", "sync",
-// "talk", "call", "warm"), nothing else.
+// "talk", "call", "warm", "media"), nothing else.
 type PushKind int32
 
 const (
@@ -50,6 +50,10 @@ const (
 	// nothing, so a push that follows starts at once. High priority (notifications on), kept 60 seconds. Android may
 	// demote high-priority pushes that end in no notification.
 	PushKind_PUSH_WARM PushKind = 6
+	// Someone asks for a shared picture's, video's or file's original (2026-11-28, hen: the sender's phone keeps the
+	// only copy and uploads it on request). High priority always, since the phone must start uploading at once (its
+	// upload shows a notification), kept a day.
+	PushKind_PUSH_MEDIA PushKind = 7
 )
 
 // Enum value maps for PushKind.
@@ -62,6 +66,7 @@ var (
 		4: "PUSH_TALK",
 		5: "PUSH_CALL",
 		6: "PUSH_WARM",
+		7: "PUSH_MEDIA",
 	}
 	PushKind_value = map[string]int32{
 		"PUSH_KIND_UNSPECIFIED": 0,
@@ -71,6 +76,7 @@ var (
 		"PUSH_TALK":             4,
 		"PUSH_CALL":             5,
 		"PUSH_WARM":             6,
+		"PUSH_MEDIA":            7,
 	}
 )
 
@@ -949,7 +955,11 @@ type Send struct {
 	GroupDevices []*UserDevices `protobuf:"bytes,5,rep,name=group_devices,json=groupDevices,proto3" json:"group_devices,omitempty"`
 	// Live only (2026-11-23, hen: live typing, a draft as it is written): delivered to the recipient devices that have
 	// /ws open now, never queued and never pushed; a device that isn't connected misses it. The checks are a Send's.
-	Ephemeral     bool `protobuf:"varint,6,opt,name=ephemeral,proto3" json:"ephemeral,omitempty"`
+	Ephemeral bool `protobuf:"varint,6,opt,name=ephemeral,proto3" json:"ephemeral,omitempty"`
+	// Wake only this user's devices (2026-11-28, sharing media): push_kind applies to push_user's devices, and every
+	// other recipient gets no push (the envelope is still queued for them). A phone asking a group's member for the
+	// original of something they shared wakes only that member. Empty: push_kind applies to every recipient.
+	PushUser      string `protobuf:"bytes,7,opt,name=push_user,json=pushUser,proto3" json:"push_user,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1024,6 +1034,13 @@ func (x *Send) GetEphemeral() bool {
 		return x.Ephemeral
 	}
 	return false
+}
+
+func (x *Send) GetPushUser() string {
+	if x != nil {
+		return x.PushUser
+	}
+	return ""
 }
 
 type SendResult struct {
@@ -1976,14 +1993,15 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\x06PAIRED\x10\x06\x12\x11\n" +
 	"\rGROUP_CHANGED\x10\a\"\x17\n" +
 	"\x03Ack\x12\x10\n" +
-	"\x03ids\x18\x01 \x03(\tR\x03ids\"\xf0\x01\n" +
+	"\x03ids\x18\x01 \x03(\tR\x03ids\"\x8d\x02\n" +
 	"\x04Send\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x12.\n" +
 	"\tenvelopes\x18\x02 \x03(\v2\x10.ptt.v1.EnvelopeR\tenvelopes\x12-\n" +
 	"\tpush_kind\x18\x03 \x01(\x0e2\x10.ptt.v1.PushKindR\bpushKind\x12\x14\n" +
 	"\x05group\x18\x04 \x01(\tR\x05group\x128\n" +
 	"\rgroup_devices\x18\x05 \x03(\v2\x13.ptt.v1.UserDevicesR\fgroupDevices\x12\x1c\n" +
-	"\tephemeral\x18\x06 \x01(\bR\tephemeral\"\xf5\x02\n" +
+	"\tephemeral\x18\x06 \x01(\bR\tephemeral\x12\x1b\n" +
+	"\tpush_user\x18\a \x01(\tR\bpushUser\"\xf5\x02\n" +
 	"\n" +
 	"SendResult\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\tR\bclientId\x121\n" +
@@ -2077,7 +2095,7 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\x04last\x18\x03 \x01(\bR\x04last\x12\x1e\n" +
 	"\n" +
 	"ciphertext\x18\x04 \x01(\fR\n" +
-	"ciphertext*\x82\x01\n" +
+	"ciphertext*\x92\x01\n" +
 	"\bPushKind\x12\x19\n" +
 	"\x15PUSH_KIND_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tPUSH_SYNC\x10\x01\x12\x10\n" +
@@ -2085,7 +2103,9 @@ const file_proto_ptt_proto_rawDesc = "" +
 	"\tPUSH_NONE\x10\x03\x12\r\n" +
 	"\tPUSH_TALK\x10\x04\x12\r\n" +
 	"\tPUSH_CALL\x10\x05\x12\r\n" +
-	"\tPUSH_WARM\x10\x06*Z\n" +
+	"\tPUSH_WARM\x10\x06\x12\x0e\n" +
+	"\n" +
+	"PUSH_MEDIA\x10\a*Z\n" +
 	"\x04Hear\x12\x14\n" +
 	"\x10HEAR_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aHEAR_OK\x10\x01\x12\x0f\n" +
