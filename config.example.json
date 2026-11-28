@@ -14,6 +14,8 @@
   "blob_days": 30,
   "max_blob_mb": 20480,
   "media_days": 30,
+  "media_max_days": 730,
+  "media_quota_gb": 200,
   "min_free_gb": 10,
   "database_file": "ptt.db",
   "queue_days": 30,
