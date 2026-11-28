@@ -445,8 +445,14 @@ devices only:
   is complete; `GET ?follow=1` sends what is there and then each piece as it arrives, until it completes or 60
   seconds pass with nothing new (the reader asks again from where it got to, with `Range`). `?follow=1` works on a
   file with a `Blob-Total` too.
+- **POST `?peer=<user>` or `?group=<id>`** (2026-11-28, hen: "share images between groups without doubling the
+  storage"): its maker shares a complete file to another conversation too, under the same rules as an upload there
+  (a contact, not blocked; a group they are in); 204. It is then read in each (the meta's `shares`, at most 64), and
+  its keeping time starts again. 404 for anyone else or a file that isn't complete, 403 when the conversation isn't
+  allowed.
 - **DELETE**: its maker deletes a file (a shared item deleted for everyone, an upload given up); 204, or 404 for
-  anyone else.
+  anyone else. With `?peer=` or `?group=` only from that conversation: the file is deleted when no conversation is
+  left.
 
 ## The queue
 

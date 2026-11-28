@@ -48,15 +48,23 @@ func (r *Relay) mayRead(user string, m blobs.Meta) bool {
 	if m.Kind == blobs.TalkBuffer && user != m.Owner && !slices.Contains(m.Readers, user) {
 		return false
 	}
-	switch {
-	case user == m.Owner:
+	if user == m.Owner {
 		return true
-	case m.Group != "":
-		g, ok := r.Groups.Get(m.Group)
-		return ok && g.Member(user) && !r.Book.Blocked(user, m.Owner)
-	default:
-		return user == m.Peer && !r.Book.Blocked(user, m.Owner)
 	}
+	if r.Book.Blocked(user, m.Owner) {
+		return false
+	}
+	// Any conversation it is readable in: the one it was made for, or one its maker shared it to.
+	for _, c := range m.Conversations() {
+		if c.Group != "" {
+			if g, ok := r.Groups.Get(c.Group); ok && g.Member(user) {
+				return true
+			}
+		} else if user == c.Peer {
+			return true
+		}
+	}
+	return false
 }
 
 // joinedCall says whether user was in the call whose track m is: one of their devices sent a stream that the recorder
@@ -103,7 +111,11 @@ func setBlobHeaders(w http.ResponseWriter, m blobs.Meta) {
 //   - GET reads a file once it is complete, from a byte offset with "Range: bytes=N-"; a clip is read while it grows:
 //     its records (a 4-byte big-endian length, then a ClipSegment without its burst id) are sent as they arrive
 //     until its last one. A file that isn't complete is 409, or with ?follow=1 is sent as it grows.
-//   - DELETE: its maker deletes it (a shared item deleted for everyone, an upload given up).
+//   - POST ?peer=<user> or ?group=<id>: its maker shares a complete file to another conversation too (a picture
+//     shared again, sent once: 2026-11-28, hen), under the same rules as an upload there; its keeping time starts
+//     again.
+//   - DELETE: its maker deletes it (a shared item deleted for everyone, an upload given up); with ?peer= or ?group=,
+//     only from that conversation, the file going when none is left.
 func (r *Relay) ServeBlob(w http.ResponseWriter, req *http.Request) {
 	user := auth.FromContext(req.Context())
 	device, _ := r.Registry.Find(auth.SerialFromContext(req.Context()))
@@ -130,16 +142,41 @@ func (r *Relay) ServeBlob(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		r.getBlob(w, req, m, user.Name)
+	case http.MethodPost:
+		if !exists || m.Owner != user.Name || m.Kind != blobs.File || !m.Complete {
+			http.Error(w, "no such blob", http.StatusNotFound)
+			return
+		}
+		peer, group := req.URL.Query().Get("peer"), req.URL.Query().Get("group")
+		if (peer == "") == (group == "") {
+			http.Error(w, "name ?peer=<user> or ?group=<id>", http.StatusBadRequest)
+			return
+		}
+		from := store.Device{User: user.Name, Number: device.DeviceNumber}
+		if _, status, detail := r.conversation(from, peer, group); status != 0 {
+			http.Error(w, status.String()+": "+detail, http.StatusForbidden)
+			return
+		}
+		if err := r.Blobs.Share(id, blobs.Conversation{Peer: peer, Group: group}); err != nil {
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	case http.MethodDelete:
 		if !exists || m.Owner != user.Name || m.Kind != blobs.File {
 			http.Error(w, "no such blob", http.StatusNotFound)
 			return
 		}
-		r.Blobs.Delete(id)
+		peer, group := req.URL.Query().Get("peer"), req.URL.Query().Get("group")
+		if peer != "" || group != "" {
+			r.Blobs.Unshare(id, blobs.Conversation{Peer: peer, Group: group})
+		} else {
+			r.Blobs.Delete(id)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
-		w.Header().Set("Allow", "GET, HEAD, PUT, DELETE")
-		http.Error(w, "GET, HEAD, PUT or DELETE", http.StatusMethodNotAllowed)
+		w.Header().Set("Allow", "GET, HEAD, PUT, POST, DELETE")
+		http.Error(w, "GET, HEAD, PUT, POST or DELETE", http.StatusMethodNotAllowed)
 	}
 }
 
