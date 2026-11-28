@@ -421,7 +421,11 @@ are deleted `blob_days` (default 30) after they were made, by the hourly sweep. 
 (2026-11-28, hen) use them too: the sender's phone uploads a preview at once and keeps the original, uploading it
 only when someone asks (a `PUSH_MEDIA` Send). An original uploaded with `?keep=media` is kept, encrypted, `media_days`
 (default 30; 2026-11-28, hen) after it was uploaded, so whoever asks again, or the rest of a group, gets it without
-waking the sender's phone. A file whose upload stopped unfinished is deleted 48 hours after
+waking the sender's phone. Its maker may ask for longer with `&days=N` (2026-11-28, hen: "the client can make the
+server keep it for one year"; the phone's Settings › Storage chooses 30 days, 1 year or 2 years), up to
+`media_max_days` (default 730), and every PUT answers `Blob-Keep-Days`. What each user keeps longer than `media_days`
+may take `media_quota_gb` (default 200, -1 no bound): past it, the sweep lets that user's oldest fall back to
+`media_days`. A file whose upload stopped unfinished is deleted 48 hours after
 its last byte. A data file with no meta beside it (a delete that removed only the meta, as Windows refuses to
 remove a file a reader still has open) is deleted by the sweep once it is an hour old (`ExpireOrphans`). `/blob/<id>`, over mTLS, enrolled
 devices only:
@@ -433,8 +437,8 @@ devices only:
   (the size the server has) and `Blob-Complete` are answered.
 - **HEAD**: the same headers, so a broken upload can go on.
 - **PUT** a file (a voice message, an attachment, a shared preview or original, up to `max_blob_mb`, default 20 GB)
-  for `?peer=<user>` or `?group=<id>` (the same rule as talking there; 403 otherwise), `&keep=media` for a shared
-  original. The first PUT gives `Blob-Total`; each PUT's `Blob-Offset` says where its bytes go and must be the size
+  for `?peer=<user>` or `?group=<id>` (the same rule as talking there; 403 otherwise), `&keep=media` for shared
+  media (`&days=N` to keep it longer, as above). The first PUT gives `Blob-Total`; each PUT's `Blob-Offset` says where its bytes go and must be the size
   the server has (409 with the right `Blob-Offset` otherwise). It is complete when it has `Blob-Total` bytes. Only its
   maker writes it. An upload that would leave less than `min_free_gb` (default 10 GB) free on the blobs folder's disk
   is refused `507` (an open file's PUT too, once the disk is that full), so kept originals never fill the server's

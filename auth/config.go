@@ -50,6 +50,12 @@ type AppConfig struct {
 	// Days a shared original (a picture's, video's or file's, uploaded when someone asked for it) is kept, encrypted
 	// (default 30; 2026-11-28, hen), so whoever asks again gets it without waking the sender's phone.
 	MediaDays int `json:"media_days"`
+	// The most days a phone may ask shared media be kept (default 730; 2026-11-28, hen: "the client can make the
+	// server keep it for one year or something"); its Settings › Storage chooses 30 days, 1 year or 2 years.
+	MediaMaxDays int `json:"media_max_days"`
+	// How much each user's media kept longer than media_days may take, in GB (default 200); past it their oldest fall
+	// back to media_days. -1: no bound.
+	MediaQuotaGB int64 `json:"media_quota_gb"`
 	// The space, in GB, a file upload must leave free on the blobs folder's disk (default 10); an upload that would
 	// leave less is refused 507, so kept originals never fill the server's disk. 0 is the default; -1 doesn't check.
 	MinFreeGB int64 `json:"min_free_gb"`
@@ -154,6 +160,8 @@ const (
 	DefaultBlobDays       = 30
 	DefaultMaxBlobMB      = 20480
 	DefaultMediaDays      = 30
+	DefaultMediaMaxDays   = 730
+	DefaultMediaQuotaGB   = 200
 	DefaultMinFreeGB      = 10
 	DefaultAdminAddr      = "127.0.0.1:8082"
 	DefaultAppReleases    = "chencohensolutions/push-to-talk-kmp"
@@ -255,6 +263,12 @@ func (c AppConfig) WithDefaults() AppConfig {
 	}
 	if c.MediaDays == 0 {
 		c.MediaDays = DefaultMediaDays
+	}
+	if c.MediaMaxDays == 0 {
+		c.MediaMaxDays = DefaultMediaMaxDays
+	}
+	if c.MediaQuotaGB == 0 {
+		c.MediaQuotaGB = DefaultMediaQuotaGB
 	}
 	if c.MinFreeGB == 0 {
 		c.MinFreeGB = DefaultMinFreeGB
